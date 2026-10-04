@@ -3896,16 +3896,46 @@ async function showAdminSubmissions() {
   openSheet(`<div class="text-center py-8"><div class="spinner mx-auto"></div></div>`, 'Pending Submissions');
 
   try {
+    // Fetch all recent submissions (no index needed) and filter client-side
     const [leakSnap, vaultSnap, clipSnap] = await Promise.all([
-      getDocs(query(collection(db, 'leak_submissions'), where('status', '==', 'pending'), orderBy('submittedAt', 'desc'), limit(50))),
-      getDocs(query(collection(db, 'vault_submissions'), where('status', '==', 'pending'), orderBy('submittedAt', 'desc'), limit(50))),
-      getDocs(query(collection(db, 'clip_submissions'), where('status', '==', 'pending'), orderBy('submittedAt', 'desc'), limit(50)))
+      getDocs(query(collection(db, 'leak_submissions'), limit(100))),
+      getDocs(query(collection(db, 'vault_submissions'), limit(100))),
+      getDocs(query(collection(db, 'clip_submissions'), limit(100)))
     ]);
 
-    const leaks = []; leakSnap.forEach(d => leaks.push({ id: d.id, ...d.data() }));
-    const vaults = []; vaultSnap.forEach(d => vaults.push({ id: d.id, ...d.data() }));
-    const clips = []; clipSnap.forEach(d => clips.push({ id: d.id, ...d.data() }));
+    const leaks = [];
+    leakSnap.forEach(function(d) {
+      const data = d.data();
+      if (data.status === 'pending') {
+        leaks.push({ id: d.id, ...data });
+   }
+});
 
+    const vaults = [];
+    vaultSnap.forEach(function(d) {
+      const data = d.data();
+      if (data.status === 'pending') {
+        vaults.push({ id: d.id, ...data });
+   }
+});
+
+   const clips = [];
+   clipSnap.forEach(function(d) {
+     const data = d.data();
+     if (data.status === 'pending') {
+       clips.push({ id: d.id, ...data });
+   }
+});
+
+   const sortByDate = function(a, b) {
+     const ta = a.submittedAt ? a.submittedAt.seconds : 0;
+     const tb = b.submittedAt ? b.submittedAt.seconds : 0;
+     return tb - ta;
+};
+
+    leaks.sort(sortByDate);
+    vaults.sort(sortByDate);
+    clips.sort(sortByDate);
     const total = leaks.length + vaults.length + clips.length;
 
     const sheetBody = document.querySelector('#sheet-container .px-5');
