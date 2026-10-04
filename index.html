@@ -1,0 +1,3817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#FF6B00" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="CODMPanda" />
+<meta name="description" content="The Ultimate CODM Companion — Find squads, track camos, share gunsmiths." />
+<title>CODMPanda — The Ultimate CODM Companion</title>
+
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgcng9IjM4IiBmaWxsPSIjMDUwNTA1Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjExMCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IiNGRjZCMDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJjZW50cmFsIj7wn5C8PC90ZXh0Pjwvc3ZnPg==" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          amoled: '#050505',
+          card: '#111111',
+          cardAlt: '#181818',
+          border: '#222222',
+          primary: '#FF6B00',
+          primaryDark: '#CC5500',
+          gold: '#FFD700',
+          goldDark: '#B8860B',
+        },
+        fontFamily: {
+          sans: ['Inter', 'system-ui', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+<style>
+  :root {
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  html, body {
+    background: #050505;
+    color: #ffffff;
+    font-family: 'Inter', system-ui, sans-serif;
+    overscroll-behavior-y: none;
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    padding-bottom: calc(80px + var(--safe-bottom));
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #222; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #FF6B00; }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  .glow-primary { box-shadow: 0 0 20px rgba(255, 107, 0, 0.4), 0 0 40px rgba(255, 107, 0, 0.15); }
+  .glow-gold { box-shadow: 0 0 20px rgba(255, 215, 0, 0.5), 0 0 40px rgba(255, 215, 0, 0.2); }
+  .glow-text-primary { text-shadow: 0 0 12px rgba(255, 107, 0, 0.6); }
+  .glow-text-gold { text-shadow: 0 0 12px rgba(255, 215, 0, 0.7); }
+
+  .rank-legendary {
+    background: linear-gradient(135deg, #FF6B00 0%, #FFD700 50%, #FF6B00 100%);
+    background-size: 200% 200%;
+    animation: legendaryShift 3s ease infinite;
+  }
+  @keyframes legendaryShift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, #111 0%, #1a1a1a 50%, #111 100%);
+    background-size: 200% 100%;
+    animation: skeletonPulse 1.5s ease-in-out infinite;
+  }
+  @keyframes skeletonPulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  .fade-in { animation: fadeIn 0.3s ease-out; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .slide-up { animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(40px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .toast-enter { animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateY(-20px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .toast-exit { animation: toastOut 0.25s ease-in forwards; }
+  @keyframes toastOut {
+    to { opacity: 0; transform: translateY(-20px) scale(0.95); }
+  }
+
+  .btn-press:active { transform: scale(0.96); }
+  .btn-press { transition: transform 0.1s ease; }
+
+  .bottom-nav {
+    padding-bottom: var(--safe-bottom);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .top-bar {
+    padding-top: var(--safe-top);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .modal-backdrop {
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  input, select, textarea {
+    background: #111;
+    border: 1px solid #222;
+    color: #fff;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 15px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: #FF6B00;
+    box-shadow: 0 0 0 3px rgba(255, 107, 0, 0.15);
+  }
+  input::placeholder, textarea::placeholder { color: #555; }
+  select { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 12px center; background-size: 18px; padding-right: 40px; }
+  select option { background: #111; color: #fff; }
+
+  input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    border-radius: 6px;
+    border: 2px solid #333;
+    background: #0a0a0a;
+    cursor: pointer;
+    position: relative;
+    padding: 0;
+    transition: all 0.2s;
+  }
+  input[type="checkbox"]:checked {
+    background: #FF6B00;
+    border-color: #FF6B00;
+  }
+  input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  .toggle {
+    position: relative;
+    width: 46px;
+    height: 26px;
+    background: #222;
+    border-radius: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .toggle.on { background: #FF6B00; }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle.on::after { transform: translateX(20px); }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    background: transparent;
+    padding: 0;
+    border: none;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px;
+    background: #222;
+    border-radius: 3px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    height: 22px;
+    width: 22px;
+    border-radius: 50%;
+    background: #FF6B00;
+    margin-top: -8px;
+    box-shadow: 0 0 12px rgba(255, 107, 0, 0.5);
+    cursor: pointer;
+  }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
+
+  .progress-bar {
+    background: #1a1a1a;
+    border-radius: 999px;
+    overflow: hidden;
+    height: 8px;
+    position: relative;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #FF6B00, #FFD700);
+    border-radius: 999px;
+    transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ring-progress { transform: rotate(-90deg); }
+  .ring-progress circle {
+    transition: stroke-dashoffset 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .shimmer {
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 215, 0, 0.15) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: shimmer 2.5s linear infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .blurred { filter: blur(8px); pointer-events: none; user-select: none; }
+
+  .tab-active { color: #FF6B00; }
+  .tab-active .tab-icon { filter: drop-shadow(0 0 8px rgba(255, 107, 0, 0.6)); }
+
+  .hidden { display: none !important; }
+
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #333;
+    border-top-color: #FF6B00;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .chip {
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #111;
+    border: 1px solid #222;
+    color: #888;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .chip.active {
+    background: #FF6B00;
+    border-color: #FF6B00;
+    color: #fff;
+  }
+
+  .sheet {
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+    background: #0a0a0a;
+    border-top: 1px solid #222;
+    max-height: 92vh;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body class="bg-amoled">
+
+<div id="app">
+  <div id="splash" class="fixed inset-0 z-[100] bg-amoled flex flex-col items-center justify-center">
+    <div class="text-6xl mb-4 animate-bounce">🐼</div>
+    <div class="text-2xl font-black text-primary glow-text-primary tracking-tight">CODMPanda</div>
+    <div class="text-xs text-gray-500 mt-2 font-medium">Loading your companion...</div>
+    <div class="spinner mt-6"></div>
+  </div>
+
+  <div id="onboarding" class="fixed inset-0 z-[90] bg-amoled hidden flex-col">
+    <div id="onboarding-content" class="flex-1 flex flex-col"></div>
+  </div>
+
+  <div id="auth-gate" class="fixed inset-0 z-[85] bg-amoled hidden flex-col items-center justify-center p-6">
+    <div class="text-7xl mb-6">🐼</div>
+    <h1 class="text-4xl font-black text-center mb-2">
+      <span class="text-primary glow-text-primary">CODM</span><span class="text-white">Panda</span>
+    </h1>
+    <p class="text-gray-400 text-center mb-10 text-sm max-w-xs">The Ultimate CODM Companion — find squads, track camos, build gunsmiths.</p>
+    <button id="google-signin-btn" class="btn-press flex items-center gap-3 bg-white text-black font-bold px-6 py-4 rounded-2xl w-full max-w-xs shadow-lg">
+      <svg width="22" height="22" viewBox="0 0 48 48">
+        <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+        <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+        <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+        <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+      </svg>
+      <span>Continue with Google</span>
+    </button>
+    <p class="text-xs text-gray-600 mt-8 text-center max-w-xs">
+      By continuing, you agree to our Terms & Privacy Policy.
+    </p>
+  </div>
+
+  <div id="main-app" class="hidden">
+    <header id="top-bar" class="top-bar fixed top-0 left-0 right-0 z-40 bg-amoled/80 border-b border-border">
+      <div class="flex items-center justify-between px-4 h-14">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">🐼</span>
+          <div>
+            <div class="text-base font-black leading-none">
+              <span class="text-primary">CODM</span><span class="text-white">Panda</span>
+            </div>
+            <div id="top-bar-subtitle" class="text-[10px] text-gray-500 font-medium leading-none mt-0.5">Ready to dominate</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <div id="online-count" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full bg-card border border-border">
+            <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+            <span class="text-[10px] font-semibold text-gray-300"><span id="online-num">0</span> online</span>
+          </div>
+          <button id="btn-notifications" class="btn-press w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center">
+            <i data-lucide="bell" class="w-4 h-4 text-gray-300"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main id="content" class="pt-14 min-h-screen"></main>
+
+    <div id="ad-banner" class="hidden fixed bottom-[72px] left-0 right-0 z-30 bg-card border-t border-border px-4 py-2">
+      <div class="flex items-center justify-between">
+        <span class="text-[10px] text-gray-500 font-medium">Sponsored</span>
+        <div class="text-xs text-gray-400">Ad space — upgrade to Pro to remove</div>
+        <button onclick="hideAd()" class="text-gray-500 text-xs">✕</button>
+      </div>
+    </div>
+
+    <nav id="bottom-nav" class="bottom-nav fixed bottom-0 left-0 right-0 z-40 bg-amoled/95 border-t border-border">
+      <div class="grid grid-cols-5 h-[72px]">
+        <button data-tab="play" class="tab-btn flex flex-col items-center justify-center gap-1 tab-active">
+          <i data-lucide="gamepad-2" class="tab-icon w-6 h-6"></i>
+          <span class="text-[10px] font-bold">PLAY</span>
+        </button>
+        <button data-tab="lab" class="tab-btn flex flex-col items-center justify-center gap-1 text-gray-500">
+          <i data-lucide="flask-conical" class="tab-icon w-6 h-6"></i>
+          <span class="text-[10px] font-bold">LAB</span>
+        </button>
+        <button data-tab="squad" class="tab-btn flex flex-col items-center justify-center gap-1 text-gray-500">
+          <i data-lucide="users" class="tab-icon w-6 h-6"></i>
+          <span class="text-[10px] font-bold">SQUAD</span>
+        </button>
+        <button data-tab="intel" class="tab-btn flex flex-col items-center justify-center gap-1 text-gray-500">
+          <i data-lucide="radar" class="tab-icon w-6 h-6"></i>
+          <span class="text-[10px] font-bold">INTEL</span>
+        </button>
+        <button data-tab="you" class="tab-btn flex flex-col items-center justify-center gap-1 text-gray-500">
+          <i data-lucide="user" class="tab-icon w-6 h-6"></i>
+          <span class="text-[10px] font-bold">YOU</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 pointer-events-none w-[90%] max-w-sm"></div>
+  <div id="modal-container" class="fixed inset-0 z-[150] hidden"></div>
+  <div id="sheet-container" class="fixed inset-0 z-[150] hidden"></div>
+</div>
+
+<!-- END OF PART 1 -->
+<script type="module">
+// ============================================
+// CODMPanda — Part 2: Firebase + Core State
+// ============================================
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  signOut,
+  onAuthStateChanged,
+  deleteUser
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  limit,
+  serverTimestamp,
+  increment,
+  arrayUnion,
+  arrayRemove,
+  Timestamp,
+  writeBatch
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ============================================
+// FIREBASE CONFIG
+// ============================================
+const firebaseConfig = {
+  apiKey: "AIzaSyC4wVCT-ITLRFPDtzENnDjxL_1aVCAqWHg",
+  authDomain: "codmpanda-app.firebaseapp.com",
+  projectId: "codmpanda-app",
+  storageBucket: "codmpanda-app.firebasestorage.app",
+  messagingSenderId: "604146891375",
+  appId: "1:604146891375:web:ae74f70c184fd89d572b9a"
+};
+
+// ⚠️ ADMIN UID — replace after first login
+const ADMIN_UID = "PASTE_ADMIN_UID";
+
+// App version
+const APP_VERSION = "1.0.0";
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const provider = new GoogleAuthProvider();
+provider.setCustomParameters({ prompt: 'select_account' });
+
+// ============================================
+// GLOBAL STATE
+// ============================================
+const State = {
+  user: null,          // Firebase Auth user
+  profile: null,       // Firestore user doc
+  currentTab: 'play',
+  lobbiesUnsub: null,
+  scrimsUnsub: null,
+  clipsUnsub: null,
+  leaksUnsub: null,
+  clansUnsub: null,
+  vaultsUnsub: null,
+  camosUnsub: null,
+  onlineUnsub: null,
+  joinCount: 0,
+  interstitialShown: false,
+  filters: {
+    lobbies: { rank: 'all', mode: 'all', region: 'all' },
+    vaults: { gun: 'all', type: 'gunsmith' },
+    camos: { category: 'all' },
+    clips: { gun: 'all', sort: 'recent' }
+  },
+  cache: {
+    lobbies: [],
+    vaults: [],
+    camos: [],
+    clans: [],
+    scrims: [],
+    clips: [],
+    leaks: [],
+    tierVotes: {}
+  }
+};
+
+// Make state globally accessible for inline handlers
+window.__state = State;
+
+// ============================================
+// CONSTANTS — CODM DATA
+// ============================================
+
+// 80+ CODM Guns organized by category
+const CODM_GUNS = {
+  'Assault Rifle': [
+    'AK117', 'AK-47', 'ASM10', 'BK57', 'DR-H', 'FR .556', 'HBRa3', 'HVK-30',
+    'ICR-1', 'KN-44', 'LK24', 'M16', 'M4', 'Man-O-War', 'MoW', 'Oden',
+    'Peacekeeper MK2', 'AKBP', 'AS VAL', 'CR-56 AMAX', 'CR-56', 'EM2',
+    'FARA 83', 'Grau 5.56', 'Kilo Bolt-Action', 'Kilo 141', 'M13',
+    'Maddox', 'Swordfish', 'Type 25', 'Type 19', 'BP50', 'RAM-7'
+  ],
+  'SMG': [
+    'QQ9', 'MP5', 'MP7', 'PDW-57', 'RUS-79U', 'Cordite', 'GKS',
+    'HG 40', 'MSMC', 'Pharo', 'Razorback', 'QQ10', 'AGR 556',
+    'Fennec', 'Striker 45', 'PP19 Bizon', 'PPSh-41', 'QXR',
+    'MX9', 'CX-9', 'LAPA', 'Vaznev-9K', 'ISO 45', 'RAM-9'
+  ],
+  'Sniper': [
+    'Arctic .50', 'DL Q33', 'Locus', 'M21 EBR', 'XPR-50',
+    'NA-45', 'Rytec AMR', 'SP-R 208', 'Kilo Bolt-Action',
+    'ZRG 20mm', 'HDR', 'LW3-Tundra', 'Koshka', 'Outlaw'
+  ],
+  'LMG': [
+    'RPD', 'M4LMG', 'UL736', 'S36', 'Chopper', 'Holger 26',
+    'PKM', 'Bruen MK9', 'FiNN LMG', 'RAAL MG', 'Hades', 'MG82'
+  ],
+  'Shotgun': [
+    'BY15', 'HS0405', 'HS2126', 'Striker', 'KRM 262',
+    'Echo', 'JAK-12', 'R9-0', 'Argus', 'VLK Rogue'
+  ],
+  'Marksman': [
+    'Kilo Bolt-Action', 'SKS', 'SPR-208', 'MK2 Carbine',
+    'Kar98K', 'EBR-14', 'SVD', 'Type 63'
+  ],
+  'Pistol': [
+    'J358', 'MW11', '.50 GS', 'Renetti', 'L-CAR 9',
+    'Shorty', 'Crossbow', 'Nail Gun', 'TEC-9'
+  ],
+  'Melee': [
+    'Knife', 'Baseball Bat', 'Axe', 'Karambit', 'Machete',
+    'Kali Sticks', 'Katana', 'Sickle', 'Wrench', 'Shovel'
+  ],
+  'Launcher': [
+    'FHJ-18', 'SMRS', 'Thumper', 'Strela-P', 'RPG-7',
+    'D13 Sector', 'M79'
+  ]
+};
+
+// All gun names flattened for dropdowns
+const ALL_GUNS = Object.values(CODM_GUNS).flat();
+
+// Camo types in progression order
+const CAMO_TYPES = [
+  { key: 'sand', label: 'Sand', color: '#D4A574' },
+  { key: 'dragon', label: 'Dragon', color: '#E63946' },
+  { key: 'splinter', label: 'Splinter', color: '#8B5A2B' },
+  { key: 'tiger', label: 'Tiger', color: '#F4A261' },
+  { key: 'jungle', label: 'Jungle', color: '#2A9D8F' },
+  { key: 'reptile', label: 'Reptile', color: '#264653' },
+  { key: 'gold', label: 'Gold', color: '#FFD700' },
+  { key: 'platinum', label: 'Platinum', color: '#E5E4E2' },
+  { key: 'diamond', label: 'Diamond', color: '#00D9FF' },
+  { key: 'damascus', label: 'Damascus', color: '#FF6B00' }
+];
+
+// Rank list
+const RANKS = [
+  'Rookie', 'Veteran', 'Elite', 'Pro', 'Master', 'Grandmaster',
+  'Legendary', 'Mythic', 'Legendary Rank', 'Top 500'
+];
+
+// Game modes
+const MODES = ['BR', 'MP', 'Ranked MP', 'Ranked BR', 'Zombies', 'Sniper Only', 'Scrim', 'Any'];
+
+// Regions
+const REGIONS = ['Africa', 'EU', 'NA', 'SA', 'Asia', 'ME', 'Oceania', 'Global'];
+
+// Roles
+const ROLES = ['Rusher', 'Sniper', 'Support', 'IGL', 'Anchor', 'Flex', 'Any'];
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+// Toast notification
+function toast(message, type = 'success', duration = 3000) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  const colors = {
+    success: 'bg-green-500/10 border-green-500/40 text-green-400',
+    error: 'bg-red-500/10 border-red-500/40 text-red-400',
+    info: 'bg-blue-500/10 border-blue-500/40 text-blue-400',
+    warning: 'bg-yellow-500/10 border-yellow-500/40 text-yellow-400'
+  };
+  const icons = {
+    success: 'check-circle',
+    error: 'x-circle',
+    info: 'info',
+    warning: 'alert-triangle'
+  };
+  toast.className = `toast-enter flex items-center gap-3 px-4 py-3 rounded-xl border backdrop-blur-lg ${colors[type]} pointer-events-auto`;
+  toast.innerHTML = `
+    <i data-lucide="${icons[type]}" class="w-5 h-5 flex-shrink-0"></i>
+    <span class="text-sm font-medium flex-1">${message}</span>
+  `;
+  container.appendChild(toast);
+  if (window.lucide) lucide.createIcons();
+  setTimeout(() => {
+    toast.classList.add('toast-exit');
+    setTimeout(() => toast.remove(), 250);
+  }, duration);
+}
+
+// Confirmation dialog
+function confirmDialog(title, message, onConfirm, confirmText = 'Confirm', danger = false) {
+  const container = document.getElementById('modal-container');
+  container.classList.remove('hidden');
+  container.innerHTML = `
+    <div class="modal-backdrop absolute inset-0 flex items-center justify-center p-6" onclick="if(event.target===this) closeModal()">
+      <div class="bg-card border border-border rounded-2xl p-6 max-w-sm w-full slide-up">
+        <h3 class="text-lg font-bold mb-2">${title}</h3>
+        <p class="text-sm text-gray-400 mb-6">${message}</p>
+        <div class="flex gap-3">
+          <button onclick="closeModal()" class="btn-press flex-1 py-3 rounded-xl bg-cardAlt border border-border text-sm font-semibold">Cancel</button>
+          <button id="confirm-btn" class="btn-press flex-1 py-3 rounded-xl ${danger ? 'bg-red-500' : 'bg-primary'} text-sm font-bold">${confirmText}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('confirm-btn').onclick = () => {
+    closeModal();
+    onConfirm();
+  };
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeModal() {
+  const c = document.getElementById('modal-container');
+  c.classList.add('hidden');
+  c.innerHTML = '';
+}
+
+function closeSheet() {
+  const c = document.getElementById('sheet-container');
+  c.classList.add('hidden');
+  c.innerHTML = '';
+}
+
+// Bottom sheet
+function openSheet(contentHTML, title = '') {
+  const container = document.getElementById('sheet-container');
+  container.classList.remove('hidden');
+  container.innerHTML = `
+    <div class="modal-backdrop absolute inset-0" onclick="if(event.target===this) closeSheet()">
+      <div class="sheet absolute bottom-0 left-0 right-0 slide-up">
+        <div class="sticky top-0 z-10 bg-[#0a0a0a] pt-3 pb-3 px-5 border-b border-border">
+          <div class="w-12 h-1 bg-gray-700 rounded-full mx-auto mb-3"></div>
+          ${title ? `<h3 class="text-lg font-bold">${title}</h3>` : ''}
+        </div>
+        <div class="px-5 pb-8 pt-4">${contentHTML}</div>
+      </div>
+    </div>
+  `;
+  if (window.lucide) lucide.createIcons();
+}
+
+// Time ago
+function timeAgo(timestamp) {
+  if (!timestamp) return 'just now';
+  let date;
+  if (timestamp.toDate) date = timestamp.toDate();
+  else if (timestamp.seconds) date = new Date(timestamp.seconds * 1000);
+  else date = new Date(timestamp);
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString();
+}
+
+// Escape HTML
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Copy to clipboard
+async function copyText(text, label = 'Copied!') {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(label, 'success');
+  } catch (e) {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    toast(label, 'success');
+  }
+}
+
+// Web Share
+async function shareContent(title, text, url) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text, url });
+    } catch (e) { /* user cancelled */ }
+  } else {
+    copyText(url || text, 'Link copied!');
+  }
+}
+
+// Compress image to base64 (for Firestore storage)
+function compressImage(file, maxSize = 800, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxSize) {
+            height = (height * maxSize) / width;
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width = (width * maxSize) / height;
+            height = maxSize;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Generate referral code
+function generateReferralCode(uid) {
+  return 'PANDA' + uid.slice(0, 6).toUpperCase();
+}
+
+// Get user initials
+function getInitials(name) {
+  if (!name) return '?';
+  return name.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+// Ad helpers
+function showAd() {
+  if (State.profile?.isPro) return;
+  const banner = document.getElementById('ad-banner');
+  if (banner) banner.classList.remove('hidden');
+}
+
+function hideAd() {
+  const banner = document.getElementById('ad-banner');
+  if (banner) banner.classList.add('hidden');
+}
+
+function maybeShowInterstitial() {
+  State.joinCount++;
+  if (State.joinCount >= 3 && !State.interstitialShown && !State.profile?.isPro) {
+    State.interstitialShown = true;
+    // Mock interstitial — replace with AdMob later
+    const container = document.getElementById('modal-container');
+    container.classList.remove('hidden');
+    container.innerHTML = `
+      <div class="modal-backdrop absolute inset-0 flex items-center justify-center p-6">
+        <div class="bg-card border border-border rounded-2xl p-6 max-w-sm w-full text-center slide-up">
+          <div class="text-xs text-gray-500 uppercase font-bold mb-2">Advertisement</div>
+          <div class="bg-gradient-to-br from-primary/20 to-gold/20 rounded-xl h-40 flex items-center justify-center mb-4">
+            <div class="text-center">
+              <div class="text-4xl mb-2">🎮</div>
+              <div class="text-sm font-bold">AdMob Placeholder</div>
+              <div class="text-xs text-gray-500">Interstitial Ad</div>
+            </div>
+          </div>
+          <button onclick="closeModal()" class="btn-press w-full py-3 rounded-xl bg-primary font-bold text-sm">Continue</button>
+          <button onclick="closeModal(); goPro();" class="text-xs text-gold mt-3">Remove ads with Pro →</button>
+        </div>
+      </div>
+    `;
+  }
+}
+
+// Export functions to window
+window.toast = toast;
+window.confirmDialog = confirmDialog;
+window.closeModal = closeModal;
+window.closeSheet = closeSheet;
+window.openSheet = openSheet;
+window.copyText = copyText;
+window.shareContent = shareContent;
+window.hideAd = hideAd;
+window.maybeShowInterstitial = maybeShowInterstitial;
+window.esc = esc;
+window.timeAgo = timeAgo;
+
+// ============================================
+// End of Part 2 core utilities
+// ============================================
+</script>
+
+<!-- END OF PART 2 -->
+<script type="module">
+// ============================================
+// CODMPanda — Part 3A: Auth + Onboarding + Tab Router
+// ============================================
+
+// ============================================
+// AUTH FLOW
+// ============================================
+
+async function handleSignIn() {
+  try {
+    // Try popup first (works on HTTPS + desktop)
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    console.error('Popup sign-in failed:', err);
+    // Fallback to redirect (mobile friendly)
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+      try {
+        await signInWithRedirect(auth, provider);
+      } catch (e2) {
+        toast('Sign-in failed. Try again.', 'error');
+      }
+    } else if (err.code === 'auth/unauthorized-domain') {
+      toast('Domain not authorized in Firebase Console.', 'error', 5000);
+    } else {
+      toast('Sign-in failed: ' + err.message, 'error');
+    }
+  }
+}
+
+// Handle redirect result on load
+async function checkRedirect() {
+  try {
+    const result = await getRedirectResult(auth);
+    if (result) {
+      // Signed in via redirect
+    }
+  } catch (e) {
+    console.error('Redirect error:', e);
+  }
+}
+
+// Sign out
+async function handleSignOut() {
+  confirmDialog('Sign Out', 'Are you sure you want to sign out?', async () => {
+    try {
+      if (State.lobbiesUnsub) State.lobbiesUnsub();
+      if (State.scrimsUnsub) State.scrimsUnsub();
+      if (State.clipsUnsub) State.clipsUnsub();
+      if (State.leaksUnsub) State.leaksUnsub();
+      if (State.clansUnsub) State.clansUnsub();
+      if (State.vaultsUnsub) State.vaultsUnsub();
+      if (State.camosUnsub) State.camosUnsub();
+      if (State.onlineUnsub) State.onlineUnsub();
+      await signOut(auth);
+      location.reload();
+    } catch (e) {
+      toast('Sign out failed', 'error');
+    }
+  }, 'Sign Out', true);
+}
+
+// Ensure user profile exists
+async function ensureUserProfile(firebaseUser) {
+  const userRef = doc(db, 'users', firebaseUser.uid);
+  const snap = await getDoc(userRef);
+  if (!snap.exists()) {
+    // Create default profile
+    const defaultProfile = {
+      uid: firebaseUser.uid,
+      ign: firebaseUser.displayName || 'Panda Player',
+      rank: 'Rookie',
+      region: 'Africa',
+      avatar: firebaseUser.photoURL || '',
+      bio: '',
+      favGun: '',
+      isPro: false,
+      proExpiry: null,
+      referralCode: generateReferralCode(firebaseUser.uid),
+      invites: 0,
+      createdAt: serverTimestamp(),
+      lastSeen: serverTimestamp(),
+      onboardingDone: false
+    };
+    await setDoc(userRef, defaultProfile);
+    return { ...defaultProfile, isNew: true };
+  }
+  return { ...snap.data(), isNew: false };
+}
+
+// Update last seen (online tracking)
+async function updateLastSeen() {
+  if (!State.user) return;
+  try {
+    await updateDoc(doc(db, 'users', State.user.uid), {
+      lastSeen: serverTimestamp()
+    });
+  } catch (e) { /* silent */ }
+}
+
+// Main auth state handler
+onAuthStateChanged(auth, async (user) => {
+  document.getElementById('splash').classList.add('hidden');
+
+  if (user) {
+    State.user = user;
+    try {
+      const profile = await ensureUserProfile(user);
+      State.profile = profile;
+
+      // If profile has no IGN or onboarding not done → show onboarding
+      if (!profile.ign || !profile.onboardingDone) {
+        showOnboarding();
+      } else {
+        showMainApp();
+      }
+    } catch (e) {
+      console.error('Profile load error:', e);
+      toast('Failed to load profile', 'error');
+      showAuthGate();
+    }
+  } else {
+    State.user = null;
+    State.profile = null;
+    showAuthGate();
+  }
+});
+
+// ============================================
+// SCREEN: AUTH GATE
+// ============================================
+function showAuthGate() {
+  document.getElementById('auth-gate').classList.remove('hidden');
+  document.getElementById('auth-gate').classList.add('flex');
+  document.getElementById('onboarding').classList.add('hidden');
+  document.getElementById('main-app').classList.add('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+// ============================================
+// SCREEN: ONBOARDING
+// ============================================
+let onboardingStep = 0;
+const onboardingData = {
+  rank: 'Rookie',
+  region: 'Africa'
+};
+
+function showOnboarding() {
+  document.getElementById('auth-gate').classList.add('hidden');
+  document.getElementById('main-app').classList.add('hidden');
+  document.getElementById('onboarding').classList.remove('hidden');
+  document.getElementById('onboarding').classList.add('flex');
+  onboardingStep = 0;
+  renderOnboarding();
+}
+
+const ONBOARDING_SLIDES = [
+  {
+    icon: 'gamepad-2',
+    emoji: '🎮',
+    title: 'Find Your Squad',
+    desc: 'Real-time LFG board. Filter by rank, mode, region. Join lobbies with one tap via Jitsi voice.',
+    color: 'from-primary/20 to-transparent'
+  },
+  {
+    icon: 'flask-conical',
+    emoji: '🔬',
+    title: 'Track Every Camo',
+    desc: 'All 80+ guns. Sand → Damascus. Track progress, upload proofs, export your grind as an image.',
+    color: 'from-gold/20 to-transparent'
+  },
+  {
+    icon: 'swords',
+    emoji: '⚔️',
+    title: 'Build God Gunsmiths',
+    desc: 'Share and discover the meta. Copy codes, browse attachments, like the best builds.',
+    color: 'from-primary/20 to-transparent'
+  }
+];
+
+function renderOnboarding() {
+  const container = document.getElementById('onboarding-content');
+
+  if (onboardingStep < ONBOARDING_SLIDES.length) {
+    const slide = ONBOARDING_SLIDES[onboardingStep];
+    container.innerHTML = `
+      <div class="flex-1 flex flex-col justify-center px-6 fade-in" key="${onboardingStep}">
+        <div class="relative mb-12">
+          <div class="absolute inset-0 bg-gradient-to-br ${slide.color} rounded-full blur-3xl"></div>
+          <div class="relative w-32 h-32 mx-auto rounded-full bg-card border border-border flex items-center justify-center">
+            <span class="text-6xl">${slide.emoji}</span>
+          </div>
+        </div>
+        <h2 class="text-3xl font-black text-center mb-4">${slide.title}</h2>
+        <p class="text-gray-400 text-center text-sm leading-relaxed max-w-xs mx-auto">${slide.desc}</p>
+      </div>
+      <div class="px-6 pb-10">
+        <div class="flex justify-center gap-2 mb-6">
+          ${ONBOARDING_SLIDES.map((_, i) => `
+            <div class="h-1.5 rounded-full transition-all ${i === onboardingStep ? 'w-8 bg-primary' : 'w-1.5 bg-gray-700'}"></div>
+          `).join('')}
+        </div>
+        <button id="onb-next" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold text-base glow-primary">
+          ${onboardingStep === ONBOARDING_SLIDES.length - 1 ? 'Get Started' : 'Next'}
+        </button>
+        ${onboardingStep > 0 ? `
+          <button id="onb-back" class="w-full py-3 text-gray-500 text-sm mt-2">Back</button>
+        ` : `
+          <button id="onb-skip" class="w-full py-3 text-gray-500 text-sm mt-2">Skip intro</button>
+        `}
+      </div>
+    `;
+    document.getElementById('onb-next').onclick = () => {
+      onboardingStep++;
+      renderOnboarding();
+    };
+    const backBtn = document.getElementById('onb-back');
+    if (backBtn) backBtn.onclick = () => { onboardingStep--; renderOnboarding(); };
+    const skipBtn = document.getElementById('onb-skip');
+    if (skipBtn) skipBtn.onclick = () => { onboardingStep = ONBOARDING_SLIDES.length; renderOnboarding(); };
+  } else {
+    // Rank + Region selection
+    container.innerHTML = `
+      <div class="flex-1 flex flex-col justify-center px-6 fade-in">
+        <div class="text-5xl text-center mb-6">🐼</div>
+        <h2 class="text-2xl font-black text-center mb-2">Almost there!</h2>
+        <p class="text-gray-400 text-center text-sm mb-8">Tell us about your playstyle</p>
+
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Your Rank</label>
+        <select id="onb-rank" class="mb-5">
+          ${RANKS.map(r => `<option value="${r}" ${onboardingData.rank === r ? 'selected' : ''}>${r}</option>`).join('')}
+        </select>
+
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Your Region</label>
+        <select id="onb-region" class="mb-5">
+          ${REGIONS.map(r => `<option value="${r}" ${onboardingData.region === r ? 'selected' : ''}>${r}</option>`).join('')}
+        </select>
+
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">In-Game Name (IGN)</label>
+        <input id="onb-ign" type="text" placeholder="e.g. ShadowPanda" maxlength="24" value="${esc(State.profile?.ign || State.user?.displayName || '')}" class="mb-8" />
+      </div>
+      <div class="px-6 pb-10">
+        <button id="onb-finish" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold text-base glow-primary">
+          Start Dominating
+        </button>
+      </div>
+    `;
+    document.getElementById('onb-finish').onclick = async () => {
+      const ign = document.getElementById('onb-ign').value.trim();
+      const rank = document.getElementById('onb-rank').value;
+      const region = document.getElementById('onb-region').value;
+      if (!ign || ign.length < 2) {
+        toast('IGN must be at least 2 characters', 'error');
+        return;
+      }
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          ign, rank, region, onboardingDone: true
+        });
+        State.profile = { ...State.profile, ign, rank, region, onboardingDone: true };
+        toast('Welcome to CODMPanda! 🐼', 'success');
+        showMainApp();
+      } catch (e) {
+        console.error(e);
+        toast('Failed to save profile', 'error');
+      }
+    };
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+// ============================================
+// SCREEN: MAIN APP + TAB ROUTER
+// ============================================
+function showMainApp() {
+  document.getElementById('auth-gate').classList.add('hidden');
+  document.getElementById('onboarding').classList.add('hidden');
+  document.getElementById('main-app').classList.remove('hidden');
+
+  // Update top bar subtitle
+  const subtitle = document.getElementById('top-bar-subtitle');
+  if (subtitle && State.profile) {
+    subtitle.textContent = `${State.profile.rank} • ${State.profile.region}`;
+  }
+
+  // Wire bottom nav
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = () => switchTab(btn.dataset.tab);
+  });
+
+  // Wire notifications
+  const notifBtn = document.getElementById('btn-notifications');
+  if (notifBtn) notifBtn.onclick = showNotifications;
+
+  // Start online tracking
+  updateLastSeen();
+  setInterval(updateLastSeen, 60000);
+
+  // Track online users
+  startOnlineCounter();
+
+  // Load initial tab
+  switchTab('play');
+
+  // Show ad banner for free users
+  if (!State.profile?.isPro) {
+    setTimeout(showAd, 2000);
+  }
+
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function switchTab(tab) {
+  State.currentTab = tab;
+
+  // Update nav UI
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const isActive = btn.dataset.tab === tab;
+    btn.classList.toggle('tab-active', isActive);
+    btn.classList.toggle('text-gray-500', !isActive);
+  });
+
+  // Kill previous listeners
+  if (State.lobbiesUnsub && tab !== 'play') { State.lobbiesUnsub(); State.lobbiesUnsub = null; }
+  if (State.vaultsUnsub && tab !== 'lab') { State.vaultsUnsub(); State.vaultsUnsub = null; }
+  if (State.camosUnsub && tab !== 'lab') { State.camosUnsub(); State.camosUnsub = null; }
+  if (State.clansUnsub && tab !== 'squad') { State.clansUnsub(); State.clansUnsub = null; }
+  if (State.scrimsUnsub && tab !== 'squad') { State.scrimsUnsub(); State.scrimsUnsub = null; }
+  if (State.clipsUnsub && tab !== 'squad') { State.clipsUnsub(); State.clipsUnsub = null; }
+  if (State.leaksUnsub && tab !== 'intel') { State.leaksUnsub(); State.leaksUnsub = null; }
+
+  // Render tab
+  const content = document.getElementById('content');
+  content.innerHTML = '';
+  content.scrollTop = 0;
+  window.scrollTo(0, 0);
+
+  switch (tab) {
+    case 'play': renderPlayTab(); break;
+    case 'lab': renderLabTab(); break;
+    case 'squad': renderSquadTab(); break;
+    case 'intel': renderIntelTab(); break;
+    case 'you': renderYouTab(); break;
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// ============================================
+// ONLINE COUNTER (mock for now — replace with Realtime DB or presence)
+// ============================================
+function startOnlineCounter() {
+  const el = document.getElementById('online-count');
+  const num = document.getElementById('online-num');
+  if (!el || !num) return;
+  el.classList.remove('hidden');
+  el.classList.add('flex');
+  // Mock: random between 20-200
+  const base = 20 + Math.floor(Math.random() * 30);
+  num.textContent = base;
+  setInterval(() => {
+    const current = parseInt(num.textContent);
+    const delta = Math.floor(Math.random() * 5) - 2;
+    num.textContent = Math.max(5, current + delta);
+  }, 8000);
+}
+
+// ============================================
+// NOTIFICATIONS PANEL
+// ============================================
+function showNotifications() {
+  openSheet(`
+    <div class="space-y-3">
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-card border border-border">
+        <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+          <i data-lucide="users" class="w-5 h-5 text-primary"></i>
+        </div>
+        <div class="flex-1">
+          <div class="text-sm font-semibold">LFG Match</div>
+          <div class="text-xs text-gray-500">Get notified when someone posts a lobby matching your filters</div>
+        </div>
+        <div class="toggle ${State.profile?.notifLfg ? 'on' : ''}" onclick="toggleNotif('notifLfg', this)"></div>
+      </div>
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-card border border-border">
+        <div class="w-10 h-10 rounded-full bg-gold/20 flex items-center justify-center">
+          <i data-lucide="zap" class="w-5 h-5 text-gold"></i>
+        </div>
+        <div class="flex-1">
+          <div class="text-sm font-semibold">New Leaks</div>
+          <div class="text-xs text-gray-500">Be first to know when new intel drops</div>
+        </div>
+        <div class="toggle ${State.profile?.notifLeaks ? 'on' : ''}" onclick="toggleNotif('notifLeaks', this)"></div>
+      </div>
+    </div>
+  `, 'Notifications');
+}
+
+window.toggleNotif = async function(key, el) {
+  el.classList.toggle('on');
+  const val = el.classList.contains('on');
+  try {
+    await updateDoc(doc(db, 'users', State.user.uid), { [key]: val });
+    State.profile[key] = val;
+  } catch (e) {
+    toast('Failed to update', 'error');
+    el.classList.toggle('on');
+  }
+};
+
+window.switchTab = switchTab;
+window.handleSignIn = handleSignIn;
+window.handleSignOut = handleSignOut;
+</script>
+
+<!-- END OF PART 3A -->
+<script type="module">
+// ============================================
+// CODMPanda — Part 3B: LAB Tab (Vault + Camo shell)
+// ============================================
+
+// ============================================
+// TAB 2: LAB (Vault + Camo)
+// ============================================
+let labSubTab = 'vault';
+
+function renderLabTab() {
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <div class="mb-4">
+        <h1 class="text-2xl font-black">The Lab</h1>
+        <p class="text-xs text-gray-500">Gunsmiths, sensitivity, camo tracker</p>
+      </div>
+
+      <div class="flex gap-2 mb-4">
+        <button id="sub-vault" class="sub-tab flex-1 py-2.5 rounded-xl font-bold text-sm ${labSubTab === 'vault' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}">Vault</button>
+        <button id="sub-camo" class="sub-tab flex-1 py-2.5 rounded-xl font-bold text-sm ${labSubTab === 'camo' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}">Camo Tracker</button>
+      </div>
+
+      <div id="lab-body"></div>
+    </div>
+  `;
+
+  document.getElementById('sub-vault').onclick = () => { labSubTab = 'vault'; renderLabTab(); };
+  document.getElementById('sub-camo').onclick = () => { labSubTab = 'camo'; renderLabTab(); };
+
+  if (labSubTab === 'vault') renderVaultSub();
+  else renderCamoSub();
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// ---------- VAULT ----------
+let vaultTypeFilter = 'gunsmith';
+
+function renderVaultSub() {
+  const body = document.getElementById('lab-body');
+  body.innerHTML = `
+    <div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1">
+      <button class="chip vault-type ${vaultTypeFilter === 'gunsmith' ? 'active' : ''}" data-type="gunsmith">Gunsmith</button>
+      <button class="chip vault-type ${vaultTypeFilter === 'sens' ? 'active' : ''}" data-type="sens">Sensitivity</button>
+      <button class="chip vault-type ${vaultTypeFilter === 'hud' ? 'active' : ''}" data-type="hud">HUD</button>
+      <button id="add-vault-btn" class="chip active ml-auto" style="background:#FF6B00;border-color:#FF6B00;color:#fff">+ Add</button>
+    </div>
+
+    <div class="relative mb-4">
+      <i data-lucide="search" class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+      <input id="vault-search" type="text" placeholder="Search by gun or code..." class="pl-10" />
+    </div>
+
+    <div id="vault-feed" class="grid grid-cols-2 gap-3">
+      ${skeletonCard().repeat(4)}
+    </div>
+  `;
+
+  document.getElementById('add-vault-btn').onclick = openAddVaultSheet;
+  document.getElementById('vault-search').oninput = (e) => {
+    State.filters.vaults.search = e.target.value.toLowerCase();
+    renderVaults();
+  };
+
+  document.querySelectorAll('.vault-type').forEach(btn => {
+    btn.onclick = () => {
+      vaultTypeFilter = btn.dataset.type;
+      State.filters.vaults.type = vaultTypeFilter;
+      renderVaultSub();
+    };
+  });
+
+  loadVaults();
+  if (window.lucide) lucide.createIcons();
+}
+
+function skeletonCard() {
+  return `
+    <div class="bg-card border border-border rounded-2xl p-3">
+      <div class="skeleton h-24 w-full rounded-xl mb-3"></div>
+      <div class="skeleton h-3 w-20 rounded mb-2"></div>
+      <div class="skeleton h-3 w-16 rounded"></div>
+    </div>
+  `;
+}
+
+function loadVaults() {
+  const q = query(
+    collection(db, 'vaults'),
+    where('type', '==', vaultTypeFilter),
+    orderBy('createdAt', 'desc'),
+    limit(60)
+  );
+
+  State.vaultsUnsub = onSnapshot(q, (snap) => {
+    const vaults = [];
+    snap.forEach(doc => vaults.push({ id: doc.id, ...doc.data() }));
+    State.cache.vaults = vaults;
+    renderVaults();
+  }, (err) => {
+    console.error('Vaults error:', err);
+    const q2 = query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(60));
+    State.vaultsUnsub = onSnapshot(q2, (snap) => {
+      const vaults = [];
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (d.type === vaultTypeFilter) vaults.push({ id: doc.id, ...d });
+      });
+      State.cache.vaults = vaults;
+      renderVaults();
+    });
+  });
+}
+
+function renderVaults() {
+  const feed = document.getElementById('vault-feed');
+  if (!feed) return;
+  let vaults = State.cache.vaults;
+  if (State.filters.vaults.search) {
+    const s = State.filters.vaults.search;
+    vaults = vaults.filter(v =>
+      (v.gunName || '').toLowerCase().includes(s) ||
+      (v.gunsmithCode || '').toLowerCase().includes(s)
+    );
+  }
+
+  if (vaults.length === 0) {
+    feed.className = '';
+    feed.innerHTML = emptyState('package-open', 'No vaults yet', 'Share your first ' + vaultTypeFilter + ' build', 'Add ' + vaultTypeFilter, openAddVaultSheet);
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  feed.className = 'grid grid-cols-2 gap-3';
+  feed.innerHTML = vaults.map(v => `
+    <div class="bg-card border border-border rounded-2xl p-3 fade-in">
+      ${v.imageUrl ? `<img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" />` :
+        `<div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+          <i data-lucide="crosshair" class="w-8 h-8 text-primary/60"></i>
+        </div>`
+      }
+      <div class="text-xs font-bold text-gray-300 truncate">${esc(v.gunName || 'Unknown')}</div>
+      <div class="text-[10px] text-gray-500 mb-2">${esc(v.type || 'build')}</div>
+
+      ${v.gunsmithCode ? `
+        <button class="copy-code-btn w-full py-2 rounded-lg bg-primary/15 border border-primary/30 text-primary text-[11px] font-bold flex items-center justify-center gap-1 mb-2" data-code="${esc(v.gunsmithCode)}">
+          <i data-lucide="copy" class="w-3 h-3"></i> ${esc(v.gunsmithCode)}
+        </button>
+      ` : ''}
+
+      <div class="flex items-center justify-between">
+        <button class="like-btn flex items-center gap-1 text-[11px] text-gray-400" data-id="${v.id}">
+          <i data-lucide="heart" class="w-3.5 h-3.5"></i> ${v.likes || 0}
+        </button>
+        <button class="share-vault-btn text-gray-500" data-id="${v.id}">
+          <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  feed.querySelectorAll('.copy-code-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      copyText(btn.dataset.code, 'Code copied!');
+    };
+  });
+  feed.querySelectorAll('.like-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'vaults', btn.dataset.id), { likes: increment(1) });
+        toast('❤️ Liked!', 'success', 1500);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-vault-btn').forEach(btn => {
+    btn.onclick = () => {
+      const url = `${location.origin}/?vault=${btn.dataset.id}`;
+      shareContent('CODMPanda Vault', 'Check out this build!', url);
+    };
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function openAddVaultSheet() {
+  if (!State.profile?.isPro) {
+    checkVaultLimit().then(canAdd => {
+      if (!canAdd) {
+        showProPaywall('You\'ve reached the free limit of 3 vaults. Upgrade to Pro for unlimited.');
+        return;
+      }
+      actuallyOpenAddVault();
+    });
+    return;
+  }
+  actuallyOpenAddVault();
+}
+
+async function checkVaultLimit() {
+  try {
+    const snap = await getDocs(query(collection(db, 'vaults'), where('uid', '==', State.user.uid)));
+    return snap.size < 3;
+  } catch (e) {
+    return true;
+  }
+}
+
+function actuallyOpenAddVault() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Type</label>
+        <select id="av-type">
+          <option value="gunsmith">Gunsmith</option>
+          <option value="sens">Sensitivity</option>
+          <option value="hud">HUD</option>
+        </select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gun</label>
+        <select id="av-gun">
+          <option value="">Select a gun...</option>
+          ${Object.entries(CODM_GUNS).map(([cat, guns]) => `
+            <optgroup label="${cat}">
+              ${guns.map(g => `<option value="${g}">${g}</option>`).join('')}
+            </optgroup>
+          `).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gunsmith Code</label>
+        <input id="av-code" type="text" placeholder="e.g. ABC123XYZ" maxlength="20" />
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Attachments (one per line)</label>
+        <textarea id="av-attach" rows="4" placeholder="Muzzle: Muzzle Brake&#10;Barrel: RTC Light Barrel&#10;Optic: Red Dot"></textarea>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Screenshot (optional)</label>
+        <input id="av-image" type="file" accept="image/*" class="text-xs" />
+      </div>
+      <button id="av-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+        Save to Vault
+      </button>
+    </div>
+  `, 'Add to Vault');
+
+  document.getElementById('av-submit').onclick = async () => {
+    const type = document.getElementById('av-type').value;
+    const gunName = document.getElementById('av-gun').value;
+    const gunsmithCode = document.getElementById('av-code').value.trim();
+    const attachRaw = document.getElementById('av-attach').value.trim();
+    const fileInput = document.getElementById('av-image');
+
+    if (!gunName) { toast('Select a gun', 'error'); return; }
+    if (!gunsmithCode && !attachRaw) { toast('Add a code or attachments', 'error'); return; }
+
+    const btn = document.getElementById('av-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      let imageUrl = '';
+      if (fileInput.files && fileInput.files[0]) {
+        imageUrl = await compressImage(fileInput.files[0], 700, 0.6);
+      }
+
+      const attachments = {};
+      attachRaw.split('\n').forEach(line => {
+        const [k, ...v] = line.split(':');
+        if (k && v.length) attachments[k.trim()] = v.join(':').trim();
+      });
+
+      await addDoc(collection(db, 'vaults'), {
+        uid: State.user.uid,
+        ign: State.profile.ign,
+        gunName, gunsmithCode, type,
+        attachments,
+        imageUrl,
+        likes: 0,
+        createdAt: serverTimestamp()
+      });
+
+      toast('Added to vault!', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Save to Vault';
+    }
+  };
+}
+
+window.renderPlayTab = renderPlayTab;
+window.renderLabTab = renderLabTab;
+</script>
+
+<!-- END OF PART 3B -->
+<script type="module">
+// ============================================
+// CODMPanda — Part 3C: Camo Tracker
+// ============================================
+
+let camoCategoryFilter = 'all';
+let expandedGun = null;
+
+function renderCamoSub() {
+  const body = document.getElementById('lab-body');
+  const categories = ['all', ...Object.keys(CODM_GUNS)];
+
+  body.innerHTML = `
+    <div class="bg-card border border-border rounded-2xl p-4 mb-4 flex items-center gap-4">
+      <div class="relative w-20 h-20 flex-shrink-0">
+        <svg class="ring-progress w-20 h-20" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="42" stroke="#222" stroke-width="8" fill="none" />
+          <circle id="camo-ring" cx="50" cy="50" r="42" stroke="url(#camoGradient)" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264" />
+          <defs>
+            <linearGradient id="camoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#FF6B00"/>
+              <stop offset="100%" stop-color="#FFD700"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div class="absolute inset-0 flex items-center justify-center">
+          <span id="camo-pct" class="text-lg font-black">0%</span>
+        </div>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-bold">Total Completion</div>
+        <div id="camo-counts" class="text-xs text-gray-500 mt-1">Loading...</div>
+        <button id="export-camo-btn" class="btn-press mt-2 text-[11px] font-bold text-primary flex items-center gap-1">
+          <i data-lucide="download" class="w-3 h-3"></i> Export progress
+        </button>
+      </div>
+    </div>
+
+    <div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1">
+      ${categories.map(c => `
+        <button class="chip camo-cat ${camoCategoryFilter === c ? 'active' : ''}" data-cat="${c}">${c === 'all' ? 'All' : c}</button>
+      `).join('')}
+    </div>
+
+    <div id="camo-list" class="space-y-2"></div>
+  `;
+
+  document.querySelectorAll('.camo-cat').forEach(btn => {
+    btn.onclick = () => {
+      camoCategoryFilter = btn.dataset.cat;
+      renderCamoSub();
+    };
+  });
+
+  document.getElementById('export-camo-btn').onclick = exportCamoProgress;
+
+  loadCamos();
+  if (window.lucide) lucide.createIcons();
+}
+
+function loadCamos() {
+  State.camosUnsub = onSnapshot(doc(db, 'camos', State.user.uid), (snap) => {
+    State.cache.camos = snap.exists() ? snap.data() : {};
+    renderCamoList();
+  }, (err) => {
+    console.error('Camos error:', err);
+    State.cache.camos = {};
+    renderCamoList();
+  });
+}
+
+function renderCamoList() {
+  const list = document.getElementById('camo-list');
+  if (!list) return;
+
+  const camoData = State.cache.camos || {};
+
+  let totalChecked = 0;
+  let totalPossible = 0;
+  const gunsToShow = [];
+  Object.entries(CODM_GUNS).forEach(([cat, guns]) => {
+    if (camoCategoryFilter === 'all' || camoCategoryFilter === cat) {
+      guns.forEach(g => gunsToShow.push({ gun: g, cat }));
+    }
+  });
+  gunsToShow.forEach(({ gun }) => {
+    const g = camoData[gun] || {};
+    CAMO_TYPES.forEach(c => {
+      totalPossible++;
+      if (g[c.key]) totalChecked++;
+    });
+  });
+
+  const pct = totalPossible > 0 ? Math.round((totalChecked / totalPossible) * 100) : 0;
+  const isPro = State.profile?.isPro;
+  const freeLimit = 5;
+
+  const ring = document.getElementById('camo-ring');
+  const pctEl = document.getElementById('camo-pct');
+  const countsEl = document.getElementById('camo-counts');
+  if (ring) {
+    const dash = 264 - (264 * pct / 100);
+    setTimeout(() => { ring.style.strokeDashoffset = dash; }, 100);
+  }
+  if (pctEl) pctEl.textContent = pct + '%';
+  if (countsEl) {
+    const goldCount = gunsToShow.filter(({ gun }) => (camoData[gun]?.gold)).length;
+    countsEl.innerHTML = `${totalChecked}/${totalPossible} camos · ${goldCount} gold 🔥`;
+  }
+
+  list.innerHTML = gunsToShow.map(({ gun }, idx) => {
+    const g = camoData[gun] || {};
+    const checkedCount = CAMO_TYPES.filter(c => g[c.key]).length;
+    const gunPct = Math.round((checkedCount / CAMO_TYPES.length) * 100);
+    const isExpanded = expandedGun === gun;
+    const isBlurred = !isPro && idx >= freeLimit;
+
+    return `
+      <div class="bg-card border border-border rounded-xl overflow-hidden ${isBlurred ? 'blurred' : ''}">
+        <button class="gun-row w-full p-3 flex items-center gap-3 text-left" data-gun="${esc(gun)}">
+          <div class="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center flex-shrink-0">
+            <i data-lucide="crosshair" class="w-4 h-4 text-primary"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-bold truncate">${esc(gun)}</div>
+            <div class="flex items-center gap-2 mt-1">
+              <div class="progress-bar flex-1 max-w-[100px]">
+                <div class="progress-fill" style="width:${gunPct}%"></div>
+              </div>
+              <span class="text-[10px] font-bold text-gray-400">${gunPct}%</span>
+            </div>
+          </div>
+          <i data-lucide="chevron-down" class="w-4 h-4 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}"></i>
+        </button>
+        ${isExpanded ? `
+          <div class="px-3 pb-3 grid grid-cols-2 gap-2 border-t border-border pt-3">
+            ${CAMO_TYPES.map(c => `
+              <label class="camo-check flex items-center gap-2 p-2 rounded-lg bg-cardAlt border border-border cursor-pointer">
+                <input type="checkbox" data-gun="${esc(gun)}" data-camo="${c.key}" ${g[c.key] ? 'checked' : ''} />
+                <span class="text-xs font-semibold" style="color:${c.color}">${c.label}</span>
+              </label>
+            `).join('')}
+            <button class="proof-upload col-span-2 mt-1 py-2 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs font-bold" data-gun="${esc(gun)}">
+              ${g.proofUrl ? '✓ Proof uploaded' : '+ Upload proof'}
+            </button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+
+  // Wire gun expand
+  list.querySelectorAll('.gun-row').forEach(btn => {
+    btn.onclick = () => {
+      expandedGun = expandedGun === btn.dataset.gun ? null : btn.dataset.gun;
+      renderCamoList();
+    };
+  });
+
+  // Wire checkboxes
+  list.querySelectorAll('.camo-check input').forEach(cb => {
+    cb.onchange = async () => {
+      const gun = cb.dataset.gun;
+      const camo = cb.dataset.camo;
+      try {
+        const ref = doc(db, 'camos', State.user.uid);
+        const snap = await getDoc(ref);
+        const current = snap.exists() ? snap.data() : {};
+        const gunData = current[gun] || {};
+        gunData[camo] = cb.checked;
+        current[gun] = gunData;
+        await setDoc(ref, current);
+      } catch (e) {
+        console.error(e);
+        toast('Failed to save', 'error');
+        cb.checked = !cb.checked;
+      }
+    };
+  });
+
+  // Wire proof upload
+  list.querySelectorAll('.proof-upload').forEach(btn => {
+    btn.onclick = () => uploadCamoProof(btn.dataset.gun);
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function uploadCamoProof(gun) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async () => {
+    if (!input.files || !input.files[0]) return;
+    try {
+      toast('Compressing image...', 'info', 1500);
+      const img = await compressImage(input.files[0], 700, 0.6);
+      const ref = doc(db, 'camos', State.user.uid);
+      const snap = await getDoc(ref);
+      const current = snap.exists() ? snap.data() : {};
+      const gunData = current[gun] || {};
+      gunData.proofUrl = img;
+      current[gun] = gunData;
+      await setDoc(ref, current);
+      toast('Proof uploaded!', 'success');
+    } catch (e) {
+      console.error(e);
+      toast('Upload failed', 'error');
+    }
+  };
+  input.click();
+}
+
+function exportCamoProgress() {
+  const camoData = State.cache.camos || {};
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 800;
+  canvas.height = 1000;
+
+  // Background
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, 0, 800, 1000);
+
+  // Header
+  ctx.fillStyle = '#FF6B00';
+  ctx.font = 'bold 48px Inter, sans-serif';
+  ctx.fillText('🐼 CODMPanda', 40, 80);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 32px Inter, sans-serif';
+  ctx.fillText('Camo Progress', 40, 130);
+
+  ctx.fillStyle = '#888';
+  ctx.font = '18px Inter, sans-serif';
+  ctx.fillText(`${State.profile.ign} · ${new Date().toLocaleDateString()}`, 40, 165);
+
+  // Stats
+  let y = 230;
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 24px Inter, sans-serif';
+  ctx.fillText('GOLD CAMOS', 40, y);
+  y += 35;
+
+  const goldGuns = Object.entries(camoData).filter(([_, g]) => g.gold);
+  ctx.fillStyle = '#fff';
+  ctx.font = '20px Inter, sans-serif';
+  if (goldGuns.length === 0) {
+    ctx.fillStyle = '#555';
+    ctx.fillText('None yet — start the grind!', 40, y);
+  } else {
+    goldGuns.slice(0, 20).forEach(([gun]) => {
+      ctx.fillStyle = '#fff';
+      ctx.fillText('★ ' + gun, 40, y);
+      y += 28;
+    });
+  }
+
+  // Footer
+  ctx.fillStyle = '#555';
+  ctx.font = '14px Inter, sans-serif';
+  ctx.fillText('codmpanda.pages.dev', 40, 970);
+
+  // Convert to image
+  canvas.toBlob(async (blob) => {
+    const file = new File([blob], 'codmpanda-camos.png', { type: 'image/png' });
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: 'My CODMPanda Camo Progress',
+          text: 'Check out my camo grind! 🐼'
+        });
+      } catch (e) { /* cancelled */ }
+    } else {
+      // Fallback: download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'codmpanda-camos.png';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Downloaded!', 'success');
+    }
+  }, 'image/png');
+}
+
+window.renderCamoSub = renderCamoSub;
+</script>
+
+<!-- END OF PART 3C -->
+<script type="module">
+// ============================================
+// CODMPanda — Part 3D: SQUAD Tab (Clans + Scrims + Clips)
+// ============================================
+
+let squadSubTab = 'clans';
+
+function renderSquadTab() {
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <div class="mb-4">
+        <h1 class="text-2xl font-black">Squad</h1>
+        <p class="text-xs text-gray-500">Clans, scrims, and clips</p>
+      </div>
+
+      <div class="flex gap-2 mb-4">
+        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'clans' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="clans">Clans</button>
+        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'scrims' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="scrims">Scrims</button>
+        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'clips' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="clips">Clips</button>
+      </div>
+
+      <div id="squad-body"></div>
+    </div>
+  `;
+
+  document.querySelectorAll('.squad-sub').forEach(btn => {
+    btn.onclick = () => {
+      squadSubTab = btn.dataset.sub;
+      renderSquadTab();
+    };
+  });
+
+  if (squadSubTab === 'clans') renderClansSub();
+  else if (squadSubTab === 'scrims') renderScrimsSub();
+  else renderClipsSub();
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// ---------- CLANS ----------
+function renderClansSub() {
+  const body = document.getElementById('squad-body');
+  body.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <div class="text-xs text-gray-500">Find your tribe</div>
+      <button id="create-clan-btn" class="btn-press px-3 py-2 rounded-xl bg-primary text-xs font-bold flex items-center gap-1">
+        <i data-lucide="plus" class="w-3 h-3"></i> Create
+      </button>
+    </div>
+    <div id="clans-feed" class="space-y-3">
+      <div class="skeleton h-24 rounded-2xl"></div>
+      <div class="skeleton h-24 rounded-2xl"></div>
+    </div>
+  `;
+
+  document.getElementById('create-clan-btn').onclick = openCreateClanSheet;
+  loadClans();
+}
+
+function loadClans() {
+  const q = query(collection(db, 'clans'), orderBy('createdAt', 'desc'), limit(50));
+  State.clansUnsub = onSnapshot(q, (snap) => {
+    const clans = [];
+    snap.forEach(doc => clans.push({ id: doc.id, ...doc.data() }));
+    State.cache.clans = clans;
+    renderClans();
+  }, (err) => {
+    console.error('Clans error:', err);
+    document.getElementById('clans-feed').innerHTML = emptyState('shield', 'No clans yet', 'Be the first to create one', 'Create Clan', openCreateClanSheet);
+    if (window.lucide) lucide.createIcons();
+  });
+}
+
+function renderClans() {
+  const feed = document.getElementById('clans-feed');
+  if (!feed) return;
+  if (State.cache.clans.length === 0) {
+    feed.innerHTML = emptyState('shield', 'No clans yet', 'Be the first to create one', 'Create Clan', openCreateClanSheet);
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  feed.innerHTML = State.cache.clans.map(c => {
+    const memberCount = (c.members || []).length;
+    const isMember = (c.members || []).includes(State.user.uid);
+    const isOwner = c.ownerUid === State.user.uid;
+    return `
+      <div class="bg-card border border-border rounded-2xl p-4 fade-in">
+        <div class="flex items-start gap-3 mb-3">
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-xl flex-shrink-0">
+            ${c.logoUrl ? `<img src="${esc(c.logoUrl)}" class="w-full h-full rounded-2xl object-cover" />` : esc((c.name || '?')[0])}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-bold text-sm truncate">${esc(c.name)}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">Lv ${c.level || 1}</span>
+            </div>
+            <div class="text-[11px] text-gray-500 mt-0.5">
+              ${memberCount}/50 members · ${esc(c.region || 'Global')} · KD ${c.kdReq || 'Any'}+
+            </div>
+          </div>
+        </div>
+        ${(c.tags && c.tags.length) ? `
+          <div class="flex flex-wrap gap-1.5 mb-3">
+            ${c.tags.map(t => `<span class="text-[10px] px-2 py-1 rounded-full bg-cardAlt border border-border font-semibold text-gray-300">${esc(t)}</span>`).join('')}
+          </div>
+        ` : ''}
+        <div class="flex gap-2">
+          ${isOwner ? `
+            <button class="flex-1 py-2.5 rounded-xl bg-gold/15 border border-gold/30 text-gold text-xs font-bold">You own this</button>
+          ` : isMember ? `
+            <button class="leave-clan-btn flex-1 py-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs font-bold" data-id="${c.id}">Leave Clan</button>
+          ` : `
+            <button class="apply-clan-btn flex-1 py-2.5 rounded-xl bg-primary text-xs font-bold" data-id="${c.id}">Apply to Join</button>
+          `}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  feed.querySelectorAll('.apply-clan-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const clan = State.cache.clans.find(c => c.id === btn.dataset.id);
+      if (!clan) return;
+      if ((clan.members || []).length >= 50) { toast('Clan is full', 'error'); return; }
+      try {
+        await updateDoc(doc(db, 'clans', clan.id), {
+          members: arrayUnion(State.user.uid)
+        });
+        toast('Joined ' + clan.name + '!', 'success');
+      } catch (e) { toast('Failed to join', 'error'); }
+    };
+  });
+
+  feed.querySelectorAll('.leave-clan-btn').forEach(btn => {
+    btn.onclick = async () => {
+      confirmDialog('Leave Clan', 'Are you sure you want to leave?', async () => {
+        try {
+          await updateDoc(doc(db, 'clans', btn.dataset.id), {
+            members: arrayRemove(State.user.uid)
+          });
+          toast('Left clan', 'success');
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Leave', true);
+    };
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function openCreateClanSheet() {
+  if (!State.profile?.isPro) {
+    showProPaywall('Creating clans is a Pro feature. Upgrade to lead your squad!');
+    return;
+  }
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Clan Name</label>
+        <input id="cc-name" type="text" placeholder="e.g. Shadow Pandas" maxlength="30" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Level</label>
+          <input id="cc-level" type="number" min="1" max="100" value="1" />
+        </div>
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">KD Req</label>
+          <input id="cc-kd" type="number" step="0.1" min="0" placeholder="e.g. 1.5" />
+        </div>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Region</label>
+        <select id="cc-region">${REGIONS.map(r => `<option ${State.profile?.region === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Tags (comma separated)</label>
+        <input id="cc-tags" type="text" placeholder="e.g. Competitive,BR Mains,Active" />
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Clan Logo (optional)</label>
+        <input id="cc-logo" type="file" accept="image/*" class="text-xs" />
+      </div>
+      <button id="cc-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+        Create Clan
+      </button>
+    </div>
+  `, 'Create Clan');
+
+  document.getElementById('cc-submit').onclick = async () => {
+    const name = document.getElementById('cc-name').value.trim();
+    const level = parseInt(document.getElementById('cc-level').value) || 1;
+    const kdReq = document.getElementById('cc-kd').value;
+    const region = document.getElementById('cc-region').value;
+    const tagsRaw = document.getElementById('cc-tags').value;
+    const logoInput = document.getElementById('cc-logo');
+
+    if (name.length < 3) { toast('Name too short', 'error'); return; }
+
+    const btn = document.getElementById('cc-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      let logoUrl = '';
+      if (logoInput.files && logoInput.files[0]) {
+        logoUrl = await compressImage(logoInput.files[0], 400, 0.6);
+      }
+      const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean).slice(0, 5);
+
+      await addDoc(collection(db, 'clans'), {
+        name, level, kdReq: kdReq ? parseFloat(kdReq) : 0,
+        region, tags, logoUrl,
+        ownerUid: State.user.uid,
+        members: [State.user.uid],
+        createdAt: serverTimestamp()
+      });
+
+      toast('Clan created!', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed to create', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Create Clan';
+    }
+  };
+}
+
+// ---------- SCRIMS ----------
+function renderScrimsSub() {
+  const body = document.getElementById('squad-body');
+  body.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <div class="text-xs text-gray-500">Match up · expires in 1h</div>
+      <button id="post-scrim-btn" class="btn-press px-3 py-2 rounded-xl bg-primary text-xs font-bold flex items-center gap-1">
+        <i data-lucide="plus" class="w-3 h-3"></i> Post
+      </button>
+    </div>
+    <div id="scrims-feed" class="space-y-3">
+      <div class="skeleton h-20 rounded-2xl"></div>
+    </div>
+  `;
+
+  document.getElementById('post-scrim-btn').onclick = openPostScrimSheet;
+  loadScrims();
+}
+
+function loadScrims() {
+  const now = Date.now();
+  const q = query(collection(db, 'scrims'), orderBy('createdAt', 'desc'), limit(40));
+  State.scrimsUnsub = onSnapshot(q, (snap) => {
+    const scrims = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      const expires = d.expiresAt?.seconds ? d.expiresAt.seconds * 1000 : (d.expiresAt?.toMillis ? d.expiresAt.toMillis() : Infinity);
+      if (expires > now) scrims.push({ id: doc.id, ...d });
+    });
+    State.cache.scrims = scrims;
+    renderScrims();
+  }, (err) => {
+    console.error('Scrims error:', err);
+  });
+}
+
+function renderScrims() {
+  const feed = document.getElementById('scrims-feed');
+  if (!feed) return;
+  if (State.cache.scrims.length === 0) {
+    feed.innerHTML = emptyState('swords', 'No scrims posted', 'Looking for a match? Post one', 'Post Scrim', openPostScrimSheet);
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  feed.innerHTML = State.cache.scrims.map(s => `
+    <div class="bg-card border border-border rounded-2xl p-4 fade-in">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-bold">${esc(s.mode || 'MP')}</span>
+        <span class="text-[10px] text-gray-500">${timeAgo(s.createdAt)}</span>
+      </div>
+      <p class="text-sm text-gray-200 mb-3 whitespace-pre-wrap">${esc(s.text)}</p>
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] text-gray-500">📞 ${esc(s.contact || 'DM')}</span>
+        <button class="copy-text-btn text-[11px] text-primary font-bold" data-text="${esc(s.contact)}">Copy contact</button>
+      </div>
+    </div>
+  `).join('');
+
+  feed.querySelectorAll('.copy-text-btn').forEach(btn => {
+    btn.onclick = () => copyText(btn.dataset.text, 'Contact copied!');
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function openPostScrimSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Mode</label>
+        <select id="ps-mode">${MODES.map(m => `<option>${m}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">What are you looking for?</label>
+        <textarea id="ps-text" rows="4" maxlength="500" placeholder="e.g. 5v5 SnD scrim tonight at 9pm WAT. Need team of Legendary+."></textarea>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Contact (Discord/TG/IGN)</label>
+        <input id="ps-contact" type="text" placeholder="e.g. @panda#1234" maxlength="60" />
+      </div>
+      <button id="ps-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+        Post Scrim
+      </button>
+    </div>
+  `, 'Post Scrim');
+
+  document.getElementById('ps-submit').onclick = async () => {
+    const mode = document.getElementById('ps-mode').value;
+    const text = document.getElementById('ps-text').value.trim();
+    const contact = document.getElementById('ps-contact').value.trim();
+    if (text.length < 5) { toast('Add more details', 'error'); return; }
+
+    const btn = document.getElementById('ps-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      const expiresAt = Timestamp.fromMillis(Date.now() + 60 * 60 * 1000);
+      await addDoc(collection(db, 'scrims'), {
+        uid: State.user.uid,
+        ign: State.profile.ign,
+        text, mode, contact,
+        createdAt: serverTimestamp(),
+        expiresAt
+      });
+      toast('Scrim posted!', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Post Scrim';
+    }
+  };
+}
+
+// ---------- CLIPS ----------
+function renderClipsSub() {
+  const body = document.getElementById('squad-body');
+  body.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <div class="text-xs text-gray-500">Best plays from the community</div>
+      <button id="add-clip-btn" class="btn-press px-3 py-2 rounded-xl bg-primary text-xs font-bold flex items-center gap-1">
+        <i data-lucide="plus" class="w-3 h-3"></i> Share
+      </button>
+    </div>
+    <div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1">
+      <button class="chip clip-sort active" data-sort="recent">Recent</button>
+      <button class="chip clip-sort" data-sort="trending">Trending</button>
+    </div>
+    <div id="clips-feed" class="space-y-3">
+      <div class="skeleton h-40 rounded-2xl"></div>
+    </div>
+  `;
+
+  document.getElementById('add-clip-btn').onclick = openAddClipSheet;
+  document.querySelectorAll('.clip-sort').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.clip-sort').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      State.filters.clips.sort = btn.dataset.sort;
+      renderClips();
+    };
+  });
+
+  loadClips();
+}
+
+function loadClips() {
+  const q = query(collection(db, 'clips'), orderBy('createdAt', 'desc'), limit(50));
+  State.clipsUnsub = onSnapshot(q, (snap) => {
+    const clips = [];
+    snap.forEach(doc => clips.push({ id: doc.id, ...doc.data() }));
+    State.cache.clips = clips;
+    renderClips();
+  }, (err) => {
+    console.error('Clips error:', err);
+  });
+}
+
+function renderClips() {
+  const feed = document.getElementById('clips-feed');
+  if (!feed) return;
+  let clips = [...State.cache.clips];
+  if (State.filters.clips.sort === 'trending') {
+    clips.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+  }
+
+  if (clips.length === 0) {
+    feed.innerHTML = emptyState('video', 'No clips yet', 'Share your best play', 'Share Clip', openAddClipSheet);
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  feed.innerHTML = clips.map(c => {
+    const embedUrl = getYouTubeEmbed(c.youtubeUrl);
+    return `
+      <div class="bg-card border border-border rounded-2xl overflow-hidden fade-in">
+        ${embedUrl ? `
+          <div class="relative w-full aspect-video bg-black">
+            <iframe src="${embedUrl}" class="w-full h-full" frameborder="0" allowfullscreen loading="lazy"></iframe>
+          </div>
+        ` : `
+          <div class="w-full aspect-video bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+            <a href="${esc(c.youtubeUrl)}" target="_blank" class="text-center">
+              <i data-lucide="external-link" class="w-8 h-8 mx-auto text-primary mb-2"></i>
+              <div class="text-xs text-gray-400">Open link</div>
+            </a>
+          </div>
+        `}
+        <div class="p-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs font-bold text-gray-300">${esc(c.gunTag || 'CODM')}</span>
+            <span class="text-[10px] text-gray-500">· ${timeAgo(c.createdAt)}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <button class="like-clip flex items-center gap-1 text-xs text-gray-400" data-id="${c.id}">
+              <i data-lucide="heart" class="w-4 h-4"></i> ${c.likes || 0}
+            </button>
+            <button class="share-clip text-gray-500" data-id="${c.id}">
+              <i data-lucide="share-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  feed.querySelectorAll('.like-clip').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'clips', btn.dataset.id), { likes: increment(1) });
+        toast('❤️', 'success', 1000);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-clip').forEach(btn => {
+    btn.onclick = () => shareContent('CODMPanda Clip', 'Watch this!', location.origin + '/?clip=' + btn.dataset.id);
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function getYouTubeEmbed(url) {
+  if (!url) return '';
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return `https://www.youtube.com/embed/${m[1]}`;
+  }
+  return '';
+}
+
+function openAddClipSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">YouTube / TikTok URL</label>
+        <input id="ac-url" type="url" placeholder="https://youtube.com/watch?v=..." />
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gun Tag</label>
+        <select id="ac-gun">
+          <option value="">Any</option>
+          ${ALL_GUNS.slice(0, 40).map(g => `<option>${g}</option>`).join('')}
+        </select>
+      </div>
+      <button id="ac-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+        Share Clip
+      </button>
+    </div>
+  `, 'Share Clip');
+
+  document.getElementById('ac-submit').onclick = async () => {
+    const url = document.getElementById('ac-url').value.trim();
+    const gunTag = document.getElementById('ac-gun').value;
+    if (!url) { toast('Add a URL', 'error'); return; }
+
+    const btn = document.getElementById('ac-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      await addDoc(collection(db, 'clips'), {
+        uid: State.user.uid,
+        ign: State.profile.ign,
+        youtubeUrl: url,
+        gunTag: gunTag || 'CODM',
+        likes: 0,
+        createdAt: serverTimestamp()
+      });
+      toast('Clip shared!', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Share Clip';
+    }
+  };
+}
+
+window.renderSquadTab = renderSquadTab;
+</script>
+
+<!-- END OF PART 3D -->
+<script type="module">
+// ============================================
+// CODMPanda — Part 3E: INTEL Tab
+// ============================================
+
+let intelSubTab = 'cp';
+
+function renderIntelTab() {
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <div class="mb-4">
+        <h1 class="text-2xl font-black">Intel</h1>
+        <p class="text-xs text-gray-500">Tools for the meta game</p>
+      </div>
+
+      <div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1">
+        <button class="intel-sub chip ${intelSubTab === 'cp' ? 'active' : ''}" data-sub="cp">💎 CP Calc</button>
+        <button class="intel-sub chip ${intelSubTab === 'leaks' ? 'active' : ''}" data-sub="leaks">🔥 Leaks</button>
+        <button class="intel-sub chip ${intelSubTab === 'tier' ? 'active' : ''}" data-sub="tier">📊 Tier List</button>
+        <button class="intel-sub chip ${intelSubTab === 'maps' ? 'active' : ''}" data-sub="maps">🗺️ Maps</button>
+      </div>
+
+      <div id="intel-body"></div>
+    </div>
+  `;
+
+  document.querySelectorAll('.intel-sub').forEach(btn => {
+    btn.onclick = () => {
+      intelSubTab = btn.dataset.sub;
+      renderIntelTab();
+    };
+  });
+
+  if (intelSubTab === 'cp') renderCPCalc();
+  else if (intelSubTab === 'leaks') renderLeaksSub();
+  else if (intelSubTab === 'tier') renderTierSub();
+  else renderMapsSub();
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// ---------- CP CALCULATOR ----------
+const CP_RATES = {
+  NGN: 1.6,       // 1 CP ≈ ₦1.6
+  USD: 0.001,     // ~$0.01 per 10 CP
+  GHS: 0.014
+};
+
+const BUNDLES = [
+  { cp: 80, price: '₦1,500', best: false },
+  { cp: 420, price: '₦7,500', best: false },
+  { cp: 880, price: '₦14,500', best: false },
+  { cp: 2400, price: '₦38,000', best: true },
+  { cp: 5000, price: '₦75,000', best: false }
+];
+
+function renderCPCalc() {
+  const body = document.getElementById('intel-body');
+  body.innerHTML = `
+    <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+      <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Enter CP Amount</label>
+      <input id="cp-input" type="number" min="0" placeholder="e.g. 420" value="420" />
+      
+      <div class="grid grid-cols-3 gap-2 mt-4">
+        <div class="bg-cardAlt border border-border rounded-xl p-3 text-center">
+          <div class="text-[10px] text-gray-500 font-bold">USD</div>
+          <div id="cp-usd" class="text-sm font-black text-primary mt-1">$0.00</div>
+        </div>
+        <div class="bg-cardAlt border border-border rounded-xl p-3 text-center">
+          <div class="text-[10px] text-gray-500 font-bold">NGN</div>
+          <div id="cp-ngn" class="text-sm font-black text-primary mt-1">₦0</div>
+        </div>
+        <div class="bg-cardAlt border border-border rounded-xl p-3 text-center">
+          <div class="text-[10px] text-gray-500 font-bold">GHS</div>
+          <div id="cp-ghs" class="text-sm font-black text-primary mt-1">₵0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+      <div class="text-sm font-bold mb-3">🎰 Draw Cost Calculator</div>
+      <div class="text-xs text-gray-500 mb-3">Standard lucky draw progression</div>
+      <div id="draw-list" class="space-y-2"></div>
+      <div class="mt-4 pt-4 border-t border-border flex items-center justify-between">
+        <div class="text-xs text-gray-400 font-semibold">Full Draw Total</div>
+        <div id="draw-total" class="text-base font-black text-gold">0 CP</div>
+      </div>
+    </div>
+
+    <div class="bg-card border border-border rounded-2xl p-4">
+      <div class="text-sm font-bold mb-3">💰 Best Value Bundles</div>
+      <div class="space-y-2">
+        ${BUNDLES.map(b => `
+          <div class="flex items-center justify-between p-3 rounded-xl ${b.best ? 'bg-gold/10 border border-gold/30' : 'bg-cardAlt border border-border'}">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-bold">${b.cp.toLocaleString()} CP</span>
+              ${b.best ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gold text-black font-black">BEST</span>' : ''}
+            </div>
+            <span class="text-xs font-semibold text-gray-300">${b.price}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
+  const input = document.getElementById('cp-input');
+  const update = () => {
+    const cp = parseInt(input.value) || 0;
+    document.getElementById('cp-usd').textContent = '$' + (cp * CP_RATES.USD).toFixed(2);
+    document.getElementById('cp-ngn').textContent = '₦' + Math.round(cp * CP_RATES.NGN).toLocaleString();
+    document.getElementById('cp-ghs').textContent = '₵' + (cp * CP_RATES.GHS).toFixed(2);
+  };
+  input.oninput = update;
+  update();
+
+  // Draw costs
+  const drawCosts = [10, 30, 50, 100, 200, 400, 800, 1200, 2000, 3000];
+  let total = 0;
+  document.getElementById('draw-list').innerHTML = drawCosts.map((c, i) => {
+    total += c;
+    return `
+      <div class="flex items-center justify-between text-xs">
+        <span class="text-gray-500">Draw ${i + 1}</span>
+        <span class="font-bold">${c} CP</span>
+        <span class="text-gray-500 font-mono">${total.toLocaleString()}</span>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('draw-total').textContent = total.toLocaleString() + ' CP';
+}
+
+// ---------- LEAKS ----------
+function renderLeaksSub() {
+  const body = document.getElementById('intel-body');
+  const isAdmin = State.user?.uid === ADMIN_UID;
+  body.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <div class="text-xs text-gray-500">Community intel drops</div>
+      ${isAdmin ? `
+        <button id="post-leak-btn" class="btn-press px-3 py-2 rounded-xl bg-gold text-black text-xs font-bold flex items-center gap-1">
+          <i data-lucide="plus" class="w-3 h-3"></i> Post
+        </button>
+      ` : ''}
+    </div>
+    <div id="leaks-feed" class="space-y-3">
+      <div class="skeleton h-32 rounded-2xl"></div>
+    </div>
+  `;
+
+  if (isAdmin) document.getElementById('post-leak-btn').onclick = openPostLeakSheet;
+  loadLeaks();
+}
+
+function loadLeaks() {
+  const q = query(collection(db, 'leaks'), orderBy('createdAt', 'desc'), limit(30));
+  State.leaksUnsub = onSnapshot(q, (snap) => {
+    const leaks = [];
+    snap.forEach(doc => leaks.push({ id: doc.id, ...doc.data() }));
+    State.cache.leaks = leaks;
+    renderLeaks();
+  }, (err) => {
+    console.error('Leaks error:', err);
+  });
+}
+
+function renderLeaks() {
+  const feed = document.getElementById('leaks-feed');
+  if (!feed) return;
+  if (State.cache.leaks.length === 0) {
+    feed.innerHTML = emptyState('zap', 'No leaks yet', 'Check back soon for intel drops', '', null);
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  const rarityColors = {
+    common: 'bg-gray-500',
+    rare: 'bg-blue-500',
+    epic: 'bg-purple-500',
+    legendary: 'bg-gold text-black',
+    mythic: 'bg-red-500'
+  };
+
+  feed.innerHTML = State.cache.leaks.map(l => `
+    <div class="bg-card border border-border rounded-2xl overflow-hidden fade-in">
+      ${l.imageUrl ? `<img src="${esc(l.imageUrl)}" class="w-full h-40 object-cover" />` : ''}
+      <div class="p-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-[10px] px-2 py-0.5 rounded-full ${rarityColors[l.rarity] || 'bg-gray-500'} font-black uppercase">${esc(l.rarity || 'common')}</span>
+          <span class="text-[10px] text-gray-500">${timeAgo(l.createdAt)}</span>
+        </div>
+        <h3 class="text-base font-bold mb-2">${esc(l.title)}</h3>
+        ${l.body ? `<p class="text-xs text-gray-400 line-clamp-3 mb-3">${esc(l.body)}</p>` : ''}
+        <div class="flex items-center justify-between">
+          <button class="hype-leak flex items-center gap-1 text-xs text-gray-400" data-id="${l.id}">
+            <i data-lucide="flame" class="w-4 h-4"></i> ${l.hypes || 0}
+          </button>
+          <button class="share-leak text-gray-500" data-id="${l.id}">
+            <i data-lucide="share-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  feed.querySelectorAll('.hype-leak').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'leaks', btn.dataset.id), { hypes: increment(1) });
+        toast('🔥 Hyped!', 'success', 1000);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-leak').forEach(btn => {
+    btn.onclick = () => shareContent('CODMPanda Leak', 'Intel drop!', location.origin + '/?leak=' + btn.dataset.id);
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function openPostLeakSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Title</label>
+        <input id="lk-title" type="text" placeholder="e.g. New Mythic weapon teased" maxlength="100" />
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Rarity</label>
+        <select id="lk-rarity">
+          <option value="common">Common</option>
+          <option value="rare">Rare</option>
+          <option value="epic">Epic</option>
+          <option value="legendary">Legendary</option>
+          <option value="mythic">Mythic</option>
+        </select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Body</label>
+        <textarea id="lk-body" rows="4" maxlength="800" placeholder="Details..."></textarea>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Image (optional)</label>
+        <input id="lk-image" type="file" accept="image/*" class="text-xs" />
+      </div>
+      <button id="lk-submit" class="btn-press w-full py-4 rounded-2xl bg-gold text-black font-bold">
+        Post Leak
+      </button>
+    </div>
+  `, 'Post Leak (Admin)');
+
+  document.getElementById('lk-submit').onclick = async () => {
+    const title = document.getElementById('lk-title').value.trim();
+    const rarity = document.getElementById('lk-rarity').value;
+    const bodyText = document.getElementById('lk-body').value.trim();
+    const fileInput = document.getElementById('lk-image');
+    if (title.length < 3) { toast('Title too short', 'error'); return; }
+
+    const btn = document.getElementById('lk-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      let imageUrl = '';
+      if (fileInput.files && fileInput.files[0]) {
+        imageUrl = await compressImage(fileInput.files[0], 800, 0.7);
+      }
+      await addDoc(collection(db, 'leaks'), {
+        title, rarity, body: bodyText, imageUrl,
+        hypes: 0,
+        authorUid: State.user.uid,
+        createdAt: serverTimestamp()
+      });
+      toast('Leak posted!', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Post Leak';
+    }
+  };
+}
+
+// ---------- TIER LIST ----------
+function renderTierSub() {
+  const body = document.getElementById('intel-body');
+  body.innerHTML = `
+    <div class="text-xs text-gray-500 mb-4">Vote on the current meta</div>
+    <div id="tier-list" class="space-y-2">
+      ${['S', 'A', 'B', 'C'].map(tier => `
+        <div class="bg-card border border-border rounded-2xl p-3">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="w-8 h-8 rounded-lg ${tierColors(tier)} flex items-center justify-center font-black text-sm">${tier}</div>
+            <span class="text-xs font-bold text-gray-400">Tier ${tier}</span>
+          </div>
+          <div class="flex flex-wrap gap-1.5" id="tier-${tier}">
+            ${(TIER_GUNS[tier] || []).map(g => `<span class="text-[10px] px-2 py-1 rounded-full bg-cardAlt border border-border font-semibold">${esc(g)}</span>`).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <button id="vote-tier-btn" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold mt-4 glow-primary">
+      Vote on a Gun
+    </button>
+  `;
+
+  document.getElementById('vote-tier-btn').onclick = openTierVoteSheet;
+  if (window.lucide) lucide.createIcons();
+}
+
+function tierColors(t) {
+  return {
+    S: 'bg-red-500 text-white',
+    A: 'bg-orange-500 text-white',
+    B: 'bg-yellow-500 text-black',
+    C: 'bg-gray-500 text-white'
+  }[t] || 'bg-gray-500';
+}
+
+const TIER_GUNS = {
+  S: ['AK117', 'Fennec', 'QQ9', 'DL Q33', 'Locus', 'M13', 'AK-47'],
+  A: ['M4', 'MP5', 'Cordite', 'Arctic .50', 'RPD', 'Type 25'],
+  B: ['RUS-79U', 'BK57', 'XPR-50', 'M21 EBR'],
+  C: ['HS0405', 'M16', 'Chicom']
+};
+
+function openTierVoteSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gun</label>
+        <select id="tv-gun">
+          ${ALL_GUNS.slice(0, 60).map(g => `<option>${g}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Tier</label>
+        <div class="grid grid-cols-4 gap-2">
+          ${['S', 'A', 'B', 'C'].map(t => `
+            <button class="tier-opt py-3 rounded-xl ${tierColors(t)} font-black tier-btn" data-tier="${t}">${t}</button>
+          `).join('')}
+        </div>
+      </div>
+      <button id="tv-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+        Submit Vote
+      </button>
+    </div>
+  `, 'Vote on Tier');
+
+  let selectedTier = 'S';
+  document.querySelectorAll('.tier-btn').forEach(btn => {
+    btn.onclick = () => {
+      selectedTier = btn.dataset.tier;
+      document.querySelectorAll('.tier-btn').forEach(b => b.style.opacity = b === btn ? '1' : '0.4');
+    };
+  });
+
+  document.getElementById('tv-submit').onclick = async () => {
+    const gun = document.getElementById('tv-gun').value;
+    try {
+      const ref = doc(db, 'tierVotes', State.user.uid);
+      const snap = await getDoc(ref);
+      const current = snap.exists() ? snap.data() : {};
+      current[gun] = selectedTier;
+      await setDoc(ref, current);
+      toast('Voted ' + selectedTier + ' for ' + gun, 'success');
+      closeSheet();
+    } catch (e) {
+      toast('Failed', 'error');
+    }
+  };
+}
+
+// ---------- MAPS ----------
+function renderMapsSub() {
+  const body = document.getElementById('intel-body');
+  body.innerHTML = `
+    <div class="text-xs text-gray-500 mb-4">BR Isolated callouts</div>
+    <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+      <div class="relative w-full" style="aspect-ratio: 1;">
+        <div class="absolute inset-0 bg-gradient-to-br from-green-900/30 to-blue-900/30 rounded-xl border border-border flex items-center justify-center overflow-hidden">
+          <svg viewBox="0 0 400 400" class="w-full h-full">
+            <rect x="20" y="20" width="360" height="360" fill="#1a1a1a" rx="12" stroke="#333"/>
+            <path d="M 80 100 Q 120 80 180 120 T 300 100 L 340 160 L 300 240 Q 260 300 200 280 T 100 320 L 60 240 Z" fill="#2d3d2d" stroke="#4a5a4a" stroke-width="2"/>
+            <text x="200" y="50" text-anchor="middle" fill="#888" font-size="14" font-weight="bold">BR ISOLATED</text>
+          </svg>
+        </div>
+        <!-- Pins -->
+        ${[
+          { name: 'Nuketown', x: 30, y: 30, hot: true },
+          { name: 'Farm', x: 70, y: 45 },
+          { name: 'Killhouse', x: 20, y: 60, hot: true },
+          { name: 'Construction', x: 45, y: 20 },
+          { name: 'Launch Base', x: 15, y: 15 }
+        ].map(p => `
+          <div class="absolute group" style="left: ${p.x}%; top: ${p.y}%;">
+            <div class="w-5 h-5 rounded-full ${p.hot ? 'bg-primary' : 'bg-gold'} border-2 border-white shadow-lg cursor-pointer flex items-center justify-center text-[9px] font-black text-black">
+              ${p.hot ? '🔥' : '★'}
+            </div>
+            <div class="absolute left-6 top-0 bg-card border border-border rounded-lg px-2 py-1 text-[10px] font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">${p.name}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="bg-card border border-border rounded-2xl p-4">
+      <div class="text-sm font-bold mb-3">📍 Hot Drops</div>
+      <div class="space-y-2">
+        ${[
+          { name: 'Nuketown', desc: 'High loot, high chaos. Bring a squad.' },
+          { name: 'Killhouse', desc: 'Small but lethal. Great for early kills.' },
+          { name: 'Farm', desc: 'Balanced loot, less contested.' }
+        ].map(h => `
+          <div class="flex items-start gap-3 p-2 rounded-lg bg-cardAlt border border-border">
+            <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+              <i data-lucide="map-pin" class="w-4 h-4 text-primary"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-xs font-bold">${h.name}</div>
+              <div class="text-[10px] text-gray-500">${h.desc}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
+  if (window.lucide) lucide.createIcons();
+}
+
+window.renderIntelTab = renderIntelTab;
+</script>
+
+<!-- END OF PART 3E -->
+<script type="module">
+// ============================================
+// CODMPanda — Part 3F: YOU Tab (UI only)
+// ============================================
+
+function renderYouTab() {
+  const content = document.getElementById('content');
+  const p = State.profile || {};
+  const isPro = !!p.isPro;
+
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+
+      <div class="bg-card border ${isPro ? 'border-gold glow-gold' : 'border-border'} rounded-2xl p-4 mb-4">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="relative">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-2xl overflow-hidden">
+              ${p.avatar ? `<img src="${esc(p.avatar)}" class="w-full h-full object-cover" />` : getInitials(p.ign || '?')}
+            </div>
+            ${isPro ? `<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card"><span class="text-sm">👑</span></div>` : ''}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-base font-black truncate">${esc(p.ign || 'Set IGN')}</span>
+              ${isPro ? `<span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">PRO</span>` : ''}
+            </div>
+            <div class="text-[11px] text-gray-500 mt-0.5">${esc(p.rank || 'Rookie')} · ${esc(p.region || 'Global')}</div>
+            <button id="copy-uid-btn" class="text-[10px] text-primary font-bold mt-1 flex items-center gap-1">
+              <i data-lucide="copy" class="w-3 h-3"></i> ${State.user.uid.slice(0, 16)}...
+            </button>
+          </div>
+        </div>
+        ${p.bio ? `<p class="text-xs text-gray-400 mb-2">${esc(p.bio)}</p>` : ''}
+        ${p.favGun ? `<div class="text-[11px] text-gray-500">🎯 Favourite: <span class="font-bold text-gray-300">${esc(p.favGun)}</span></div>` : ''}
+        <button id="edit-profile-btn" class="btn-press w-full mt-3 py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold">
+          Edit Profile
+        </button>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 mb-4">
+        <div class="bg-card border border-border rounded-2xl p-3 text-center">
+          <div id="stat-vaults" class="text-lg font-black text-primary">—</div>
+          <div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Vaults</div>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-3 text-center">
+          <div id="stat-camos" class="text-lg font-black text-gold">—</div>
+          <div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Camos</div>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-3 text-center">
+          <div id="stat-clan" class="text-lg font-black text-green-400">—</div>
+          <div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Clan</div>
+        </div>
+      </div>
+
+      ${isPro ? renderProActive(p) : renderProUpsell()}
+
+      <div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+        <div class="px-4 py-3 border-b border-border">
+          <div class="text-xs font-bold text-gray-400 uppercase">Settings</div>
+        </div>
+        <div class="divide-y divide-border">
+          ${settingsRow('edit-profile', 'user', 'Edit Profile', 'Update IGN, bio, rank')}
+          ${settingsRow('my-referral', 'gift', 'My Referral', 'Share & earn invites')}
+          ${settingsRow('notifications', 'bell', 'Notifications', 'LFG, leaks, etc.')}
+          ${settingsRow('defaults', 'sliders', 'Default Preferences', 'Region, mode, mic')}
+          ${settingsRow('clear-cache', 'trash-2', 'Clear Cache', 'Free up space')}
+          ${settingsRow('clear-camos', 'refresh-cw', 'Reset Camo Data', 'Delete your progress', true)}
+          ${settingsRow('export-data', 'download', 'Export My Data', 'Download JSON')}
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+        <div class="px-4 py-3 border-b border-border">
+          <div class="text-xs font-bold text-gray-400 uppercase">Support</div>
+        </div>
+        <div class="divide-y divide-border">
+          ${settingsRow('bug-report', 'bug', 'Report a Bug', 'Help us improve')}
+          ${settingsRow('feature-request', 'lightbulb', 'Request Feature', 'Got an idea?')}
+          ${settingsRow('rate-app', 'star', 'Rate CODMPanda', 'Play Store rating')}
+          ${settingsRow('share-app', 'share-2', 'Share App', 'Invite your squad')}
+          ${settingsRow('help-faq', 'help-circle', 'Help / FAQ', 'Common questions')}
+        </div>
+      </div>
+
+      ${State.user.uid === ADMIN_UID ? renderAdminSection() : ''}
+
+      <div class="bg-card border border-red-500/30 rounded-2xl overflow-hidden mb-4">
+        <div class="px-4 py-3 border-b border-red-500/20">
+          <div class="text-xs font-bold text-red-400 uppercase">Danger Zone</div>
+        </div>
+        <div class="divide-y divide-border">
+          <button class="danger-row w-full flex items-center justify-between px-4 py-3 text-left" data-action="logout">
+            <div class="flex items-center gap-3">
+              <i data-lucide="log-out" class="w-4 h-4 text-gray-400"></i>
+              <span class="text-sm font-semibold">Sign Out</span>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500"></i>
+          </button>
+          <button class="danger-row w-full flex items-center justify-between px-4 py-3 text-left" data-action="delete-account">
+            <div class="flex items-center gap-3">
+              <i data-lucide="user-x" class="w-4 h-4 text-red-400"></i>
+              <span class="text-sm font-semibold text-red-400">Delete Account</span>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-red-400"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="text-center py-6 space-y-2">
+        <div id="install-pwa-btn" class="hidden">
+          <button class="btn-press px-4 py-2 rounded-xl bg-primary text-xs font-bold glow-primary">
+            📲 Install CODMPanda
+          </button>
+        </div>
+        <div class="text-[10px] text-gray-600">Version ${APP_VERSION}</div>
+        <div class="flex items-center justify-center gap-3 text-[10px] text-gray-500">
+          <button onclick="showPrivacy()">Privacy</button>
+          <span>·</span>
+          <button onclick="showTerms()">Terms</button>
+          <span>·</span>
+          <a href="https://discord.gg" target="_blank">Discord</a>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.querySelectorAll('.settings-row').forEach(el => {
+    el.onclick = () => handleSettingAction(el.dataset.action);
+  });
+  document.querySelectorAll('.danger-row').forEach(el => {
+    el.onclick = () => handleSettingAction(el.dataset.action);
+  });
+
+  document.getElementById('copy-uid-btn').onclick = () => copyText(State.user.uid, 'UID copied!');
+  document.getElementById('edit-profile-btn').onclick = openEditProfileSheet;
+
+  if (!isPro) {
+    const proBtn = document.getElementById('unlock-pro-btn');
+    if (proBtn) proBtn.onclick = goPro;
+  } else {
+    const manageBtn = document.getElementById('manage-pro-btn');
+    if (manageBtn) manageBtn.onclick = showManagePro;
+  }
+
+  loadStats();
+  loadClanStat();
+  setupPWAInstall();
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function settingsRow(action, icon, label, sub, danger = false) {
+  return `
+    <button class="settings-row w-full flex items-center justify-between px-4 py-3 text-left" data-action="${action}">
+      <div class="flex items-center gap-3 min-w-0">
+        <i data-lucide="${icon}" class="w-4 h-4 ${danger ? 'text-red-400' : 'text-gray-400'} flex-shrink-0"></i>
+        <div class="min-w-0">
+          <div class="text-sm font-semibold ${danger ? 'text-red-400' : ''}">${label}</div>
+          ${sub ? `<div class="text-[10px] text-gray-500 truncate">${sub}</div>` : ''}
+        </div>
+      </div>
+      <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+    </button>
+  `;
+}
+
+function renderProUpsell() {
+  return `
+    <div class="bg-gradient-to-br from-black via-black to-[#1a1200] border border-gold/40 rounded-2xl p-5 mb-4 shimmer relative overflow-hidden">
+      <div class="absolute top-3 right-3 text-3xl">👑</div>
+      <div class="text-xs font-black text-gold uppercase tracking-wider mb-1">Upgrade</div>
+      <h3 class="text-xl font-black mb-3">Go <span class="text-gold glow-text-gold">Pro</span></h3>
+      <div class="text-xs text-gray-300 mb-4">
+        <div class="font-bold text-gold mb-2">$1.99/mo · $9.99 lifetime</div>
+        <ul class="space-y-1.5">
+          <li class="flex items-center gap-2"><span class="text-gold">✦</span> Unlimited Vault builds</li>
+          <li class="flex items-center gap-2"><span class="text-gold">✦</span> Full camo tracker (all guns)</li>
+          <li class="flex items-center gap-2"><span class="text-gold">✦</span> Create & lead clans</li>
+          <li class="flex items-center gap-2"><span class="text-gold">✦</span> Pin LFG posts</li>
+          <li class="flex items-center gap-2"><span class="text-gold">✦</span> Instant leak alerts</li>
+          <li class="flex items-center gap-2"><span class="text-gold">✦</span> Zero ads, forever</li>
+          <li class="flex items-center gap-2"><span class="text-gold">✦</span> Gold crown badge 👑</li>
+        </ul>
+      </div>
+      <button id="unlock-pro-btn" class="btn-press w-full py-3.5 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold">
+        Unlock Pro — Pay with Paystack
+      </button>
+    </div>
+  `;
+}
+
+function renderProActive(p) {
+  const expiry = p.proExpiry?.toDate ? p.proExpiry.toDate().toLocaleDateString() : (p.proExpiry ? new Date(p.proExpiry).toLocaleDateString() : 'Lifetime');
+  return `
+    <div class="bg-gradient-to-br from-[#1a1200] to-black border border-gold glow-gold rounded-2xl p-5 mb-4">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-2xl">👑</span>
+        <div>
+          <div class="text-sm font-black text-gold glow-text-gold">PRO ACTIVE</div>
+          <div class="text-[10px] text-gray-400">Expires: ${expiry}</div>
+        </div>
+      </div>
+      <div class="text-xs text-gray-300 mb-3">Enjoy unlimited access & zero ads.</div>
+      <button id="manage-pro-btn" class="btn-press w-full py-2.5 rounded-xl bg-cardAlt border border-gold/40 text-gold text-xs font-bold">
+        Manage Subscription
+      </button>
+    </div>
+  `;
+}
+
+function renderAdminSection() {
+  return `
+    <div class="bg-card border border-gold/40 rounded-2xl overflow-hidden mb-4">
+      <div class="px-4 py-3 border-b border-gold/30 bg-gold/5">
+        <div class="text-xs font-bold text-gold uppercase flex items-center gap-2">
+          <i data-lucide="shield-check" class="w-4 h-4"></i> Admin Panel
+        </div>
+      </div>
+      <div class="divide-y divide-border">
+        ${settingsRow('admin-post-leak', 'zap', 'Post Leak', 'Push intel to feed')}
+        ${settingsRow('admin-reports', 'flag', 'Manage Reports', 'Review user reports')}
+        ${settingsRow('admin-users', 'users', 'List Users', 'View all users')}
+      </div>
+    </div>
+  `;
+}
+
+// ---------- STAT LOADERS ----------
+async function loadStats() {
+  try {
+    const vaultSnap = await getDocs(query(collection(db, 'vaults'), where('uid', '==', State.user.uid)));
+    const el = document.getElementById('stat-vaults');
+    if (el) el.textContent = vaultSnap.size;
+  } catch (e) {
+    const el = document.getElementById('stat-vaults');
+    if (el) el.textContent = '0';
+  }
+
+  try {
+    const camoSnap = await getDoc(doc(db, 'camos', State.user.uid));
+    const totalPossible = ALL_GUNS.length * CAMO_TYPES.length;
+    let pct = 0;
+    if (camoSnap.exists()) {
+      const data = camoSnap.data();
+      let checked = 0;
+      Object.values(data).forEach(gun => {
+        CAMO_TYPES.forEach(c => { if (gun[c.key]) checked++; });
+      });
+      pct = Math.round((checked / totalPossible) * 100);
+    }
+    const el = document.getElementById('stat-camos');
+    if (el) el.textContent = pct + '%';
+  } catch (e) {
+    const el = document.getElementById('stat-camos');
+    if (el) el.textContent = '0%';
+  }
+}
+
+async function loadClanStat() {
+  try {
+    const snap = await getDocs(query(collection(db, 'clans'), where('members', 'array-contains', State.user.uid)));
+    const el = document.getElementById('stat-clan');
+    if (el) {
+      el.textContent = snap.size > 0 ? '✓' : '—';
+    }
+  } catch (e) { /* silent */ }
+}
+
+// ---------- PWA INSTALL ----------
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('install-pwa-btn');
+  if (btn) btn.classList.remove('hidden');
+});
+
+function setupPWAInstall() {
+  const btnWrap = document.getElementById('install-pwa-btn');
+  if (!btnWrap) return;
+  if (deferredPrompt) btnWrap.classList.remove('hidden');
+  btnWrap.onclick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') toast('Installing...', 'success');
+      deferredPrompt = null;
+      btnWrap.classList.add('hidden');
+    } else {
+      toast('Use browser menu → "Add to Home Screen"', 'info', 4000);
+    }
+  };
+}
+
+window.renderYouTab = renderYouTab;
+window.setupPWAInstall = setupPWAInstall;
+</script>
+
+<!-- END OF PART 3F -->
+<script type="module">
+// ============================================
+// CODMPanda — Part 3G: Settings Actions + Pro + Admin
+// ============================================
+
+function handleSettingAction(action) {
+  switch (action) {
+    case 'edit-profile': openEditProfileSheet(); break;
+    case 'my-referral': showReferral(); break;
+    case 'notifications': showNotifications(); break;
+    case 'defaults': showDefaults(); break;
+    case 'clear-cache': clearCache(); break;
+    case 'clear-camos': confirmDialog('Reset Camo Data', 'This will delete all your camo progress permanently.', async () => {
+      try {
+        await deleteDoc(doc(db, 'camos', State.user.uid));
+        State.cache.camos = {};
+        toast('Camo data cleared', 'success');
+      } catch (e) { toast('Failed', 'error'); }
+    }, 'Reset', true); break;
+    case 'export-data': exportUserData(); break;
+    case 'bug-report': openBugReportSheet(); break;
+    case 'feature-request': openFeatureSheet(); break;
+    case 'rate-app': window.open('https://play.google.com/store/apps', '_blank'); break;
+    case 'share-app': shareApp(); break;
+    case 'help-faq': showFAQ(); break;
+    case 'logout': handleSignOut(); break;
+    case 'delete-account': deleteAccount(); break;
+    case 'admin-post-leak': openPostLeakSheet(); break;
+    case 'admin-reports': showAdminReports(); break;
+    case 'admin-users': showAdminUsers(); break;
+  }
+}
+
+// ---------- EDIT PROFILE ----------
+function openEditProfileSheet() {
+  const p = State.profile || {};
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Avatar</label>
+        <input id="ep-avatar" type="file" accept="image/*" class="text-xs" />
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">IGN</label>
+        <input id="ep-ign" type="text" maxlength="24" value="${esc(p.ign || '')}" />
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Rank</label>
+        <select id="ep-rank">${RANKS.map(r => `<option ${p.rank === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Region</label>
+        <select id="ep-region">${REGIONS.map(r => `<option ${p.region === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Bio</label>
+        <textarea id="ep-bio" rows="3" maxlength="150" placeholder="Tell your squad about you...">${esc(p.bio || '')}</textarea>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Favourite Gun</label>
+        <select id="ep-fav">
+          <option value="">None</option>
+          ${ALL_GUNS.slice(0, 60).map(g => `<option ${p.favGun === g ? 'selected' : ''}>${g}</option>`).join('')}
+        </select>
+      </div>
+      <button id="ep-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+        Save Changes
+      </button>
+    </div>
+  `, 'Edit Profile');
+
+  document.getElementById('ep-submit').onclick = async () => {
+    const ign = document.getElementById('ep-ign').value.trim();
+    const rank = document.getElementById('ep-rank').value;
+    const region = document.getElementById('ep-region').value;
+    const bio = document.getElementById('ep-bio').value.trim();
+    const favGun = document.getElementById('ep-fav').value;
+    const fileInput = document.getElementById('ep-avatar');
+
+    if (ign.length < 2) { toast('IGN too short', 'error'); return; }
+
+    const btn = document.getElementById('ep-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      const updates = { ign, rank, region, bio, favGun };
+      if (fileInput.files && fileInput.files[0]) {
+        updates.avatar = await compressImage(fileInput.files[0], 300, 0.7);
+      }
+      await updateDoc(doc(db, 'users', State.user.uid), updates);
+      State.profile = { ...State.profile, ...updates };
+      const subtitle = document.getElementById('top-bar-subtitle');
+      if (subtitle) subtitle.textContent = `${rank} • ${region}`;
+      toast('Profile updated!', 'success');
+      closeSheet();
+      renderYouTab();
+    } catch (e) {
+      console.error(e);
+      toast('Failed', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Save Changes';
+    }
+  };
+}
+
+// ---------- REFERRAL ----------
+function showReferral() {
+  const code = State.profile?.referralCode || generateReferralCode(State.user.uid);
+  const link = `${location.origin}/?ref=${State.user.uid}`;
+  openSheet(`
+    <div class="text-center space-y-4">
+      <div class="text-4xl">🎁</div>
+      <div>
+        <div class="text-sm text-gray-400 mb-1">Your referral code</div>
+        <div class="text-2xl font-black text-primary glow-text-primary">${code}</div>
+      </div>
+      <div class="bg-cardAlt border border-border rounded-xl p-3">
+        <div class="text-[10px] text-gray-500 mb-2">Invite link</div>
+        <div class="text-xs text-primary font-mono break-all">${link}</div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button id="ref-copy" class="btn-press py-3 rounded-xl bg-primary font-bold text-sm">Copy Link</button>
+        <button id="ref-share" class="btn-press py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">Share</button>
+      </div>
+      <div class="text-xs text-gray-500">Invites: <span class="font-bold text-white">${State.profile?.invites || 0}</span></div>
+    </div>
+  `, 'My Referral');
+
+  document.getElementById('ref-copy').onclick = () => copyText(link, 'Link copied!');
+  document.getElementById('ref-share').onclick = () => shareContent('Join CODMPanda!', `Use my code ${code} to join the ultimate CODM companion.`, link);
+}
+
+// ---------- DEFAULTS ----------
+function showDefaults() {
+  const p = State.profile || {};
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Default Region</label>
+        <select id="df-region">${REGIONS.map(r => `<option ${(p.defaultRegion || p.region) === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Default Mode</label>
+        <select id="df-mode">${MODES.map(m => `<option ${p.defaultMode === m ? 'selected' : ''}>${m}</option>`).join('')}</select>
+      </div>
+      <div class="flex items-center justify-between p-3 rounded-xl bg-card border border-border">
+        <div>
+          <div class="text-sm font-semibold">Default Mic On</div>
+          <div class="text-xs text-gray-500">Auto-enable mic on lobbies</div>
+        </div>
+        <div id="df-mic" class="toggle ${p.defaultMic ? 'on' : ''}"></div>
+      </div>
+      <button id="df-save" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">Save</button>
+    </div>
+  `, 'Default Preferences');
+
+  document.getElementById('df-mic').onclick = function() { this.classList.toggle('on'); };
+  document.getElementById('df-save').onclick = async () => {
+    try {
+      const updates = {
+        defaultRegion: document.getElementById('df-region').value,
+        defaultMode: document.getElementById('df-mode').value,
+        defaultMic: document.getElementById('df-mic').classList.contains('on')
+      };
+      await updateDoc(doc(db, 'users', State.user.uid), updates);
+      State.profile = { ...State.profile, ...updates };
+      toast('Preferences saved', 'success');
+      closeSheet();
+    } catch (e) { toast('Failed', 'error'); }
+  };
+}
+
+// ---------- CACHE / EXPORT ----------
+function clearCache() {
+  confirmDialog('Clear Cache', 'This clears app cache and reloads. Your data stays safe.', async () => {
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+    toast('Cache cleared, reloading...', 'success');
+    setTimeout(() => location.reload(), 1000);
+  }, 'Clear');
+}
+
+function exportUserData() {
+  const data = {
+    profile: State.profile,
+    camos: State.cache.camos,
+    exportDate: new Date().toISOString(),
+    version: APP_VERSION
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `codmpanda-${State.user.uid.slice(0, 8)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Data exported', 'success');
+}
+
+// ---------- SUPPORT ----------
+function openBugReportSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">What's wrong?</label>
+        <textarea id="br-text" rows="5" maxlength="500" placeholder="Describe the bug in detail..."></textarea>
+      </div>
+      <button id="br-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">Send Report</button>
+    </div>
+  `, 'Report a Bug');
+
+  document.getElementById('br-submit').onclick = async () => {
+    const text = document.getElementById('br-text').value.trim();
+    if (text.length < 5) { toast('Add more detail', 'error'); return; }
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reporterUid: State.user.uid,
+        targetId: 'app-bug',
+        reason: text,
+        type: 'bug',
+        createdAt: serverTimestamp()
+      });
+      toast('Bug report sent. Thanks!', 'success');
+      closeSheet();
+    } catch (e) { toast('Failed', 'error'); }
+  };
+}
+
+function openFeatureSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Your idea</label>
+        <textarea id="fr-text" rows="5" maxlength="500" placeholder="What should we build?"></textarea>
+      </div>
+      <button id="fr-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">Send Request</button>
+    </div>
+  `, 'Request Feature');
+
+  document.getElementById('fr-submit').onclick = async () => {
+    const text = document.getElementById('fr-text').value.trim();
+    if (text.length < 5) { toast('Add more detail', 'error'); return; }
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reporterUid: State.user.uid,
+        targetId: 'feature-request',
+        reason: text,
+        type: 'feature',
+        createdAt: serverTimestamp()
+      });
+      toast('Request sent. Thanks!', 'success');
+      closeSheet();
+    } catch (e) { toast('Failed', 'error'); }
+  };
+}
+
+function shareApp() {
+  const code = State.profile?.referralCode || '';
+  shareContent(
+    'CODMPanda — Ultimate CODM Companion',
+    `Join CODMPanda — find squads, track camos, share gunsmiths. Use my code: ${code}`,
+    location.origin + '?ref=' + State.user.uid
+  );
+}
+
+function showFAQ() {
+  openSheet(`
+    <div class="space-y-3">
+      ${[
+        { q: 'How do lobbies expire?', a: 'Lobbies auto-expire after 2 hours. Scrims after 1 hour.' },
+        { q: 'Is Pro worth it?', a: 'If you want unlimited vaults, full camo tracking, and clan creation — absolutely.' },
+        { q: 'How do referrals work?', a: 'Share your link. When someone signs up via your link, you get invite credit.' },
+        { q: 'Can I export my camo progress?', a: 'Yes! Lab → Camo Tracker → Export progress.' },
+        { q: 'How do I report a bug?', a: 'Settings → Support → Report a Bug.' }
+      ].map(f => `
+        <div class="bg-card border border-border rounded-xl p-3">
+          <div class="text-sm font-bold mb-1">${f.q}</div>
+          <div class="text-xs text-gray-400">${f.a}</div>
+        </div>
+      `).join('')}
+    </div>
+  `, 'Help / FAQ');
+}
+
+function showPrivacy() {
+  openSheet(`
+    <div class="text-xs text-gray-400 space-y-3 leading-relaxed">
+      <p><strong class="text-white">Privacy Policy</strong></p>
+      <p>CODMPanda stores your profile data (IGN, rank, region, avatar, bio) in Firebase. We never sell your data.</p>
+      <p>Public info like your IGN, rank, and vault builds are visible to signed-in users. Your UID is only used for authentication and admin.</p>
+      <p>Images are compressed and stored as base64 in Firestore. No third-party image hosting is used.</p>
+      <p>You can delete your account and all data at any time from Settings → Danger Zone.</p>
+    </div>
+  `, 'Privacy');
+}
+
+function showTerms() {
+  openSheet(`
+    <div class="text-xs text-gray-400 space-y-3 leading-relaxed">
+      <p><strong class="text-white">Terms of Service</strong></p>
+      <p>CODMPanda is an unofficial companion app for Call of Duty Mobile. Not affiliated with Activision or Tencent.</p>
+      <p>Do not post illegal, harassing, or NSFW content. Reports will be reviewed and accounts banned.</p>
+      <p>Pro purchases are final. Refunds only in case of technical failure.</p>
+      <p>We may update these terms. Continued use means acceptance.</p>
+    </div>
+  `, 'Terms');
+}
+
+// ---------- DELETE ACCOUNT ----------
+function deleteAccount() {
+  confirmDialog(
+    'Delete Account',
+    'This will permanently delete your profile, camos, vaults, and sign you out. Cannot be undone.',
+    async () => {
+      try {
+        toast('Deleting...', 'info', 2000);
+        await deleteDoc(doc(db, 'users', State.user.uid));
+        await deleteDoc(doc(db, 'camos', State.user.uid));
+        await deleteDoc(doc(db, 'tierVotes', State.user.uid));
+        try { await deleteUser(State.user); } catch (e) {
+          await signOut(auth);
+        }
+        location.reload();
+      } catch (e) {
+        console.error(e);
+        toast('Delete failed: re-login and retry', 'error', 4000);
+      }
+    },
+    'Delete Forever',
+    true
+  );
+}
+
+// ---------- PRO / PAYWALL ----------
+function showProPaywall(message) {
+  openSheet(`
+    <div class="text-center space-y-4">
+      <div class="text-5xl">👑</div>
+      <div>
+        <h3 class="text-xl font-black text-gold glow-text-gold mb-2">Pro Feature</h3>
+        <p class="text-sm text-gray-400">${message}</p>
+      </div>
+      <div class="bg-black/40 border border-gold/40 rounded-xl p-4 text-left">
+        <div class="text-xs text-gray-300 space-y-1.5">
+          <div>✦ Unlimited Vault</div>
+          <div>✦ Full Camo Tracker</div>
+          <div>✦ Create Clans</div>
+          <div>✦ Zero Ads</div>
+          <div>✦ Gold Crown Badge</div>
+        </div>
+      </div>
+      <button onclick="closeSheet(); goPro();" class="btn-press w-full py-4 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black glow-gold">
+        Go Pro — $1.99/mo
+      </button>
+      <button onclick="closeSheet()" class="text-xs text-gray-500">Maybe later</button>
+    </div>
+  `, '');
+}
+
+async function goPro() {
+  confirmDialog('Unlock Pro (Demo)', 'Demo mode — in production this opens Paystack. Unlock Pro now for free?', async () => {
+    try {
+      await updateDoc(doc(db, 'users', State.user.uid), {
+        isPro: true,
+        proExpiry: Timestamp.fromMillis(Date.now() + 365 * 24 * 60 * 60 * 1000)
+      });
+      State.profile.isPro = true;
+      toast('👑 Pro unlocked!', 'success');
+      hideAd();
+      renderYouTab();
+    } catch (e) {
+      toast('Failed', 'error');
+    }
+  }, 'Unlock');
+}
+
+function showManagePro() {
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-center">
+        <div class="text-5xl mb-2">👑</div>
+        <div class="text-lg font-black text-gold">Pro Member</div>
+      </div>
+      <div class="bg-cardAlt border border-border rounded-xl p-3 text-xs text-gray-400">
+        Manage your subscription via Paystack. Cancel anytime.
+      </div>
+      <button onclick="closeSheet()" class="btn-press w-full py-3 rounded-xl bg-primary font-bold">Done</button>
+    </div>
+  `, 'Manage Pro');
+}
+
+// ---------- ADMIN ----------
+async function showAdminReports() {
+  openSheet(`<div class="text-center py-8"><div class="spinner mx-auto"></div></div>`, 'Reports');
+  try {
+    const snap = await getDocs(query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(50)));
+    const reports = [];
+    snap.forEach(d => reports.push({ id: d.id, ...d.data() }));
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (sheetBody) {
+      sheetBody.innerHTML = reports.length === 0
+        ? '<div class="text-center py-8 text-gray-500 text-sm">No reports</div>'
+        : reports.map(r => `
+          <div class="bg-card border border-border rounded-xl p-3 mb-2">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-bold uppercase">${esc(r.type || 'report')}</span>
+              <span class="text-[10px] text-gray-500">${timeAgo(r.createdAt)}</span>
+            </div>
+            <div class="text-xs text-gray-300">${esc(r.reason)}</div>
+            <div class="text-[10px] text-gray-600 mt-1">By: ${esc((r.reporterUid || '').slice(0, 12))}...</div>
+          </div>
+        `).join('');
+    }
+  } catch (e) {
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (sheetBody) sheetBody.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">Failed to load</div>';
+  }
+}
+
+async function showAdminUsers() {
+  openSheet(`<div class="text-center py-8"><div class="spinner mx-auto"></div></div>`, 'Users');
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(100)));
+    const users = [];
+    snap.forEach(d => users.push({ id: d.id, ...d.data() }));
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (sheetBody) {
+      sheetBody.innerHTML = `
+        <div class="text-xs text-gray-500 mb-3">${users.length} total users</div>
+        ${users.map(u => `
+          <div class="bg-card border border-border rounded-xl p-3 mb-2 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center font-bold text-sm flex-shrink-0 overflow-hidden">
+              ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-bold truncate flex items-center gap-1.5">
+                ${esc(u.ign || 'Unknown')}
+                ${u.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
+              </div>
+              <div class="text-[10px] text-gray-500 truncate">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
+            </div>
+            <div class="text-[10px] text-gray-600 font-mono">${u.id.slice(0, 8)}</div>
+          </div>
+        `).join('')}
+      `;
+    }
+  } catch (e) {
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (sheetBody) sheetBody.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">Failed to load</div>';
+  }
+}
+
+window.handleSettingAction = handleSettingAction;
+window.openEditProfileSheet = openEditProfileSheet;
+window.showProPaywall = showProPaywall;
+window.goPro = goPro;
+window.showManagePro = showManagePro;
+window.showPrivacy = showPrivacy;
+window.showTerms = showTerms;
+window.openPostLeakSheet = openPostLeakSheet;
+</script>
+
+<!-- END OF PART 3G -->
+<script type="module">
+// ============================================
+// CODMPanda — Part 4: Init + Helpers + Boot
+// ============================================
+
+// ---------- EMPTY STATE HELPER ----------
+function emptyState(icon, title, subtitle, ctaLabel, ctaFn) {
+  const ctaHTML = (ctaLabel && ctaFn) ? `
+    <button id="empty-cta" class="btn-press mt-4 px-5 py-2.5 rounded-xl bg-primary font-bold text-sm glow-primary">
+      ${esc(ctaLabel)}
+    </button>
+  ` : '';
+  setTimeout(() => {
+    const btn = document.getElementById('empty-cta');
+    if (btn && ctaFn) btn.onclick = ctaFn;
+  }, 0);
+  return `
+    <div class="flex flex-col items-center justify-center py-16 px-6 text-center fade-in">
+      <div class="w-20 h-20 rounded-full bg-card border border-border flex items-center justify-center mb-4">
+        <i data-lucide="${icon}" class="w-8 h-8 text-gray-500"></i>
+      </div>
+      <div class="text-base font-bold mb-1">${esc(title)}</div>
+      <div class="text-xs text-gray-500 max-w-[240px]">${esc(subtitle || '')}</div>
+      ${ctaHTML}
+    </div>
+  `;
+}
+
+// ---------- POST LEAK (referenced by 3G admin) ----------
+function openPostLeakSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Title</label>
+        <input id="lk-title" type="text" placeholder="e.g. New Mythic weapon teased" maxlength="100" />
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Rarity</label>
+        <select id="lk-rarity">
+          <option value="common">Common</option>
+          <option value="rare">Rare</option>
+          <option value="epic">Epic</option>
+          <option value="legendary">Legendary</option>
+          <option value="mythic">Mythic</option>
+        </select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Body</label>
+        <textarea id="lk-body" rows="4" maxlength="800" placeholder="Details..."></textarea>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Image (optional)</label>
+        <input id="lk-image" type="file" accept="image/*" class="text-xs" />
+      </div>
+      <button id="lk-submit" class="btn-press w-full py-4 rounded-2xl bg-gold text-black font-bold">
+        Post Leak
+      </button>
+    </div>
+  `, 'Post Leak (Admin)');
+
+  document.getElementById('lk-submit').onclick = async () => {
+    const title = document.getElementById('lk-title').value.trim();
+    const rarity = document.getElementById('lk-rarity').value;
+    const bodyText = document.getElementById('lk-body').value.trim();
+    const fileInput = document.getElementById('lk-image');
+    if (title.length < 3) { toast('Title too short', 'error'); return; }
+
+    const btn = document.getElementById('lk-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      let imageUrl = '';
+      if (fileInput.files && fileInput.files[0]) {
+        imageUrl = await compressImage(fileInput.files[0], 800, 0.7);
+      }
+      await addDoc(collection(db, 'leaks'), {
+        title, rarity, body: bodyText, imageUrl,
+        hypes: 0,
+        authorUid: State.user.uid,
+        createdAt: serverTimestamp()
+      });
+      toast('Leak posted!', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Post Leak';
+    }
+  };
+}
+
+// ---------- REFERRAL TRACKING ----------
+async function trackReferral() {
+  const params = new URLSearchParams(location.search);
+  const ref = params.get('ref');
+  if (ref && State.user && ref !== State.user.uid) {
+    const storageKey = 'codmpanda_ref_tracked_' + ref;
+    if (localStorage.getItem(storageKey)) return;
+    localStorage.setItem(storageKey, '1');
+    try {
+      await updateDoc(doc(db, 'users', ref), { invites: increment(1) });
+      const refSnap = await getDoc(doc(db, 'users', ref));
+      if (refSnap.exists()) {
+        const currentInvites = (refSnap.data().invites || 0);
+        // Reward: 3 invites = 7 days Pro
+        if (currentInvites > 0 && currentInvites % 3 === 0) {
+          await updateDoc(doc(db, 'users', ref), {
+            isPro: true,
+            proExpiry: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000)
+          });
+        }
+      }
+    } catch (e) { /* silent */ }
+  }
+}
+
+// ---------- DEEP LINK HANDLERS ----------
+function handleDeepLinks() {
+  const params = new URLSearchParams(location.search);
+  const tab = params.get('tab');
+  const vault = params.get('vault');
+  const clip = params.get('clip');
+  const leak = params.get('leak');
+
+  if (tab && ['play', 'lab', 'squad', 'intel', 'you'].includes(tab)) {
+    setTimeout(() => switchTab(tab), 500);
+  }
+
+  if (vault) {
+    setTimeout(async () => {
+      try {
+        const snap = await getDoc(doc(db, 'vaults', vault));
+        if (snap.exists()) {
+          const v = snap.data();
+          openSheet(`
+            <div class="space-y-3">
+              ${v.imageUrl ? `<img src="${esc(v.imageUrl)}" class="w-full rounded-xl" />` : ''}
+              <div class="text-lg font-black">${esc(v.gunName)}</div>
+              <div class="text-xs text-gray-500">${esc(v.type)} · by ${esc(v.ign || 'Unknown')}</div>
+              ${v.gunsmithCode ? `
+                <div class="bg-cardAlt border border-border rounded-xl p-3">
+                  <div class="text-[10px] text-gray-500 mb-1">Gunsmith Code</div>
+                  <div class="font-mono text-primary text-sm font-bold">${esc(v.gunsmithCode)}</div>
+                </div>
+                <button onclick="copyText('${esc(v.gunsmithCode)}', 'Copied!')" class="btn-press w-full py-3 rounded-xl bg-primary font-bold text-sm">Copy Code</button>
+              ` : ''}
+            </div>
+          `, 'Shared Vault');
+        }
+      } catch (e) { /* silent */ }
+    }, 800);
+  }
+}
+
+// ---------- BOOT ----------
+async function boot() {
+  // Hide splash after max 2s
+  setTimeout(() => {
+    const splash = document.getElementById('splash');
+    if (splash && !splash.classList.contains('hidden')) {
+      splash.classList.add('hidden');
+    }
+  }, 2000);
+
+  // Check redirect result (for redirect-based Google sign-in)
+  await checkRedirect();
+
+  // Wire sign-in button
+  const signBtn = document.getElementById('google-signin-btn');
+  if (signBtn) signBtn.onclick = handleSignIn;
+
+  // Handle deep links after auth
+  setTimeout(handleDeepLinks, 1500);
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// onAuthStateChanged is registered in Part 3A
+// but we need to trigger referral tracking once user loads
+const originalShowMainApp = showMainApp;
+window.showMainApp = function() {
+  originalShowMainApp();
+  trackReferral();
+};
+
+// Boot on load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+
+// Refresh lucide icons after any render
+window.refreshIcons = () => { if (window.lucide) lucide.createIcons(); };
+
+// Error boundary
+window.addEventListener('error', (e) => {
+  console.error('Global error:', e.error);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('Unhandled promise rejection:', e.reason);
+});
+
+// Log version
+console.log('%c🐼 CODMPanda v' + APP_VERSION + ' loaded', 'color:#FF6B00;font-weight:bold;font-size:14px');
+console.log('%cThe Ultimate CODM Companion', 'color:#FFD700;font-size:11px');
+
+// ---------- EXPORT KEY FUNCTIONS TO WINDOW ----------
+window.emptyState = emptyState;
+window.trackReferral = trackReferral;
+window.openPostLeakSheet = openPostLeakSheet;
+
+</script>
+
+</body>
+</html>
+
+<!-- ============================================ -->
+<!-- END OF CODMPanda index.html v1.0.0 -->
+<!-- 🐼 Built with fire -->
+<!-- ============================================ -->
