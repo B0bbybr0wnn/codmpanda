@@ -41,7 +41,7 @@ import {
 // ============================================
 const firebaseConfig = {
   apiKey: "AIzaSyC4wVCT-ITLRFPDtzENnDjxL_1aVCAqWHg",
-  authDomain: "codmpanda-app.firebaseapp.com",
+  authDomain: "codmpanda.pages.dev",
   projectId: "codmpanda-app",
   storageBucket: "codmpanda-app.firebasestorage.app",
   messagingSenderId: "604146891375",
