@@ -428,20 +428,11 @@ window.APP_VERSION = APP_VERSION;
 // ---------- AUTH ----------
 async function handleSignIn() {
   try {
-    await signInWithPopup(auth, provider);
+    // Redirect-first (mobile friendly, bypasses third-party cookie blocks)
+    await signInWithRedirect(auth, provider);
   } catch (err) {
-    console.error('Popup sign-in failed:', err);
-    if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-      try {
-        await signInWithRedirect(auth, provider);
-      } catch (e2) {
-        toast('Sign-in failed. Try again.', 'error');
-      }
-    } else if (err.code === 'auth/unauthorized-domain') {
-      toast('Domain not authorized in Firebase Console.', 'error', 5000);
-    } else {
-      toast('Sign-in failed: ' + err.message, 'error');
-    }
+    console.error('Sign-in failed:', err);
+    toast('Sign-in failed: ' + (err.message || 'Unknown error'), 'error');
   }
 }
 
