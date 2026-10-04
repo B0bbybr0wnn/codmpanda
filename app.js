@@ -3645,3 +3645,483 @@ window.openSubmitVaultSheet = openSubmitVaultSheet;
 window.openSubmitClipSheet = openSubmitClipSheet;
 
 /* END OF CHUNK 8 */
+// ============================================
+// Chunk 9: Submit Buttons + Admin Approval + Badges
+// ============================================
+
+// ---------- PATCH EXISTING RENDER FUNCTIONS ----------
+// We override renderLeaksSub, renderVaultSub, renderClipsSub to add Submit buttons
+// and to add the "Approved" badge rendering
+
+// Override the LEAKS tab to add Submit button
+const _origRenderLeaksSub = renderLeaksSub;
+renderLeaksSub = function() {
+  const body = document.getElementById('intel-body');
+  const isAdmin = State.user?.uid === ADMIN_UID;
+  body.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <div class="text-xs text-gray-500">Community intel drops</div>
+      <div class="flex gap-2">
+        <button id="submit-leak-btn" class="btn-press px-3 py-2 rounded-xl bg-primary/15 border border-primary/40 text-primary text-xs font-bold flex items-center gap-1">
+          <i data-lucide="upload" class="w-3 h-3"></i> Submit
+        </button>
+        ${isAdmin ? `<button id="post-leak-btn" class="btn-press px-3 py-2 rounded-xl bg-gold text-black text-xs font-bold flex items-center gap-1"><i data-lucide="plus" class="w-3 h-3"></i> Post</button>` : ''}
+      </div>
+    </div>
+    <div id="leaks-feed" class="space-y-3">
+      <div class="skeleton h-32 rounded-2xl"></div>
+    </div>
+  `;
+  document.getElementById('submit-leak-btn').onclick = openSubmitLeakSheet;
+  if (isAdmin) document.getElementById('post-leak-btn').onclick = openPostLeakSheet;
+  loadLeaks();
+};
+
+// Override the leak render to show submitter + Approved badge
+const _origRenderLeaks = renderLeaks;
+renderLeaks = function() {
+  const feed = document.getElementById('leaks-feed');
+  if (!feed) return;
+  if (State.cache.leaks.length === 0) {
+    feed.innerHTML = emptyState('zap', 'No leaks yet', 'Be the first to submit!', 'Submit Leak', openSubmitLeakSheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+  const rarityColors = {
+    common: 'bg-gray-500',
+    rare: 'bg-blue-500',
+    epic: 'bg-purple-500',
+    legendary: 'bg-gold text-black',
+    mythic: 'bg-red-500'
+  };
+  feed.innerHTML = State.cache.leaks.map(l => {
+    const authorName = l.submittedByIgn || l.authorIgn || 'CODMPanda';
+    const authorAvatar = l.submittedByAvatar || '';
+    const isApproved = !!l.approved;
+    return `
+      <div class="bg-card border border-border rounded-2xl overflow-hidden fade-in">
+        ${l.imageUrl ? `<img src="${esc(l.imageUrl)}" class="w-full h-40 object-cover" />` : ''}
+        <div class="p-4">
+          <div class="flex items-center gap-2 mb-2 flex-wrap">
+            <span class="text-[10px] px-2 py-0.5 rounded-full ${rarityColors[l.rarity] || 'bg-gray-500'} font-black uppercase">${esc(l.rarity || 'common')}</span>
+            ${isApproved ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold flex items-center gap-0.5"><i data-lucide="check" class="w-2.5 h-2.5"></i> Approved</span>` : ''}
+            <span class="text-[10px] text-gray-500">${timeAgo(l.createdAt || l.publishedAt)}</span>
+          </div>
+          <h3 class="text-base font-bold mb-2">${esc(l.title)}</h3>
+          ${l.body ? `<p class="text-xs text-gray-400 line-clamp-3 mb-3">${esc(l.body)}</p>` : ''}
+          <div class="flex items-center gap-2 mb-3">
+            <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
+              ${authorAvatar ? `<img src="${esc(authorAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName)}
+            </div>
+            <span class="text-[10px] text-gray-500">by <span class="text-gray-300 font-semibold">${esc(authorName)}</span></span>
+          </div>
+          <div class="flex items-center justify-between">
+            <button class="hype-leak flex items-center gap-1 text-xs text-gray-400" data-id="${l.id}">
+              <i data-lucide="flame" class="w-4 h-4"></i> ${l.hypes || 0}
+            </button>
+            <button class="share-leak text-gray-500" data-id="${l.id}">
+              <i data-lucide="share-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  feed.querySelectorAll('.hype-leak').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'leaks', btn.dataset.id), { hypes: increment(1) });
+        toast('🔥 Hyped!', 'success', 1000);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-leak').forEach(btn => {
+    btn.onclick = () => shareContent('CODMPanda Leak', 'Intel drop!', location.origin + '/?leak=' + btn.dataset.id);
+  });
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// Override the VAULT sub to add Submit button
+const _origRenderVaultSub = renderVaultSub;
+renderVaultSub = function() {
+  const body = document.getElementById('lab-body');
+  body.innerHTML = `
+    <div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1">
+      <button class="chip vault-type ${vaultTypeFilter === 'gunsmith' ? 'active' : ''}" data-type="gunsmith">Gunsmith</button>
+      <button class="chip vault-type ${vaultTypeFilter === 'sens' ? 'active' : ''}" data-type="sens">Sensitivity</button>
+      <button class="chip vault-type ${vaultTypeFilter === 'hud' ? 'active' : ''}" data-type="hud">HUD</button>
+      <button id="submit-vault-btn" class="chip active ml-auto" style="background:#FF6B00;border-color:#FF6B00;color:#fff">
+        <i data-lucide="upload" class="w-3 h-3 inline"></i> Submit
+      </button>
+    </div>
+
+    <div class="relative mb-4">
+      <i data-lucide="search" class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+      <input id="vault-search" type="text" placeholder="Search by gun or code..." class="pl-10" />
+    </div>
+
+    <div id="vault-feed" class="grid grid-cols-2 gap-3">
+      ${skeletonCard().repeat(4)}
+    </div>
+  `;
+
+  document.getElementById('submit-vault-btn').onclick = openSubmitVaultSheet;
+  document.getElementById('vault-search').oninput = (e) => {
+    State.filters.vaults.search = e.target.value.toLowerCase();
+    renderVaults();
+  };
+
+  document.querySelectorAll('.vault-type').forEach(btn => {
+    btn.onclick = () => {
+      vaultTypeFilter = btn.dataset.type;
+      State.filters.vaults.type = vaultTypeFilter;
+      renderVaultSub();
+    };
+  });
+
+  loadVaults();
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// Override CLIPS to add Submit button
+const _origRenderClipsSub = renderClipsSub;
+renderClipsSub = function() {
+  const body = document.getElementById('squad-body');
+  body.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <div class="text-xs text-gray-500">Best plays from the community</div>
+      <button id="submit-clip-btn" class="btn-press px-3 py-2 rounded-xl bg-primary text-xs font-bold flex items-center gap-1">
+        <i data-lucide="upload" class="w-3 h-3"></i> Submit
+      </button>
+    </div>
+    <div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1">
+      <button class="chip clip-sort active" data-sort="recent">Recent</button>
+      <button class="chip clip-sort" data-sort="trending">Trending</button>
+    </div>
+    <div id="clips-feed" class="space-y-3">
+      <div class="skeleton h-40 rounded-2xl"></div>
+    </div>
+  `;
+
+  document.getElementById('submit-clip-btn').onclick = openSubmitClipSheet;
+  document.querySelectorAll('.clip-sort').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.clip-sort').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      State.filters.clips.sort = btn.dataset.sort;
+      renderClips();
+    };
+  });
+
+  loadClips();
+};
+
+// Override CLIP render to show submitter + Approved badge
+const _origRenderClips = renderClips;
+renderClips = function() {
+  const feed = document.getElementById('clips-feed');
+  if (!feed) return;
+  let clips = [...State.cache.clips];
+  if (State.filters.clips.sort === 'trending') {
+    clips.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+  }
+
+  if (clips.length === 0) {
+    feed.innerHTML = emptyState('video', 'No clips yet', 'Be the first to submit!', 'Submit Clip', openSubmitClipSheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.innerHTML = clips.map(c => {
+    const embedUrl = getYouTubeEmbed(c.youtubeUrl);
+    const authorName = c.submittedByIgn || c.ign || 'CODMPanda';
+    const authorAvatar = c.submittedByAvatar || '';
+    const isApproved = !!c.approved;
+    return `
+      <div class="bg-card border border-border rounded-2xl overflow-hidden fade-in">
+        ${embedUrl ? `
+          <div class="relative w-full aspect-video bg-black">
+            <iframe src="${embedUrl}" class="w-full h-full" frameborder="0" allowfullscreen loading="lazy"></iframe>
+          </div>
+        ` : `
+          <div class="w-full aspect-video bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+            <a href="${esc(c.youtubeUrl)}" target="_blank" class="text-center">
+              <i data-lucide="external-link" class="w-8 h-8 mx-auto text-primary mb-2"></i>
+              <div class="text-xs text-gray-400">Open link</div>
+            </a>
+          </div>
+        `}
+        <div class="p-3">
+          <div class="flex items-center gap-2 mb-2 flex-wrap">
+            <span class="text-xs font-bold text-gray-300">${esc(c.gunTag || 'CODM')}</span>
+            ${isApproved ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold flex items-center gap-0.5"><i data-lucide="check" class="w-2.5 h-2.5"></i> Approved</span>` : ''}
+            <span class="text-[10px] text-gray-500">· ${timeAgo(c.createdAt)}</span>
+          </div>
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
+              ${authorAvatar ? `<img src="${esc(authorAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName)}
+            </div>
+            <span class="text-[10px] text-gray-500">by <span class="text-gray-300 font-semibold">${esc(authorName)}</span></span>
+          </div>
+          <div class="flex items-center justify-between">
+            <button class="like-clip flex items-center gap-1 text-xs text-gray-400" data-id="${c.id}">
+              <i data-lucide="heart" class="w-4 h-4"></i> ${c.likes || 0}
+            </button>
+            <button class="share-clip text-gray-500" data-id="${c.id}">
+              <i data-lucide="share-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  feed.querySelectorAll('.like-clip').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'clips', btn.dataset.id), { likes: increment(1) });
+        toast('❤️', 'success', 1000);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-clip').forEach(btn => {
+    btn.onclick = () => shareContent('CODMPanda Clip', 'Watch this!', location.origin + '/?clip=' + btn.dataset.id);
+  });
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// ADMIN APPROVAL QUEUE
+// ============================================
+async function showAdminSubmissions() {
+  openSheet(`<div class="text-center py-8"><div class="spinner mx-auto"></div></div>`, 'Pending Submissions');
+
+  try {
+    const [leakSnap, vaultSnap, clipSnap] = await Promise.all([
+      getDocs(query(collection(db, 'leak_submissions'), where('status', '==', 'pending'), orderBy('submittedAt', 'desc'), limit(50))),
+      getDocs(query(collection(db, 'vault_submissions'), where('status', '==', 'pending'), orderBy('submittedAt', 'desc'), limit(50))),
+      getDocs(query(collection(db, 'clip_submissions'), where('status', '==', 'pending'), orderBy('submittedAt', 'desc'), limit(50)))
+    ]);
+
+    const leaks = []; leakSnap.forEach(d => leaks.push({ id: d.id, ...d.data() }));
+    const vaults = []; vaultSnap.forEach(d => vaults.push({ id: d.id, ...d.data() }));
+    const clips = []; clipSnap.forEach(d => clips.push({ id: d.id, ...d.data() }));
+
+    const total = leaks.length + vaults.length + clips.length;
+
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (!sheetBody) return;
+
+    if (total === 0) {
+      sheetBody.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No pending submissions 🎉</div>';
+      return;
+    }
+
+    sheetBody.innerHTML = `
+      <div class="text-xs text-gray-500 mb-4">${total} pending item${total === 1 ? '' : 's'}</div>
+
+      ${leaks.length > 0 ? `
+        <div class="text-xs font-bold text-gold uppercase mb-2">🔥 Leaks (${leaks.length})</div>
+        ${leaks.map(l => renderSubmissionCard('leak', l)).join('')}
+      ` : ''}
+
+      ${vaults.length > 0 ? `
+        <div class="text-xs font-bold text-primary uppercase mb-2 mt-4">🔧 Vault Builds (${vaults.length})</div>
+        ${vaults.map(v => renderSubmissionCard('vault', v)).join('')}
+      ` : ''}
+
+      ${clips.length > 0 ? `
+        <div class="text-xs font-bold text-primary uppercase mb-2 mt-4">🎬 Clips (${clips.length})</div>
+        ${clips.map(c => renderSubmissionCard('clip', c)).join('')}
+      ` : ''}
+    `;
+
+    // Wire approve/reject buttons
+    sheetBody.querySelectorAll('.approve-btn').forEach(btn => {
+      btn.onclick = () => approveSubmission(btn.dataset.type, btn.dataset.id);
+    });
+    sheetBody.querySelectorAll('.reject-btn').forEach(btn => {
+      btn.onclick = () => rejectSubmission(btn.dataset.type, btn.dataset.id);
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Submissions error:', e);
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (sheetBody) sheetBody.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">Failed to load</div>';
+  }
+}
+
+function renderSubmissionCard(type, item) {
+  const iconMap = { leak: '🔥', vault: '🔧', clip: '🎬' };
+  const titleMap = {
+    leak: item.title || 'Untitled leak',
+    vault: item.gunName || 'Untitled build',
+    clip: item.youtubeUrl || 'Untitled clip'
+  };
+  const descMap = {
+    leak: (item.body || '').slice(0, 100),
+    vault: item.gunsmithCode ? `Code: ${item.gunsmithCode}` : Object.keys(item.attachments || {}).length + ' attachments',
+    clip: item.gunTag || 'CODM'
+  };
+
+  return `
+    <div class="bg-card border border-border rounded-xl p-3 mb-2">
+      <div class="flex items-start gap-3 mb-2">
+        <div class="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center font-bold text-sm flex-shrink-0 overflow-hidden">
+          ${item.submitterAvatar ? `<img src="${esc(item.submitterAvatar)}" class="w-full h-full object-cover" />` : getInitials(item.submitterIgn)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-xs font-bold truncate">${iconMap[type]} ${esc(titleMap)}</div>
+          <div class="text-[10px] text-gray-500">by ${esc(item.submitterIgn || 'Unknown')} · ${timeAgo(item.submittedAt)}</div>
+        </div>
+      </div>
+      ${descMap[type] ? `<div class="text-[11px] text-gray-400 mb-2 line-clamp-2">${esc(descMap[type])}</div>` : ''}
+      ${item.imageUrl ? `<img src="${esc(item.imageUrl)}" class="w-full h-24 object-cover rounded-lg mb-2" />` : ''}
+      <div class="flex gap-2">
+        <button class="approve-btn flex-1 py-2 rounded-lg bg-green-500/20 border border-green-500/40 text-green-400 text-xs font-bold" data-type="${type}" data-id="${item.id}">
+          ✓ Approve
+        </button>
+        <button class="reject-btn flex-1 py-2 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 text-xs font-bold" data-type="${type}" data-id="${item.id}">
+          ✕ Reject
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function approveSubmission(type, id) {
+  const collectionMap = {
+    leak: { sub: 'leak_submissions', main: 'leaks' },
+    vault: { sub: 'vault_submissions', main: 'vaults' },
+    clip: { sub: 'clip_submissions', main: 'clips' }
+  };
+  const { sub, main } = collectionMap[type];
+
+  try {
+    toast('Approving...', 'info', 1500);
+
+    const subRef = doc(db, sub, id);
+    const subSnap = await getDoc(subRef);
+    if (!subSnap.exists()) { toast('Submission not found', 'error'); return; }
+
+    const data = subSnap.data();
+
+    // Build the main doc
+    const mainDoc = {
+      uid: data.submitterUid,
+      ign: data.submitterIgn,
+      avatar: data.submitterAvatar || '',
+      submittedByUid: data.submitterUid,
+      submittedByIgn: data.submitterIgn,
+      submittedByAvatar: data.submitterAvatar || '',
+      approved: true,
+      approvedByUid: State.user.uid,
+      approvedAt: serverTimestamp(),
+      createdAt: serverTimestamp()
+    };
+
+    if (type === 'leak') {
+      Object.assign(mainDoc, {
+        title: data.title,
+        rarity: data.rarity,
+        body: data.body,
+        imageUrl: data.imageUrl || '',
+        hypes: 0
+      });
+    } else if (type === 'vault') {
+      Object.assign(mainDoc, {
+        gunName: data.gunName,
+        gunsmithCode: data.gunsmithCode,
+        type: data.type,
+        attachments: data.attachments || {},
+        imageUrl: data.imageUrl || '',
+        likes: 0
+      });
+    } else if (type === 'clip') {
+      Object.assign(mainDoc, {
+        youtubeUrl: data.youtubeUrl,
+        gunTag: data.gunTag,
+        likes: 0
+      });
+    }
+
+    // 1. Add to main collection
+    await addDoc(collection(db, main), mainDoc);
+
+    // 2. Update submitter's count + badges
+    await updateContributorStats(data.submitterUid);
+
+    // 3. Delete the submission (per your choice: A)
+    await deleteDoc(subRef);
+
+    toast('✓ Approved & published!', 'success');
+    closeSheet();
+    setTimeout(showAdminSubmissions, 500);
+  } catch (e) {
+    console.error(e);
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+async function rejectSubmission(type, id) {
+  confirmDialog('Reject Submission', 'This will permanently delete the submission. The user can resubmit.', async () => {
+    const collectionMap = {
+      leak: 'leak_submissions',
+      vault: 'vault_submissions',
+      clip: 'clip_submissions'
+    };
+    try {
+      await deleteDoc(doc(db, collectionMap[type], id));
+      toast('Rejected', 'success');
+      closeSheet();
+      setTimeout(showAdminSubmissions, 500);
+    } catch (e) {
+      toast('Failed: ' + e.message, 'error');
+    }
+  }, 'Reject', true);
+}
+
+async function updateContributorStats(uid) {
+  try {
+    const userRef = doc(db, 'users', uid);
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) return;
+
+    const data = snap.data();
+    const newCount = (data.approvedCount || 0) + 1;
+    const badges = data.badges || [];
+
+    // Add badges at milestones
+    if (newCount === 1 && !badges.includes('first_leak')) badges.push('first_leak');
+    if (newCount === 5 && !badges.includes('rising')) badges.push('rising');
+    if (newCount === 10 && !badges.includes('legend')) badges.push('legend');
+    if (newCount === 25 && !badges.includes('elite')) badges.push('elite');
+
+    await updateDoc(userRef, {
+      approvedCount: newCount,
+      badges: badges
+    });
+
+    console.log('✅ Contributor stats updated:', uid, 'count:', newCount);
+  } catch (e) {
+    console.error('Failed to update contributor stats:', e);
+  }
+}
+
+async function grantProToContributor(uid) {
+  try {
+    await updateDoc(doc(db, 'users', uid), {
+      isPro: true,
+      proExpiry: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      proFromContribution: true
+    });
+    toast('👑 7-day Pro granted!', 'success');
+  } catch (e) {
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+window.showAdminSubmissions = showAdminSubmissions;
+window.grantProToContributor = grantProToContributor;
+
+/* END OF CHUNK 9 */
