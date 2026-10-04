@@ -41,7 +41,7 @@ import {
 // ============================================
 const firebaseConfig = {
   apiKey: "AIzaSyC4wVCT-ITLRFPDtzENnDjxL_1aVCAqWHg",
-  authDomain: "codmpanda.pages.dev",
+  authDomain: "codmpanda-app.firebaseapp.com",
   projectId: "codmpanda-app",
   storageBucket: "codmpanda-app.firebasestorage.app",
   messagingSenderId: "604146891375",
@@ -428,11 +428,19 @@ window.APP_VERSION = APP_VERSION;
 // ---------- AUTH ----------
 async function handleSignIn() {
   try {
-    toast('Opening Google...', 'info', 1500);
-    await signInWithRedirect(auth, provider);
+    await signInWithPopup(auth, provider);
   } catch (err) {
-    console.error('❌ Sign-in error:', err.code, err.message);
-    toast('Sign-in failed: ' + (err.message || 'Unknown error'), 'error');
+    console.error('Popup failed:', err);
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+      toast('Popup blocked. Trying redirect...', 'info');
+      try {
+        await signInWithRedirect(auth, provider);
+      } catch (e2) {
+        toast('Sign-in failed: ' + e2.message, 'error');
+      }
+    } else {
+      toast('Sign-in failed: ' + err.code, 'error');
+    }
   }
 }
 async function checkRedirect() {
