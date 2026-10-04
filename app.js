@@ -439,18 +439,25 @@ async function handleSignIn() {
 async function checkRedirect() {
   try {
     const result = await getRedirectResult(auth);
-    console.log('=== REDIRECT RESULT ===');
-    console.log('Result:', result);
-    console.log('User:', result?.user);
-    console.log('Current auth.currentUser:', auth.currentUser);
+    console.log('=== REDIRECT RESULT ===', result);
     if (result && result.user) {
       console.log('✅ Redirect login SUCCESS:', result.user.email);
+      toast('Signed in! Loading...', 'success');
+      // Manually trigger the auth state update
+      // (onAuthStateChanged should catch this, but force it just in case)
+      State.user = result.user;
     } else {
-      console.log('❌ No redirect result — fresh load or failed');
+      console.log('ℹ️ No redirect result (fresh page load)');
     }
   } catch (e) {
     console.error('❌ Redirect error:', e.code, e.message);
-    toast('Sign-in error: ' + e.message, 'error', 5000);
+    if (e.code === 'auth/unauthorized-domain') {
+      toast('Domain not authorized in Firebase', 'error', 5000);
+    } else if (e.code === 'auth/operation-not-supported-in-this-environment') {
+      toast('Browser blocked auth. Try Chrome.', 'error', 5000);
+    } else {
+      toast('Sign-in error: ' + e.message, 'error', 5000);
+    }
   }
 }
 
