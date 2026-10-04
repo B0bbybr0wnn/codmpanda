@@ -1,4 +1,4 @@
-// ============================================
+nii// ============================================
 // CODMPanda — app.js
 // Chunk 1/7: Firebase + State + Constants + Utils
 // ============================================
@@ -429,10 +429,41 @@ window.APP_VERSION = APP_VERSION;
 // ---------- AUTH ----------
 async function handleSignIn() {
   try {
-    // ============================================
-// GOOGLE IDENTITY SERVICES (GIS) SIGN-IN
-// Bypasses firebaseapp.com/__/auth/handler entirely
-// ============================================
+    toast('Opening Google...', 'info', 1500);
+
+    if (!window.google || !window.google.accounts) {
+      await new Promise(function(resolve, reject) {
+        let attempts = 0;
+        const check = setInterval(function() {
+          attempts++;
+          if (window.google && window.google.accounts) {
+            clearInterval(check);
+            resolve();
+          } else if (attempts > 50) {
+            clearInterval(check);
+            reject(new Error('GIS script failed to load'));
+          }
+        }, 100);
+      });
+    }
+
+    initGIS();
+
+    window.google.accounts.id.prompt(function(notification) {
+      console.log('GIS prompt:', notification);
+      if (notification.isNotDisplayed && notification.isNotDisplayed()) {
+        console.warn('One Tap not displayed');
+        fallbackRenderGISButton();
+      }
+      if (notification.isSkippedMoment && notification.isSkippedMoment()) {
+        console.warn('One Tap skipped');
+      }
+    });
+  } catch (err) {
+    console.error('GIS error:', err);
+    toast('Sign-in failed: ' + err.message, 'error', 5000);
+  }
+}
 
 const GOOGLE_CLIENT_ID = "604146891375-ae5bhcm2nd2f59f0npp3en6setthjg1s.apps.googleusercontent.com";
 
@@ -451,62 +482,21 @@ function initGIS() {
     cancel_on_tap_outside: true
   });
   gisInitialized = true;
-  console.log('✅ GIS initialized');
-}
-
-async function handleSignIn() {
-  try {
-    toast('Opening Google...', 'info', 1500);
-
-    // Ensure GIS is loaded
-    if (!window.google || !window.google.accounts) {
-      await new Promise((resolve, reject) => {
-        let attempts = 0;
-        const check = setInterval(() => {
-          attempts++;
-          if (window.google && window.google.accounts) {
-            clearInterval(check);
-            resolve();
-          } else if (attempts > 50) { // 5 seconds
-            clearInterval(check);
-            reject(new Error('GIS script failed to load. Check your connection.'));
-          }
-        }, 100);
-      });
-    }
-
-    initGIS();
-
-    // Prompt the One Tap / popup
-    window.google.accounts.id.prompt((notification) => {
-      console.log('GIS prompt:', notification);
-      if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-        console.warn('One Tap not displayed:', notification.getNotDisplayedReason());
-        // Fallback: render the button and trigger click
-        fallbackRenderGISButton();
-      }
-      if (notification.isSkippedMoment && notification.isSkippedMoment()) {
-        console.warn('One Tap skipped:', notification.getSkippedReason());
-      }
-    });
-  } catch (err) {
-    console.error('❌ GIS error:', err);
-    toast('Sign-in failed: ' + err.message, 'error', 5000);
-  }
+  console.log('GIS initialized');
 }
 
 function fallbackRenderGISButton() {
-  // Render Google's own sign-in button in a sheet
-  openSheet(`
-    <div class="text-center space-y-4">
-      <div class="text-2xl">🐼</div>
-      <div class="text-sm font-bold">Sign in with Google</div>
-      <div id="gis-btn-container" class="flex justify-center"></div>
-      <button onclick="closeSheet()" class="text-xs text-gray-500">Cancel</button>
-    </div>
-  `, 'Sign In');
+  openSheet(
+    '<div class="text-center space-y-4">' +
+      '<div class="text-2xl">🐼</div>' +
+      '<div class="text-sm font-bold">Sign in with Google</div>' +
+      '<div id="gis-btn-container" class="flex justify-center"></div>' +
+      '<button onclick="closeSheet()" class="text-xs text-gray-500">Cancel</button>' +
+    '</div>',
+    'Sign In'
+  );
 
-  setTimeout(() => {
+  setTimeout(function() {
     if (window.google && window.google.accounts) {
       window.google.accounts.id.renderButton(
         document.getElementById('gis-btn-container'),
@@ -518,20 +508,16 @@ function fallbackRenderGISButton() {
 
 async function handleGISResponse(response) {
   try {
-    console.log('✅ GIS credential received');
+    console.log('GIS credential received');
     closeSheet();
 
-    // Build Firebase credential from the Google ID token
     const credential = GoogleAuthProvider.credential(response.credential);
 
-    // Sign in to Firebase
     const result = await signInWithCredential(auth, credential);
-    console.log('✅ Firebase sign-in success:', result.user.email);
+    console.log('Firebase sign-in success:', result.user.email);
     toast('Signed in!', 'success');
-
-    // onAuthStateChanged will handle the rest (onboarding, main app, etc.)
   } catch (err) {
-    console.error('❌ Firebase credential error:', err.code, err.message);
+    console.error('Firebase credential error:', err.code, err.message);
     toast('Sign-in failed: ' + err.message, 'error', 5000);
   }
 }
@@ -539,31 +525,14 @@ async function handleGISResponse(response) {
 window.handleSignIn = handleSignIn;
 window.initGIS = initGIS;
 window.handleGISResponse = handleGISResponse;
+
 async function checkRedirect() {
   try {
-    const result = await getRedirectResult(auth);
-    console.log('=== REDIRECT RESULT ===', result);
-    if (result && result.user) {
-      console.log('✅ Redirect login SUCCESS:', result.user.email);
-      toast('Signed in! Loading...', 'success');
-      // Manually trigger the auth state update
-      // (onAuthStateChanged should catch this, but force it just in case)
-      State.user = result.user;
-    } else {
-      console.log('ℹ️ No redirect result (fresh page load)');
-    }
+    await getRedirectResult(auth);
   } catch (e) {
-    console.error('❌ Redirect error:', e.code, e.message);
-    if (e.code === 'auth/unauthorized-domain') {
-      toast('Domain not authorized in Firebase', 'error', 5000);
-    } else if (e.code === 'auth/operation-not-supported-in-this-environment') {
-      toast('Browser blocked auth. Try Chrome.', 'error', 5000);
-    } else {
-      toast('Sign-in error: ' + e.message, 'error', 5000);
-    }
+    console.error('Redirect error:', e);
   }
 }
-
 async function handleSignOut() {
   confirmDialog('Sign Out', 'Are you sure you want to sign out?', async () => {
     try {
