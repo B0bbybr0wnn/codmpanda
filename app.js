@@ -48,7 +48,7 @@ const firebaseConfig = {
   appId: "1:604146891375:web:ae74f70c184fd89d572b9a"
 };
 
-const ADMIN_UID = "PASTE_ADMIN_UID";
+const ADMIN_UID = "ItqEYihqxYW4HGm7i8bBYky8XNw1";
 const APP_VERSION = "1.0.0";
 
 const app = initializeApp(firebaseConfig);
