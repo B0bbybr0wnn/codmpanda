@@ -12,35 +12,30 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    function isValidString(str, maxLen) {
-      return str is string && str.size() <= maxLen;
-    }
-
-    function isRateLimited(maxWrites, seconds) {
-      return request.time > resource.data.lastWrite + duration.value(seconds, 's');
+    function isAdmin() {
+      return isSignedIn() && request.auth.uid == 'ItqEYihqxYW4HGm7i8bBYky8XNw1';
     }
 
     // ---------- USERS ----------
     match /users/{uid} {
-      // Anyone signed in can read profiles
       allow read: if isSignedIn();
 
-      // Only the owner can create/update their profile
-      // Prevent users from granting themselves Pro status on create
+      // Create — owner only, cannot self-grant Pro
       allow create: if isOwner(uid)
                     && request.resource.data.isPro == false
                     && request.resource.data.ign is string
                     && request.resource.data.ign.size() >= 2
                     && request.resource.data.ign.size() <= 24;
 
-      // Update — owner can update everything except isPro/proExpiry (only admin/server can)
-      allow update: if isOwner(uid)
-                    && request.resource.data.isPro == resource.data.isPro
-                    && request.resource.data.proExpiry == resource.data.proExpiry
-                    && request.resource.data.createdAt == resource.data.createdAt;
+      // Update — owner can edit their own profile EXCEPT isPro/proExpiry
+      // Only admin can flip those (or in future: server-side webhook from payment provider)
+      allow update: if isOwner(uid) && (
+        isAdmin() ||
+        (request.resource.data.isPro == resource.data.isPro
+         && request.resource.data.proExpiry == resource.data.proExpiry)
+      );
 
-      // Only owner can delete their own account doc
-      allow delete: if isOwner(uid);
+      allow delete: if isOwner(uid) || isAdmin();
     }
 
     // ---------- LOBBIES (LFG) ----------
@@ -49,42 +44,35 @@ service cloud.firestore {
 
       allow create: if isSignedIn()
                     && request.resource.data.uid == request.auth.uid
-                    && request.resource.data.ign is string
-                    && request.resource.data.mode is string
-                    && request.resource.data.region is string
                     && request.resource.data.players is number
                     && request.resource.data.players >= 1
                     && request.resource.data.players <= 5;
 
-      // Owner can update (join increments, edit), anyone signed in can increment players
+      // Anyone signed in can update (join increments players)
       allow update: if isSignedIn();
 
-      // Owner can delete
-      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
-    // ---------- VAULTS (Gunsmith / Sens / HUD) ----------
+    // ---------- VAULTS ----------
     match /vaults/{vaultId} {
       allow read: if true; // Public — shareable links work without login
 
       allow create: if isSignedIn()
                     && request.resource.data.uid == request.auth.uid
-                    && request.resource.data.gunName is string
-                    && request.resource.data.gunsmithCode is string
                     && request.resource.data.likes == 0
                     && request.resource.data.type in ['gunsmith', 'sens', 'hud'];
 
-      // Anyone signed in can update the likes counter (+1/-1)
-      // Owner can update everything else
+      // Anyone signed in can update likes; owner can edit their vault
       allow update: if isSignedIn() && (
-        // Like toggle — only likes field can change
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']))
         ||
-        // Owner can edit their own vault
         (resource.data.uid == request.auth.uid)
+        ||
+        isAdmin()
       );
 
-      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
     // ---------- CAMOS ----------
@@ -105,10 +93,10 @@ service cloud.firestore {
                     && request.resource.data.members is list
                     && request.resource.data.members.size() == 1;
 
-      // Owner can update anything; members can join/leave (update members array)
+      // Owner or members can update (join/leave)
       allow update: if isSignedIn();
 
-      allow delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
     }
 
     // ---------- SCRIMS ----------
@@ -120,8 +108,8 @@ service cloud.firestore {
                     && request.resource.data.text is string
                     && request.resource.data.text.size() <= 500;
 
-      allow update: if isSignedIn() && resource.data.uid == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow update: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
     // ---------- CLIPS ----------
@@ -133,51 +121,33 @@ service cloud.firestore {
                     && request.resource.data.youtubeUrl is string
                     && request.resource.data.likes == 0;
 
-      // Anyone can like/unlike (likes field only)
+      // Anyone can like; owner can edit; admin can do anything
       allow update: if isSignedIn() && (
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']))
         ||
         (resource.data.uid == request.auth.uid)
+        ||
+        isAdmin()
       );
 
-      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
-    // ---------- LEAKS ----------
+    // ---------- LEAKS (ADMIN ONLY WRITES) ----------
     match /leaks/{leakId} {
       allow read: if isSignedIn();
 
-      // Only admins can post leaks (checked by uid list in admin doc)
-      // For simplicity: any signed-in user can create — we validate admin client-side
-      // AND recommend you update this rule with your admin UID
-      allow create: if isSignedIn()
-                    && request.resource.data.title is string
-                    && request.resource.data.title.size() >= 3
-                    && request.resource.data.title.size() <= 100;
-
-      // Anyone can update hype reacts on the leak
-      allow update: if isSignedIn();
-
-      // ⚠️ TODO: Lock this to admin UID only after you know your UID
-      // Replace the delete rule with: allow delete: if request.auth.uid == 'YOUR_ADMIN_UID';
-      allow delete: if isSignedIn();
+      // Only admin can post/edit/delete leaks
+      allow create, update, delete: if isAdmin();
     }
 
-    // ---------- REPORTS ----------
+    // ---------- REPORTS (ANYONE CAN CREATE, ADMIN ONLY MANAGE) ----------
     match /reports/{reportId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
-                    && request.resource.data.reporterUid == request.auth.uid
-                    && request.resource.data.reason is string
-                    && request.resource.data.reason.size() >= 5
-                    && request.resource.data.reason.size() <= 500;
-
-      // Only admins delete reports — update this after you know your UID
-      // allow delete: if request.auth.uid == 'YOUR_ADMIN_UID';
-      allow update, delete: if isSignedIn();
+      allow read, create: if isSignedIn();
+      allow update, delete: if isAdmin();
     }
 
-    // ---------- TIER LIST VOTES ----------
+    // ---------- TIER VOTES ----------
     match /tierVotes/{uid} {
       allow read: if isSignedIn();
       allow write: if isOwner(uid);
