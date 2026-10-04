@@ -4125,3 +4125,244 @@ window.showAdminSubmissions = showAdminSubmissions;
 window.grantProToContributor = grantProToContributor;
 
 /* END OF CHUNK 9 */
+// ============================================
+// Chunk 10: Contributor Card + Admin Panel Integration
+// ============================================
+
+// ---------- CONTRIBUTOR CARD (for YOU tab) ----------
+function renderContributorCard() {
+  const p = State.profile || {};
+  const count = p.approvedCount || 0;
+  const badges = p.badges || [];
+
+  // Milestone tracking
+  const nextMilestone = count < 1 ? 1 : count < 5 ? 5 : count < 10 ? 10 : count < 25 ? 25 : null;
+  const prevMilestone = count < 1 ? 0 : count < 5 ? 1 : count < 10 ? 5 : count < 25 ? 10 : 25;
+  const progressPct = nextMilestone ? Math.round(((count - prevMilestone) / (nextMilestone - prevMilestone)) * 100) : 100;
+
+  const badgeInfo = {
+    first_leak: { emoji: '🥉', label: 'First Leak', color: 'text-orange-400' },
+    rising: { emoji: '🥈', label: 'Rising Contributor', color: 'text-blue-400' },
+    legend: { emoji: '🥇', label: 'Community Legend', color: 'text-gold' },
+    elite: { emoji: '💎', label: 'CODMPanda Elite', color: 'text-purple-400' }
+  };
+
+  return `
+    <div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+      <div class="px-4 py-3 border-b border-border">
+        <div class="text-xs font-bold text-gray-400 uppercase flex items-center gap-2">
+          <span>🏆</span> Contributor
+        </div>
+      </div>
+      <div class="p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <div class="text-2xl font-black text-primary">${count}</div>
+            <div class="text-[10px] text-gray-500 font-bold uppercase">Approved Submissions</div>
+          </div>
+          <div class="text-right">
+            ${nextMilestone ? `
+              <div class="text-[10px] text-gray-500">Next reward at <span class="font-bold text-white">${nextMilestone}</span></div>
+              <div class="text-[10px] text-gold font-bold">${nextMilestone - count} more needed</div>
+            ` : `
+              <div class="text-[10px] text-gold font-bold glow-text-gold">ALL MILESTONES HIT 👑</div>
+            `}
+          </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="progress-bar mb-4">
+          <div class="progress-fill" style="width: ${progressPct}%"></div>
+        </div>
+
+        <!-- Badges -->
+        <div class="grid grid-cols-4 gap-2 mb-3">
+          ${['first_leak', 'rising', 'legend', 'elite'].map(b => {
+            const info = badgeInfo[b];
+            const unlocked = badges.includes(b);
+            return `
+              <div class="flex flex-col items-center gap-1 p-2 rounded-lg ${unlocked ? 'bg-gold/10 border border-gold/30' : 'bg-cardAlt border border-border opacity-40'}">
+                <span class="text-xl">${info.emoji}</span>
+                <span class="text-[8px] font-bold ${unlocked ? info.color : 'text-gray-500'} text-center leading-tight">${info.label}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <div class="text-[10px] text-gray-500 text-center">
+          Submit leaks, builds, or clips → get approved → unlock rewards
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ---------- OVERRIDE YOU TAB to include Contributor card ----------
+const _origRenderYouTab = renderYouTab;
+renderYouTab = function() {
+  // Call the original to render base
+  _origRenderYouTab();
+
+  // Inject the contributor card after the stats grid
+  setTimeout(() => {
+    const content = document.getElementById('content');
+    if (!content) return;
+    const statsGrid = content.querySelector('.grid-cols-3');
+    if (statsGrid && statsGrid.parentElement) {
+      const card = document.createElement('div');
+      card.innerHTML = renderContributorCard();
+      statsGrid.parentElement.insertBefore(card.firstElementChild, statsGrid.nextSibling);
+    }
+  }, 50);
+};
+
+// ---------- ADD ADMIN SUBMISSIONS BUTTON ----------
+// Override renderYouTab to add "Pending Submissions" to admin section
+const _origRenderYouTab2 = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTab2();
+
+  // Add admin button for submissions
+  setTimeout(() => {
+    const adminSection = document.querySelector('.bg-card.border-gold\\/40');
+    if (adminSection) {
+      const list = adminSection.querySelector('.divide-y');
+      if (list && !list.querySelector('[data-action="admin-submissions"]')) {
+        const btn = document.createElement('button');
+        btn.className = 'settings-row w-full flex items-center justify-between px-4 py-3 text-left';
+        btn.dataset.action = 'admin-submissions';
+        btn.innerHTML = `
+          <div class="flex items-center gap-3 min-w-0">
+            <i data-lucide="inbox" class="w-4 h-4 text-gold flex-shrink-0"></i>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold">Pending Submissions</div>
+              <div class="text-[10px] text-gray-500 truncate">Review user submissions</div>
+            </div>
+          </div>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+        `;
+        btn.onclick = () => handleSettingAction('admin-submissions');
+        list.insertBefore(btn, list.firstChild);
+        if (window.lucide) window.lucide.createIcons();
+      }
+    }
+  }, 100);
+};
+
+// ---------- HANDLE new admin actions ----------
+const _origHandleSettingAction = handleSettingAction;
+handleSettingAction = function(action) {
+  if (action === 'admin-submissions') {
+    showAdminSubmissions();
+    return;
+  }
+  return _origHandleSettingAction(action);
+};
+
+// ---------- ADMIN PANEL — pending submissions count badge ----------
+async function updateAdminBadge() {
+  if (State.user?.uid !== ADMIN_UID) return;
+  try {
+    const [l, v, c] = await Promise.all([
+      getDocs(query(collection(db, 'leak_submissions'), where('status', '==', 'pending'))),
+      getDocs(query(collection(db, 'vault_submissions'), where('status', '==', 'pending'))),
+      getDocs(query(collection(db, 'clip_submissions'), where('status', '==', 'pending')))
+    ]);
+    const total = l.size + v.size + c.size;
+    if (total > 0) {
+      // Could show a badge on the YOU tab — nice touch
+      console.log('📬 Pending submissions:', total);
+    }
+  } catch (e) { /* silent */ }
+}
+
+// Call on admin login
+setTimeout(() => {
+  if (State.user?.uid === ADMIN_UID) updateAdminBadge();
+}, 3000);
+
+// ---------- GRANT PRO BUTTON (called from user list) ----------
+function showGrantProDialog(uid, ign) {
+  confirmDialog(
+    'Grant Pro',
+    `Give ${esc(ign)} 7 days of Pro for their contribution?`,
+    async () => {
+      try {
+        await updateDoc(doc(db, 'users', uid), {
+          isPro: true,
+          proExpiry: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          proFromContribution: true
+        });
+        toast(`👑 Pro granted to ${ign}!`, 'success');
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+      }
+    },
+    'Grant 7-Day Pro'
+  );
+}
+
+// ---------- OVERRIDE showAdminUsers to include Grant Pro button for contributors ----------
+const _origShowAdminUsers = showAdminUsers;
+showAdminUsers = async function() {
+  openSheet(`<div class="text-center py-8"><div class="spinner mx-auto"></div></div>`, 'Users');
+
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(100)));
+    const users = [];
+    snap.forEach(d => users.push({ id: d.id, ...d.data() }));
+
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (!sheetBody) return;
+
+    sheetBody.innerHTML = `
+      <div class="text-xs text-gray-500 mb-3">${users.length} total users</div>
+      ${users.map(u => {
+        const isContributor = (u.approvedCount || 0) >= 5 && !u.proFromContribution;
+        return `
+          <div class="bg-card border border-border rounded-xl p-3 mb-2">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center font-bold text-sm flex-shrink-0 overflow-hidden">
+                ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-bold truncate flex items-center gap-1.5">
+                  ${esc(u.ign || 'Unknown')}
+                  ${u.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
+                </div>
+                <div class="text-[10px] text-gray-500 truncate">
+                  ${esc(u.rank || '—')} · ${esc(u.region || '—')}
+                  ${u.approvedCount ? ` · 🏆 ${u.approvedCount}` : ''}
+                </div>
+              </div>
+              <div class="text-[9px] text-gray-600 font-mono">${u.id.slice(0, 6)}</div>
+            </div>
+            ${isContributor ? `
+              <button class="grant-pro-btn w-full mt-2 py-2 rounded-lg bg-gold/15 border border-gold/40 text-gold text-xs font-bold" data-uid="${u.id}" data-ign="${esc(u.ign)}">
+                👑 Grant 7-Day Pro (Contributor)
+              </button>
+            ` : ''}
+          </div>
+        `;
+      }).join('')}
+    `;
+
+    sheetBody.querySelectorAll('.grant-pro-btn').forEach(btn => {
+      btn.onclick = () => {
+        closeSheet();
+        showGrantProDialog(btn.dataset.uid, btn.dataset.ign);
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (sheetBody) sheetBody.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">Failed to load</div>';
+  }
+};
+
+// Export
+window.renderContributorCard = renderContributorCard;
+window.showGrantProDialog = showGrantProDialog;
+
+/* END OF CHUNK 10 */
