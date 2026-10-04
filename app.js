@@ -438,9 +438,19 @@ async function handleSignIn() {
 
 async function checkRedirect() {
   try {
-    await getRedirectResult(auth);
+    const result = await getRedirectResult(auth);
+    console.log('=== REDIRECT RESULT ===');
+    console.log('Result:', result);
+    console.log('User:', result?.user);
+    console.log('Current auth.currentUser:', auth.currentUser);
+    if (result && result.user) {
+      console.log('✅ Redirect login SUCCESS:', result.user.email);
+    } else {
+      console.log('❌ No redirect result — fresh load or failed');
+    }
   } catch (e) {
-    console.error('Redirect error:', e);
+    console.error('❌ Redirect error:', e.code, e.message);
+    toast('Sign-in error: ' + e.message, 'error', 5000);
   }
 }
 
