@@ -3377,3 +3377,271 @@ window.addEventListener('unhandledrejection', (e) => console.error('Unhandled re
 console.log('%c🐼 CODMPanda v' + APP_VERSION + ' loaded', 'color:#FF6B00;font-weight:bold;font-size:14px');
 
 /* END OF CHUNK 7C — APP COMPLETE */
+// ============================================
+// Chunk 8: User Submissions (Leaks, Vaults, Clips)
+// ============================================
+
+// ---------- SUBMISSION COOLDOWN CHECK ----------
+async function checkSubmitCooldown(collectionName) {
+  try {
+    const lastSubmit = localStorage.getItem('codmpanda_last_submit_' + collectionName);
+    if (lastSubmit) {
+      const elapsed = Date.now() - parseInt(lastSubmit);
+      if (elapsed < 60000) {
+        const secs = Math.ceil((60000 - elapsed) / 1000);
+        toast(`Please wait ${secs}s before submitting again`, 'warning');
+        return false;
+      }
+    }
+    return true;
+  } catch (e) {
+    return true;
+  }
+}
+
+function markSubmitted(collectionName) {
+  localStorage.setItem('codmpanda_last_submit_' + collectionName, Date.now().toString());
+}
+
+// ============================================
+// LEAK SUBMISSION
+// ============================================
+function openSubmitLeakSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div class="bg-gold/10 border border-gold/30 rounded-xl p-3 text-xs text-gold">
+        ⚡ Your submission goes to admin for approval. If approved, your IGN will be shown as the source.
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Title *</label>
+        <input id="sl-title" type="text" placeholder="e.g. New Mythic weapon teased" maxlength="100" />
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Rarity</label>
+        <select id="sl-rarity">
+          <option value="common">Common</option>
+          <option value="rare">Rare</option>
+          <option value="epic">Epic</option>
+          <option value="legendary">Legendary</option>
+          <option value="mythic">Mythic</option>
+        </select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Details</label>
+        <textarea id="sl-body" rows="4" maxlength="800" placeholder="What's the leak? Add source if possible..."></textarea>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Screenshot (optional)</label>
+        <input id="sl-image" type="file" accept="image/*" class="text-xs" />
+      </div>
+      <button id="sl-submit" class="btn-press w-full py-4 rounded-2xl bg-gold text-black font-bold">
+        Submit for Approval
+      </button>
+    </div>
+  `, 'Submit a Leak');
+
+  document.getElementById('sl-submit').onclick = async () => {
+    const title = document.getElementById('sl-title').value.trim();
+    const rarity = document.getElementById('sl-rarity').value;
+    const body = document.getElementById('sl-body').value.trim();
+    const fileInput = document.getElementById('sl-image');
+
+    if (title.length < 3) { toast('Title too short', 'error'); return; }
+
+    const canSubmit = await checkSubmitCooldown('leak');
+    if (!canSubmit) return;
+
+    const btn = document.getElementById('sl-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      let imageUrl = '';
+      if (fileInput.files && fileInput.files[0]) {
+        imageUrl = await compressImage(fileInput.files[0], 800, 0.7);
+      }
+
+      await addDoc(collection(db, 'leak_submissions'), {
+        submitterUid: State.user.uid,
+        submitterIgn: State.profile.ign,
+        submitterAvatar: State.profile.avatar || '',
+        title, rarity, body, imageUrl,
+        status: 'pending',
+        submittedAt: serverTimestamp()
+      });
+
+      markSubmitted('leak');
+      toast('Submitted! Admin will review shortly. ✓', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Submit for Approval';
+    }
+  };
+}
+
+// ============================================
+// VAULT SUBMISSION
+// ============================================
+function openSubmitVaultSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div class="bg-primary/10 border border-primary/30 rounded-xl p-3 text-xs text-primary">
+        ⚡ Your build goes to admin for approval. If approved, your IGN will be shown as the builder.
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Type *</label>
+        <select id="sv-type">
+          <option value="gunsmith">Gunsmith</option>
+          <option value="sens">Sensitivity</option>
+          <option value="hud">HUD</option>
+        </select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gun *</label>
+        <select id="sv-gun">
+          <option value="">Select a gun...</option>
+          ${Object.entries(CODM_GUNS).map(([cat, guns]) => `
+            <optgroup label="${cat}">
+              ${guns.map(g => `<option value="${g}">${g}</option>`).join('')}
+            </optgroup>
+          `).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gunsmith Code</label>
+        <input id="sv-code" type="text" placeholder="e.g. ABC123XYZ" maxlength="20" />
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Attachments (one per line)</label>
+        <textarea id="sv-attach" rows="4" placeholder="Muzzle: Muzzle Brake&#10;Barrel: RTC Light Barrel&#10;Optic: Red Dot"></textarea>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Screenshot (optional)</label>
+        <input id="sv-image" type="file" accept="image/*" class="text-xs" />
+      </div>
+      <button id="sv-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+        Submit for Approval
+      </button>
+    </div>
+  `, 'Submit a Build');
+
+  document.getElementById('sv-submit').onclick = async () => {
+    const type = document.getElementById('sv-type').value;
+    const gunName = document.getElementById('sv-gun').value;
+    const gunsmithCode = document.getElementById('sv-code').value.trim();
+    const attachRaw = document.getElementById('sv-attach').value.trim();
+    const fileInput = document.getElementById('sv-image');
+
+    if (!gunName) { toast('Select a gun', 'error'); return; }
+    if (!gunsmithCode && !attachRaw) { toast('Add code or attachments', 'error'); return; }
+
+    const canSubmit = await checkSubmitCooldown('vault');
+    if (!canSubmit) return;
+
+    const btn = document.getElementById('sv-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      let imageUrl = '';
+      if (fileInput.files && fileInput.files[0]) {
+        imageUrl = await compressImage(fileInput.files[0], 700, 0.6);
+      }
+
+      const attachments = {};
+      attachRaw.split('\n').forEach(line => {
+        const [k, ...v] = line.split(':');
+        if (k && v.length) attachments[k.trim()] = v.join(':').trim();
+      });
+
+      await addDoc(collection(db, 'vault_submissions'), {
+        submitterUid: State.user.uid,
+        submitterIgn: State.profile.ign,
+        submitterAvatar: State.profile.avatar || '',
+        gunName, gunsmithCode, type, attachments, imageUrl,
+        status: 'pending',
+        submittedAt: serverTimestamp()
+      });
+
+      markSubmitted('vault');
+      toast('Submitted! Admin will review shortly. ✓', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Submit for Approval';
+    }
+  };
+}
+
+// ============================================
+// CLIP SUBMISSION
+// ============================================
+function openSubmitClipSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div class="bg-primary/10 border border-primary/30 rounded-xl p-3 text-xs text-primary">
+        ⚡ Your clip goes to admin for approval. If approved, your IGN will be shown as the source.
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">YouTube / TikTok URL *</label>
+        <input id="sc-url" type="url" placeholder="https://youtube.com/watch?v=..." />
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gun Tag</label>
+        <select id="sc-gun">
+          <option value="">Any</option>
+          ${ALL_GUNS.slice(0, 40).map(g => `<option>${g}</option>`).join('')}
+        </select>
+      </div>
+      <button id="sc-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+        Submit for Approval
+      </button>
+    </div>
+  `, 'Submit a Clip');
+
+  document.getElementById('sc-submit').onclick = async () => {
+    const url = document.getElementById('sc-url').value.trim();
+    const gunTag = document.getElementById('sc-gun').value;
+
+    if (!url) { toast('Add a URL', 'error'); return; }
+
+    const canSubmit = await checkSubmitCooldown('clip');
+    if (!canSubmit) return;
+
+    const btn = document.getElementById('sc-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      await addDoc(collection(db, 'clip_submissions'), {
+        submitterUid: State.user.uid,
+        submitterIgn: State.profile.ign,
+        submitterAvatar: State.profile.avatar || '',
+        youtubeUrl: url,
+        gunTag: gunTag || 'CODM',
+        status: 'pending',
+        submittedAt: serverTimestamp()
+      });
+
+      markSubmitted('clip');
+      toast('Submitted! Admin will review shortly. ✓', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Submit for Approval';
+    }
+  };
+}
+
+window.openSubmitLeakSheet = openSubmitLeakSheet;
+window.openSubmitVaultSheet = openSubmitVaultSheet;
+window.openSubmitClipSheet = openSubmitClipSheet;
+
+/* END OF CHUNK 8 */
