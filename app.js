@@ -966,13 +966,51 @@ async function joinLobby(lobbyId) {
     if ((lobby.players || 1) < 5) {
       await updateDoc(doc(db, 'lobbies', lobbyId), { players: increment(1) });
     }
+
     const room = lobby.jitsiLink || `https://meet.jit.si/CODMPanda-${lobbyId}`;
-    window.open(room, '_blank');
-    toast('Joined! Opening voice room...', 'success');
+    const roomName = room.split('/').pop();
+
+    // Open Jitsi INSIDE the app as a full-screen overlay
+    const container = document.getElementById('modal-container');
+    container.classList.remove('hidden');
+    container.innerHTML = `
+      <div class="fixed inset-0 z-[250] bg-black flex flex-col">
+        <div class="flex items-center justify-between px-4 h-14 border-b border-border bg-amoled/95 backdrop-blur">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-bold text-sm overflow-hidden">
+              ${lobby.avatar ? `<img src="${esc(lobby.avatar)}" class="w-full h-full object-cover" />` : getInitials(lobby.ign)}
+            </div>
+            <div class="min-w-0">
+              <div class="text-xs font-bold truncate">${esc(lobby.ign)}'s room</div>
+              <div class="text-[10px] text-gray-500">${esc(lobby.mode)} · ${esc(lobby.region)}</div>
+            </div>
+          </div>
+          <button id="leave-jitsi-btn" class="btn-press px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs font-bold flex items-center gap-1.5">
+            <i data-lucide="phone-off" class="w-3.5 h-3.5"></i> Leave
+          </button>
+        </div>
+        <div class="flex-1 relative">
+          <iframe
+            id="jitsi-frame"
+            src="https://meet.jit.si/${encodeURIComponent(roomName)}#userInfo.displayName=%22${encodeURIComponent(State.profile.ign)}%22&config.prejoinPageEnabled=false&config.startWithAudioMuted=${lobby.mic ? 'false' : 'true'}&config.startWithVideoMuted=true&config.disableDeepLinking=true&config.disableProfile=true&config.hideConferenceSubject=true&config.toolbarButtons=%5B%22microphone%22%2C%22camera%22%2C%22desktop%22%2C%22chat%22%2C%22raisehand%22%2C%22tileview%22%2C%22hangup%22%5D"
+            class="w-full h-full border-0"
+            allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"
+          ></iframe>
+        </div>
+      </div>
+    `;
+    if (window.lucide) window.lucide.createIcons();
+
+    document.getElementById('leave-jitsi-btn').onclick = () => {
+      closeModal();
+      toast('Left the voice room', 'success', 1500);
+    };
+
+    toast('Joined! Grant mic access when prompted.', 'success');
     maybeShowInterstitial();
   } catch (e) {
     console.error(e);
-    window.open(lobby.jitsiLink || `https://meet.jit.si/CODMPanda-${lobbyId}`, '_blank');
+    toast('Failed to join room', 'error');
   }
 }
 
