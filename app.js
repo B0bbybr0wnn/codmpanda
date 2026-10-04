@@ -428,11 +428,24 @@ window.APP_VERSION = APP_VERSION;
 // ---------- AUTH ----------
 async function handleSignIn() {
   try {
-    // Redirect-first (mobile friendly, bypasses third-party cookie blocks)
-    await signInWithRedirect(auth, provider);
+    toast('Opening Google...', 'info', 1500);
+    const result = await signInWithPopup(auth, provider);
+    console.log('✅ POPUP SUCCESS:', result.user.email);
+    toast('Signed in!', 'success');
+    // onAuthStateChanged will handle the rest
   } catch (err) {
-    console.error('Sign-in failed:', err);
-    toast('Sign-in failed: ' + (err.message || 'Unknown error'), 'error');
+    console.error('❌ Popup error:', err.code, err.message);
+    // Fall back to redirect
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+      toast('Popup blocked. Trying redirect...', 'info');
+      try {
+        await signInWithRedirect(auth, provider);
+      } catch (e2) {
+        toast('Sign-in failed: ' + e2.message, 'error');
+      }
+    } else {
+      toast('Sign-in error: ' + err.code, 'error', 5000);
+    }
   }
 }
 
