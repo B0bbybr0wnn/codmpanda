@@ -429,26 +429,12 @@ window.APP_VERSION = APP_VERSION;
 async function handleSignIn() {
   try {
     toast('Opening Google...', 'info', 1500);
-    const result = await signInWithPopup(auth, provider);
-    console.log('✅ POPUP SUCCESS:', result.user.email);
-    toast('Signed in!', 'success');
-    // onAuthStateChanged will handle the rest
+    await signInWithRedirect(auth, provider);
   } catch (err) {
-    console.error('❌ Popup error:', err.code, err.message);
-    // Fall back to redirect
-    if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
-      toast('Popup blocked. Trying redirect...', 'info');
-      try {
-        await signInWithRedirect(auth, provider);
-      } catch (e2) {
-        toast('Sign-in failed: ' + e2.message, 'error');
-      }
-    } else {
-      toast('Sign-in error: ' + err.code, 'error', 5000);
-    }
+    console.error('❌ Sign-in error:', err.code, err.message);
+    toast('Sign-in failed: ' + (err.message || 'Unknown error'), 'error');
   }
 }
-
 async function checkRedirect() {
   try {
     const result = await getRedirectResult(auth);
