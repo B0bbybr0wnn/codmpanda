@@ -5986,3 +5986,211 @@ window.generateProfileCard = generateProfileCard;
 window.shareProfileCard = shareProfileCard;
 
 /* END OF CHUNK 15 */
+// ============================================
+// Chunk 16: FCM Token Collection + Notifications
+// ============================================
+
+const VAPID_KEY = "BB38qRzf4R5T_szvw7SvPklifWz_PhM1e4XQ8KKjqaIcauiUeJAZUKmJpWSbzusdny75mzckpAKXB78qSBWdU8A";
+
+async function enableNotifications() {
+  try {
+    if (!('Notification' in window)) {
+      toast('Notifications not supported', 'error');
+      return;
+    }
+    if (!('serviceWorker' in navigator)) {
+      toast('Service Worker not supported', 'error');
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      toast('Permission denied. Enable in browser settings.', 'warning', 4000);
+      return;
+    }
+
+    toast('Registering device...', 'info', 2000);
+
+    let attempts = 0;
+    while ((!window.firebase || !window.firebase.messaging) && attempts < 30) {
+      await new Promise(r => setTimeout(r, 100));
+      attempts++;
+    }
+
+    if (!window.firebase || !window.firebase.messaging) {
+      toast('FCM SDK failed to load', 'error');
+      return;
+    }
+
+    const messaging = window.firebase.messaging();
+
+    const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+
+    const token = await messaging.getToken({
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: swRegistration
+    });
+
+    if (!token) {
+      toast('Failed to get device token', 'error');
+      return;
+    }
+
+    console.log('FCM token:', token.slice(0, 20) + '...');
+
+    const userRef = doc(db, 'users', State.user.uid);
+    const snap = await getDoc(userRef);
+    const currentTokens = snap.exists() ? (snap.data().fcmTokens || []) : [];
+
+    if (!currentTokens.includes(token)) {
+      currentTokens.push(token);
+      await updateDoc(userRef, {
+        fcmTokens: currentTokens,
+        notificationsEnabled: true,
+        notificationsEnabledAt: serverTimestamp()
+      });
+      State.profile = { ...State.profile, fcmTokens: currentTokens, notificationsEnabled: true };
+    }
+
+    toast('✅ Notifications enabled!', 'success', 3000);
+
+    if (State.currentTab === 'you') {
+      setTimeout(() => renderYouTab(), 500);
+    }
+  } catch (e) {
+    console.error('FCM error:', e);
+    toast('Failed: ' + e.message, 'error', 5000);
+  }
+}
+
+async function disableNotifications() {
+  try {
+    if (window.firebase && window.firebase.messaging) {
+      const messaging = window.firebase.messaging();
+      const token = await messaging.getToken({ vapidKey: VAPID_KEY }).catch(() => null);
+      if (token) await messaging.deleteToken(token).catch(() => {});
+    }
+
+    const userRef = doc(db, 'users', State.user.uid);
+    await updateDoc(userRef, {
+      fcmTokens: [],
+      notificationsEnabled: false
+    });
+    State.profile = { ...State.profile, fcmTokens: [], notificationsEnabled: false };
+
+    toast('Notifications disabled', 'success');
+    if (State.currentTab === 'you') setTimeout(() => renderYouTab(), 500);
+  } catch (e) {
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+async function sendNotificationToUser(uid, title, body, data) {
+  try {
+    const userSnap = await getDoc(doc(db, 'users', uid));
+    if (!userSnap.exists()) return false;
+
+    const tokens = userSnap.data().fcmTokens || [];
+    if (tokens.length === 0) return false;
+
+    const res = await fetch(NOTIFY_WORKER_URL + '/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokens, title, body, data: data || {} })
+    });
+
+    const result = await res.json();
+    console.log('Notification sent:', result);
+    return true;
+  } catch (e) {
+    console.error('Notify error:', e);
+    return false;
+  }
+}
+
+async function broadcastNotification(title, body, data) {
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), where('notificationsEnabled', '==', true)));
+    const allTokens = [];
+    snap.forEach(d => {
+      const tokens = d.data().fcmTokens || [];
+      allTokens.push(...tokens);
+    });
+
+    if (allTokens.length === 0) {
+      toast('No users have notifications enabled yet', 'warning');
+      return;
+    }
+
+    const res = await fetch(NOTIFY_WORKER_URL + '/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokens: allTokens, title, body, data: data || {} })
+    });
+
+    const result = await res.json();
+    console.log('Broadcast sent:', result);
+    toast('Sent to ' + allTokens.length + ' device(s)', 'success');
+  } catch (e) {
+    console.error('Broadcast error:', e);
+    toast('Broadcast failed: ' + e.message, 'error');
+  }
+}
+
+function renderNotificationsCard() {
+  const enabled = State.profile && State.profile.notificationsEnabled;
+  return '<div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">' +
+    '<div class="px-4 py-3 border-b border-border">' +
+      '<div class="text-xs font-bold text-gray-400 uppercase flex items-center gap-2">' +
+        '<i data-lucide="bell" class="w-4 h-4"></i> Push Notifications' +
+      '</div>' +
+    '</div>' +
+    '<div class="p-4">' +
+      '<div class="flex items-center justify-between mb-3">' +
+        '<div class="flex-1 min-w-0">' +
+          '<div class="text-sm font-semibold">' + (enabled ? 'Enabled' : 'Disabled') + '</div>' +
+          '<div class="text-[10px] text-gray-500 mt-0.5">Get alerts for LFG matches, approvals, and new leaks</div>' +
+        '</div>' +
+        '<div class="toggle ' + (enabled ? 'on' : '') + '" id="notif-toggle"></div>' +
+      '</div>' +
+      '<div class="text-[10px] text-gray-600">' + (enabled ? 'Tap to disable anytime' : 'Tap to enable') + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+const _origRenderYouTabNotif = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabNotif();
+  setTimeout(function() {
+    const content = document.getElementById('content');
+    if (!content) return;
+
+    const statsGrid = content.querySelector('.grid-cols-3');
+    if (statsGrid && statsGrid.parentElement && !document.getElementById('notif-toggle')) {
+      const card = document.createElement('div');
+      card.innerHTML = renderNotificationsCard();
+      statsGrid.parentElement.insertBefore(card.firstElementChild, statsGrid.nextSibling);
+
+      const toggle = document.getElementById('notif-toggle');
+      if (toggle) {
+        toggle.onclick = function() {
+          const isEnabled = State.profile && State.profile.notificationsEnabled;
+          if (isEnabled) {
+            disableNotifications();
+          } else {
+            enableNotifications();
+          }
+        };
+      }
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }, 150);
+};
+
+window.enableNotifications = enableNotifications;
+window.disableNotifications = disableNotifications;
+window.sendNotificationToUser = sendNotificationToUser;
+window.broadcastNotification = broadcastNotification;
+
+/* END OF CHUNK 16 */
+  
