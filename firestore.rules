@@ -29,6 +29,8 @@ service cloud.firestore {
           request.resource.data.isPro == resource.data.isPro
           && request.resource.data.proExpiry == resource.data.proExpiry
         )) ||
+        // Allow rating fields to be updated by the system (via client after rating)
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAvg', 'ratingCount', 'ratingTags']) ||
         // Allow friend-related field updates from other users
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends', 'friendRequests', 'friendRequestsSent'])
       );
@@ -106,7 +108,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
-    // ---------- LEAKS (admin-only writes) ----------
+    // ---------- LEAKS ----------
     match /leaks/{leakId} {
       allow read: if isSignedIn();
       allow create, update, delete: if isAdmin();
@@ -146,6 +148,38 @@ service cloud.firestore {
     match /tierVotes/{uid} {
       allow read: if isSignedIn();
       allow write: if isOwner(uid);
+    }
+
+    // ---------- RATINGS (LFG reputation) ----------
+    match /ratings/{ratingId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- CLAN WARS ----------
+    match /clanWarsLog/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /clanWarsHistory/{historyId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- TOURNAMENTS ----------
+    match /tournaments/{tournamentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.creatorUid == request.auth.uid;
+      allow update: if isSignedIn(); // Needed for registrations, bracket updates, etc.
+      allow delete: if isSignedIn() && (resource.data.creatorUid == request.auth.uid || isAdmin());
+    }
+
+    match /tournamentHistory/{historyId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
     }
 
     // ---------- DEFAULT DENY ----------
