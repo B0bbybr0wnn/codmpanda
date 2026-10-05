@@ -5168,3 +5168,820 @@ window.checkProStatus = checkProStatus;
 window.goPro = goPro;
 
 /* END OF CHUNK 13 */
+// ============================================
+// Chunk 14: Share Links (WhatsApp, Twitter, Telegram, Copy)
+// ============================================
+
+// ---------- UNIVERSAL SHARE SHEET ----------
+function openShareSheet({ title, text, url, imageUrl }) {
+  const encodedUrl = encodeURIComponent(url || location.origin);
+  const encodedText = encodeURIComponent(text || '');
+  const encodedTitle = encodeURIComponent(title || 'CODMPanda');
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-center">
+        <div class="text-2xl font-black mb-1">${esc(title || 'Share')}</div>
+        <div class="text-xs text-gray-500 truncate px-4">${esc(url || '')}</div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <button class="share-opt btn-press flex flex-col items-center gap-2 p-3 rounded-2xl bg-[#25D366]/10 border border-[#25D366]/30" data-network="whatsapp">
+          <div class="w-12 h-12 rounded-full bg-[#25D366] flex items-center justify-center">
+            <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
+          </div>
+          <span class="text-[10px] font-bold text-[#25D366]">WhatsApp</span>
+        </button>
+
+        <button class="share-opt btn-press flex flex-col items-center gap-2 p-3 rounded-2xl bg-black/40 border border-border" data-network="twitter">
+          <div class="w-12 h-12 rounded-full bg-black flex items-center justify-center">
+            <span class="text-white font-black text-lg">𝕏</span>
+          </div>
+          <span class="text-[10px] font-bold text-gray-300">Twitter/X</span>
+        </button>
+
+        <button class="share-opt btn-press flex flex-col items-center gap-2 p-3 rounded-2xl bg-[#0088cc]/10 border border-[#0088cc]/30" data-network="telegram">
+          <div class="w-12 h-12 rounded-full bg-[#0088cc] flex items-center justify-center">
+            <i data-lucide="send" class="w-6 h-6 text-white"></i>
+          </div>
+          <span class="text-[10px] font-bold text-[#0088cc]">Telegram</span>
+        </button>
+
+        <button class="share-opt btn-press flex flex-col items-center gap-2 p-3 rounded-2xl bg-cardAlt border border-border" data-network="copy">
+          <div class="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
+            <i data-lucide="link" class="w-6 h-6 text-white"></i>
+          </div>
+          <span class="text-[10px] font-bold text-gray-300">Copy Link</span>
+        </button>
+
+        <button class="share-opt btn-press flex flex-col items-center gap-2 p-3 rounded-2xl bg-cardAlt border border-border" data-network="native">
+          <div class="w-12 h-12 rounded-full bg-primary/30 flex items-center justify-center">
+            <i data-lucide="share-2" class="w-6 h-6 text-primary"></i>
+          </div>
+          <span class="text-[10px] font-bold text-gray-300">More</span>
+        </button>
+
+        <button class="share-opt btn-press flex flex-col items-center gap-2 p-3 rounded-2xl bg-cardAlt border border-border" data-network="cancel">
+          <div class="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+            <i data-lucide="x" class="w-6 h-6 text-red-400"></i>
+          </div>
+          <span class="text-[10px] font-bold text-gray-300">Cancel</span>
+        </button>
+      </div>
+    </div>
+  `, '');
+
+  document.querySelectorAll('.share-opt').forEach(btn => {
+    btn.onclick = () => {
+      const net = btn.dataset.network;
+      const shareText = text || title || 'Check out CODMPanda';
+      const fullText = shareText + '\n\n' + url;
+
+      switch (net) {
+        case 'whatsapp':
+          window.open(`https://wa.me/?text=${encodeURIComponent(fullText)}`, '_blank');
+          break;
+        case 'twitter':
+          window.open(`https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`, '_blank');
+          break;
+        case 'telegram':
+          window.open(`https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`, '_blank');
+          break;
+        case 'copy':
+          copyText(url, 'Link copied!');
+          break;
+        case 'native':
+          if (navigator.share) {
+            navigator.share({ title: title || 'CODMPanda', text: shareText, url }).catch(() => {});
+          } else {
+            copyText(url, 'Link copied!');
+          }
+          break;
+        case 'cancel':
+          closeSheet();
+          return;
+      }
+      closeSheet();
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- BUILD SHAREABLE URLs ----------
+function getLobbyShareUrl(lobbyId) {
+  return `${location.origin}/?lobby=${lobbyId}`;
+}
+
+function getVaultShareUrl(vaultId) {
+  return `${location.origin}/?vault=${vaultId}`;
+}
+
+function getClipShareUrl(clipId) {
+  return `${location.origin}/?clip=${clipId}`;
+}
+
+function getLeakShareUrl(leakId) {
+  return `${location.origin}/?leak=${leakId}`;
+}
+
+// ---------- OVERRIDE LOBBY CARD to add SHARE ----------
+const _origRenderLobbies = renderLobbies;
+renderLobbies = function() {
+  const feed = document.getElementById('lobbies-feed');
+  if (!feed) return;
+  let lobbies = State.cache.lobbies;
+
+  const f = State.filters.lobbies;
+  if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
+  if (f.mode && f.mode !== 'all') lobbies = lobbies.filter(l => l.mode === f.mode);
+  if (f.region && f.region !== 'all') lobbies = lobbies.filter(l => l.region === f.region);
+  if (f.mic) lobbies = lobbies.filter(l => l.mic === true);
+  if (f.search) {
+    lobbies = lobbies.filter(l =>
+      (l.ign || '').toLowerCase().includes(f.search) ||
+      (l.note || '').toLowerCase().includes(f.search)
+    );
+  }
+
+  if (lobbies.length === 0) {
+    feed.innerHTML = emptyState('users', 'No lobbies found', 'Try different filters or post your own', 'Post Lobby', openPostLobbySheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.innerHTML = lobbies.map(l => {
+    const playersText = `${l.players || 1}/5`;
+    return `
+      <div class="bg-card border border-border rounded-2xl p-4 fade-in">
+        <div class="flex items-start gap-3 mb-3">
+          <div class="relative">
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
+              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            </div>
+            ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
+            </div>
+            <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
+          </div>
+          <div class="text-right flex-shrink-0">
+            <div class="text-sm font-black text-primary">${playersText}</div>
+            <div class="text-[9px] text-gray-500">PLAYERS</div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-1.5 mb-3">
+          ${l.role ? `<span class="text-[10px] px-2 py-1 rounded-full bg-cardAlt border border-border font-semibold text-gray-300">${esc(l.role)}</span>` : ''}
+          ${l.mic ? `<span class="text-[10px] px-2 py-1 rounded-full bg-green-500/15 text-green-400 font-semibold">🎤 Mic</span>` : `<span class="text-[10px] px-2 py-1 rounded-full bg-cardAlt border border-border font-semibold text-gray-500">🔇 No Mic</span>`}
+        </div>
+
+        ${l.note ? `<p class="text-xs text-gray-400 mb-3 line-clamp-2">${esc(l.note)}</p>` : ''}
+
+        <div class="flex gap-2">
+          <button class="join-btn btn-press flex-1 py-2.5 rounded-xl bg-primary text-sm font-bold flex items-center justify-center gap-1.5" data-id="${l.id}">
+            <i data-lucide="log-in" class="w-4 h-4"></i> Join
+          </button>
+          <button class="share-lobby btn-press w-10 h-10 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-id="${l.id}" data-ign="${esc(l.ign)}">
+            <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+          </button>
+          <button class="report-lobby btn-press w-10 h-10 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-id="${l.id}" data-uid="${l.uid}">
+            <i data-lucide="flag" class="w-4 h-4 text-gray-500"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  feed.querySelectorAll('.join-btn').forEach(btn => {
+    btn.onclick = () => joinLobby(btn.dataset.id);
+  });
+  feed.querySelectorAll('.share-lobby').forEach(btn => {
+    btn.onclick = () => {
+      openShareSheet({
+        title: `${btn.dataset.ign}'s Lobby`,
+        text: `🎮 Join ${btn.dataset.ign}'s squad on CODMPanda!`,
+        url: getLobbyShareUrl(btn.dataset.id)
+      });
+    };
+  });
+  feed.querySelectorAll('.report-lobby').forEach(btn => {
+    btn.onclick = () => reportContent('lobby', btn.dataset.id, btn.dataset.uid);
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ---------- UPDATE VAULT SHARE ----------
+const _origRenderVaults = renderVaults;
+renderVaults = function() {
+  const feed = document.getElementById('vault-feed');
+  if (!feed) return;
+  let vaults = State.cache.vaults;
+  if (State.filters.vaults.search) {
+    const s = State.filters.vaults.search;
+    vaults = vaults.filter(v =>
+      (v.gunName || '').toLowerCase().includes(s) ||
+      (v.gunsmithCode || '').toLowerCase().includes(s)
+    );
+  }
+
+  if (vaults.length === 0) {
+    feed.className = '';
+    feed.innerHTML = emptyState('package-open', 'No vaults yet', 'Share your first ' + vaultTypeFilter + ' build', 'Submit Build', openSubmitVaultSheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.className = 'grid grid-cols-2 gap-3';
+  feed.innerHTML = vaults.map(v => `
+    <div class="bg-card border border-border rounded-2xl p-3 fade-in">
+      ${v.imageUrl ? `<img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" />` :
+        `<div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+          <i data-lucide="crosshair" class="w-8 h-8 text-primary/60"></i>
+        </div>`
+      }
+      <div class="text-xs font-bold text-gray-300 truncate">${esc(v.gunName || 'Unknown')}</div>
+      <div class="text-[10px] text-gray-500 mb-2">${esc(v.type || 'build')}</div>
+
+      ${v.gunsmithCode ? `
+        <button class="copy-code-btn w-full py-2 rounded-lg bg-primary/15 border border-primary/30 text-primary text-[11px] font-bold flex items-center justify-center gap-1 mb-2" data-code="${esc(v.gunsmithCode)}">
+          <i data-lucide="copy" class="w-3 h-3"></i> ${esc(v.gunsmithCode)}
+        </button>
+      ` : ''}
+
+      <div class="flex items-center justify-between">
+        <button class="like-btn flex items-center gap-1 text-[11px] text-gray-400" data-id="${v.id}">
+          <i data-lucide="heart" class="w-3.5 h-3.5"></i> ${v.likes || 0}
+        </button>
+        <button class="share-vault-btn text-primary" data-id="${v.id}" data-gun="${esc(v.gunName)}">
+          <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  feed.querySelectorAll('.copy-code-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); copyText(btn.dataset.code, 'Code copied!'); };
+  });
+  feed.querySelectorAll('.like-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'vaults', btn.dataset.id), { likes: increment(1) });
+        toast('❤️ Liked!', 'success', 1500);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-vault-btn').forEach(btn => {
+    btn.onclick = () => {
+      openShareSheet({
+        title: `${btn.dataset.gun} Build`,
+        text: `🔧 Check out this ${btn.dataset.gun} build on CODMPanda!`,
+        url: getVaultShareUrl(btn.dataset.id)
+      });
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ---------- UPDATE CLIP SHARE ----------
+const _origRenderClipsShare = renderClips;
+renderClips = function() {
+  const feed = document.getElementById('clips-feed');
+  if (!feed) return;
+  let clips = [...State.cache.clips];
+  if (State.filters.clips.sort === 'trending') {
+    clips.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+  }
+
+  if (clips.length === 0) {
+    feed.innerHTML = emptyState('video', 'No clips yet', 'Be the first to submit!', 'Submit Clip', openSubmitClipSheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.innerHTML = clips.map(c => {
+    const embedUrl = getYouTubeEmbed(c.youtubeUrl);
+    const authorName = c.submittedByIgn || c.ign || 'CODMPanda';
+    const authorAvatar = c.submittedByAvatar || '';
+    const isApproved = !!c.approved;
+    return `
+      <div class="bg-card border border-border rounded-2xl overflow-hidden fade-in">
+        ${embedUrl ? `
+          <div class="relative w-full aspect-video bg-black">
+            <iframe src="${embedUrl}" class="w-full h-full" frameborder="0" allowfullscreen loading="lazy"></iframe>
+          </div>
+        ` : `
+          <div class="w-full aspect-video bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+            <a href="${esc(c.youtubeUrl)}" target="_blank" class="text-center">
+              <i data-lucide="external-link" class="w-8 h-8 mx-auto text-primary mb-2"></i>
+              <div class="text-xs text-gray-400">Open link</div>
+            </a>
+          </div>
+        `}
+        <div class="p-3">
+          <div class="flex items-center gap-2 mb-2 flex-wrap">
+            <span class="text-xs font-bold text-gray-300">${esc(c.gunTag || 'CODM')}</span>
+            ${isApproved ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold flex items-center gap-0.5"><i data-lucide="check" class="w-2.5 h-2.5"></i> Approved</span>` : ''}
+            <span class="text-[10px] text-gray-500">· ${timeAgo(c.createdAt)}</span>
+          </div>
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
+              ${authorAvatar ? `<img src="${esc(authorAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName)}
+            </div>
+            <span class="text-[10px] text-gray-500">by <span class="text-gray-300 font-semibold">${esc(authorName)}</span></span>
+          </div>
+          <div class="flex items-center justify-between">
+            <button class="like-clip flex items-center gap-1 text-xs text-gray-400" data-id="${c.id}">
+              <i data-lucide="heart" class="w-4 h-4"></i> ${c.likes || 0}
+            </button>
+            <button class="share-clip text-primary" data-id="${c.id}" data-gun="${esc(c.gunTag || 'CODM')}">
+              <i data-lucide="share-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  feed.querySelectorAll('.like-clip').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'clips', btn.dataset.id), { likes: increment(1) });
+        toast('❤️', 'success', 1000);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-clip').forEach(btn => {
+    btn.onclick = () => {
+      openShareSheet({
+        title: `${btn.dataset.gun} Clip`,
+        text: `🎬 Watch this ${btn.dataset.gun} play on CODMPanda!`,
+        url: getClipShareUrl(btn.dataset.id)
+      });
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ---------- UPDATE LEAK SHARE ----------
+const _origRenderLeaksShare = renderLeaks;
+renderLeaks = function() {
+  const feed = document.getElementById('leaks-feed');
+  if (!feed) return;
+  if (State.cache.leaks.length === 0) {
+    feed.innerHTML = emptyState('zap', 'No leaks yet', 'Be the first to submit!', 'Submit Leak', openSubmitLeakSheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+  const rarityColors = {
+    common: 'bg-gray-500',
+    rare: 'bg-blue-500',
+    epic: 'bg-purple-500',
+    legendary: 'bg-gold text-black',
+    mythic: 'bg-red-500'
+  };
+  feed.innerHTML = State.cache.leaks.map(l => {
+    const authorName = l.submittedByIgn || l.authorIgn || 'CODMPanda';
+    const authorAvatar = l.submittedByAvatar || '';
+    const isApproved = !!l.approved;
+    return `
+      <div class="bg-card border border-border rounded-2xl overflow-hidden fade-in">
+        ${l.imageUrl ? `<img src="${esc(l.imageUrl)}" class="w-full h-40 object-cover" />` : ''}
+        <div class="p-4">
+          <div class="flex items-center gap-2 mb-2 flex-wrap">
+            <span class="text-[10px] px-2 py-0.5 rounded-full ${rarityColors[l.rarity] || 'bg-gray-500'} font-black uppercase">${esc(l.rarity || 'common')}</span>
+            ${isApproved ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold flex items-center gap-0.5"><i data-lucide="check" class="w-2.5 h-2.5"></i> Approved</span>` : ''}
+            <span class="text-[10px] text-gray-500">${timeAgo(l.createdAt || l.publishedAt)}</span>
+          </div>
+          <h3 class="text-base font-bold mb-2">${esc(l.title)}</h3>
+          ${l.body ? `<p class="text-xs text-gray-400 line-clamp-3 mb-3">${esc(l.body)}</p>` : ''}
+          <div class="flex items-center gap-2 mb-3">
+            <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
+              ${authorAvatar ? `<img src="${esc(authorAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName)}
+            </div>
+            <span class="text-[10px] text-gray-500">by <span class="text-gray-300 font-semibold">${esc(authorName)}</span></span>
+          </div>
+          <div class="flex items-center justify-between">
+            <button class="hype-leak flex items-center gap-1 text-xs text-gray-400" data-id="${l.id}">
+              <i data-lucide="flame" class="w-4 h-4"></i> ${l.hypes || 0}
+            </button>
+            <button class="share-leak text-primary" data-id="${l.id}" data-title="${esc(l.title)}">
+              <i data-lucide="share-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  feed.querySelectorAll('.hype-leak').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'leaks', btn.dataset.id), { hypes: increment(1) });
+        toast('🔥 Hyped!', 'success', 1000);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-leak').forEach(btn => {
+    btn.onclick = () => {
+      openShareSheet({
+        title: btn.dataset.title,
+        text: `🔥 New leak on CODMPanda: ${btn.dataset.title}`,
+        url: getLeakShareUrl(btn.dataset.id)
+      });
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+window.openShareSheet = openShareSheet;
+
+/* END OF CHUNK 14 */
+// ============================================
+// Chunk 15: Profile Share Card Generator
+// ============================================
+
+async function generateProfileCard() {
+  const p = State.profile || {};
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Card dimensions (Instagram Story friendly 1080x1920)
+  const W = 1080;
+  const H = 1920;
+  canvas.width = W;
+  canvas.height = H;
+
+  // ---------- BACKGROUND ----------
+  // AMOLED base
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, 0, W, H);
+
+  // Orange glow top
+  const grad1 = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, 900);
+  grad1.addColorStop(0, 'rgba(255, 107, 0, 0.35)');
+  grad1.addColorStop(1, 'rgba(255, 107, 0, 0)');
+  ctx.fillStyle = grad1;
+  ctx.fillRect(0, 0, W, 900);
+
+  // Gold glow bottom
+  const grad2 = ctx.createRadialGradient(W / 2, H, 0, W / 2, H, 800);
+  grad2.addColorStop(0, 'rgba(255, 215, 0, 0.25)');
+  grad2.addColorStop(1, 'rgba(255, 215, 0, 0)');
+  ctx.fillStyle = grad2;
+  ctx.fillRect(0, H - 800, W, 800);
+
+  // Subtle border
+  ctx.strokeStyle = p.isPro ? '#FFD700' : '#222';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(20, 20, W - 40, H - 40);
+
+  // ---------- HEADER ----------
+  ctx.textAlign = 'center';
+
+  // Branding
+  ctx.font = 'bold 52px Inter, sans-serif';
+  ctx.fillStyle = '#FF6B00';
+  ctx.fillText('CODMPanda', W / 2, 140);
+
+  ctx.font = '500 26px Inter, sans-serif';
+  ctx.fillStyle = '#666';
+  ctx.fillText('CODMPanda • The Ultimate CODM Companion', W / 2, 190);
+
+  // ---------- AVATAR ----------
+  const avatarY = 480;
+  const avatarR = 160;
+
+  // Outer glow ring
+  if (p.isPro) {
+    const avatarGrad = ctx.createLinearGradient(W / 2 - avatarR, avatarY - avatarR, W / 2 + avatarR, avatarY + avatarR);
+    avatarGrad.addColorStop(0, '#FFD700');
+    avatarGrad.addColorStop(0.5, '#FFF176');
+    avatarGrad.addColorStop(1, '#FFD700');
+    ctx.fillStyle = avatarGrad;
+    ctx.beginPath();
+    ctx.arc(W / 2, avatarY, avatarR + 12, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = '#FF6B00';
+    ctx.beginPath();
+    ctx.arc(W / 2, avatarY, avatarR + 8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Avatar circle background
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.arc(W / 2, avatarY, avatarR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Try to draw avatar image
+  if (p.avatar) {
+    try {
+      const img = await loadImage(p.avatar);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(W / 2, avatarY, avatarR, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(img, W / 2 - avatarR, avatarY - avatarR, avatarR * 2, avatarR * 2);
+      ctx.restore();
+    } catch (e) {
+      drawInitials(ctx, p.ign, W / 2, avatarY, avatarR);
+    }
+  } else {
+    drawInitials(ctx, p.ign, W / 2, avatarY, avatarR);
+  }
+
+  // Pro crown overlay
+  if (p.isPro) {
+    ctx.font = 'bold 90px Inter, sans-serif';
+    ctx.fillText('👑', W / 2 + 130, avatarY - 100);
+  }
+
+  // ---------- NAME ----------
+  ctx.font = 'bold 72px Inter, sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(truncateText(ctx, p.ign || 'Panda Player', W - 100), W / 2, 780);
+
+  // ---------- BADGES ROW ----------
+  ctx.font = '500 32px Inter, sans-serif';
+  ctx.fillStyle = '#888';
+  const rankRegion = `${p.rank || 'Rookie'} • ${p.region || 'Global'}`;
+  ctx.fillText(rankRegion, W / 2, 840);
+
+  if (p.isPro) {
+    // Pro pill
+    const proText = '👑 PRO MEMBER';
+    ctx.font = 'bold 30px Inter, sans-serif';
+    const proW = ctx.measureText(proText).width + 60;
+    const proX = W / 2 - proW / 2;
+    const proY = 890;
+    ctx.fillStyle = '#FFD700';
+    roundRect(ctx, proX, proY, proW, 60, 30);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.fillText(proText, W / 2, proY + 42);
+  }
+
+  // ---------- STATS BOXES ----------
+  const statY = 1060;
+  const boxW = 300;
+  const boxH = 180;
+  const gap = 20;
+  const totalW = boxW * 3 + gap * 2;
+  const startX = (W - totalW) / 2;
+
+  // Stats to display
+  let vaultCount = 0;
+  let camoPct = 0;
+  try {
+    const vaultSnap = await getDocs(query(collection(db, 'vaults'), where('uid', '==', State.user.uid)));
+    vaultCount = vaultSnap.size;
+  } catch (e) { /* silent */ }
+
+  try {
+    const camoSnap = await getDoc(doc(db, 'camos', State.user.uid));
+    const totalPossible = ALL_GUNS.length * CAMO_TYPES.length;
+    if (camoSnap.exists()) {
+      let checked = 0;
+      Object.values(camoSnap.data()).forEach(gun => {
+        CAMO_TYPES.forEach(c => { if (gun[c.key]) checked++; });
+      });
+      camoPct = Math.round((checked / totalPossible) * 100);
+    }
+  } catch (e) { /* silent */ }
+
+  const approved = p.approvedCount || 0;
+  const stats = [
+    { value: vaultCount.toString(), label: 'VAULTS' },
+    { value: camoPct + '%', label: 'CAMOS' },
+    { value: approved.toString(), label: 'APPROVED' }
+  ];
+
+  stats.forEach((stat, i) => {
+    const x = startX + (boxW + gap) * i;
+    ctx.fillStyle = 'rgba(20, 20, 20, 0.9)';
+    roundRect(ctx, x, statY, boxW, boxH, 24);
+    ctx.fill();
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = 'bold 64px Inter, sans-serif';
+    ctx.fillStyle = i === 1 ? '#FFD700' : '#FF6B00';
+    ctx.textAlign = 'center';
+    ctx.fillText(stat.value, x + boxW / 2, statY + 100);
+
+    ctx.font = '600 20px Inter, sans-serif';
+    ctx.fillStyle = '#666';
+    ctx.fillText(stat.label, x + boxW / 2, statY + 145);
+  });
+
+  // ---------- BADGES ----------
+  const badges = p.badges || [];
+  if (badges.length > 0) {
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 32px Inter, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('CONTRIBUTOR BADGES', W / 2, 1400);
+
+    const badgeEmojis = {
+      first_leak: '🥉',
+      rising: '🥈',
+      legend: '🥇',
+      elite: '💎'
+    };
+    const badgeLabels = {
+      first_leak: 'First Leak',
+      rising: 'Rising',
+      legend: 'Legend',
+      elite: 'Elite'
+    };
+
+    const badgeW = 200;
+    const badgeGap = 30;
+    const totalBadgeW = badges.length * badgeW + (badges.length - 1) * badgeGap;
+    const badgeStartX = (W - totalBadgeW) / 2;
+    const badgeY = 1440;
+
+    badges.forEach((b, i) => {
+      const x = badgeStartX + (badgeW + badgeGap) * i;
+      ctx.fillStyle = 'rgba(255, 215, 0, 0.1)';
+      roundRect(ctx, x, badgeY, badgeW, 160, 20);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.font = 'bold 70px Inter, sans-serif';
+      ctx.fillText(badgeEmojis[b] || '⭐', x + badgeW / 2, badgeY + 95);
+
+      ctx.font = '600 18px Inter, sans-serif';
+      ctx.fillStyle = '#FFD700';
+      ctx.fillText(badgeLabels[b] || 'Badge', x + badgeW / 2, badgeY + 135);
+    });
+  }
+
+  // ---------- TAGLINE ----------
+  const taglineY = badges.length > 0 ? 1720 : 1450;
+  ctx.textAlign = 'center';
+  ctx.font = 'italic 400 30px Inter, sans-serif';
+  ctx.fillStyle = '#888';
+  ctx.fillText('"Find squads. Track camos. Dominate."', W / 2, taglineY);
+
+  // ---------- FOOTER ----------
+  ctx.font = 'bold 36px Inter, sans-serif';
+  ctx.fillStyle = '#FF6B00';
+  ctx.fillText('codmpanda.pages.dev', W / 2, 1810);
+
+  ctx.font = '500 22px Inter, sans-serif';
+  ctx.fillStyle = '#444';
+  ctx.fillText('Join the ultimate CODM companion', W / 2, 1855);
+
+  // ---------- RETURN BLOB ----------
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/png', 0.95);
+  });
+}
+
+// ---------- HELPERS ----------
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawInitials(ctx, name, x, y, r) {
+  const initials = getInitials(name);
+  ctx.fillStyle = '#FF6B00';
+  ctx.font = `bold ${r}px Inter, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(initials, x, y);
+  ctx.textBaseline = 'alphabetic';
+}
+
+function truncateText(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let truncated = text;
+  while (ctx.measureText(truncated + '...').width > maxWidth && truncated.length > 0) {
+    truncated = truncated.slice(0, -1);
+  }
+  return truncated + '...';
+}
+
+// ---------- MAIN ACTION ----------
+async function shareProfileCard() {
+  try {
+    toast('Creating your card...', 'info', 2000);
+
+    const blob = await generateProfileCard();
+    const file = new File([blob], 'codmpanda-profile.png', { type: 'image/png' });
+
+    // Try native share with file
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: 'My CODMPanda Profile',
+          text: `Check out my CODMPanda profile! ${State.profile.ign} · ${State.profile.rank}`
+        });
+        toast('Shared!', 'success');
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+      }
+    }
+
+    // Fallback: download + share sheet
+    const url = URL.createObjectURL(blob);
+
+    // Show preview sheet
+    openSheet(`
+      <div class="space-y-4">
+        <div class="text-center">
+          <div class="text-sm font-bold mb-2">Your Profile Card</div>
+          <div class="text-xs text-gray-500 mb-3">Long-press to save, or use buttons below</div>
+        </div>
+        <img src="${url}" class="w-full rounded-2xl border border-border" />
+        <div class="grid grid-cols-2 gap-2">
+          <a href="${url}" download="codmpanda-profile.png" class="btn-press py-3 rounded-xl bg-primary font-bold text-sm text-center text-white">
+            ⬇️ Save Image
+          </a>
+          <button id="share-card-fallback" class="btn-press py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">
+            📤 Share
+          </button>
+        </div>
+        <button onclick="closeSheet()" class="text-xs text-gray-500 w-full">Close</button>
+      </div>
+    `, 'Share Profile Card');
+
+    document.getElementById('share-card-fallback').onclick = async () => {
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'My CODMPanda Profile',
+            text: `Check out my profile: ${State.profile.ign}`,
+            url: location.origin
+          });
+        } catch (e) { /* cancelled */ }
+      } else {
+        copyText(location.origin, 'Link copied!');
+      }
+    };
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Profile card error:', e);
+    toast('Failed to create card: ' + e.message, 'error');
+  }
+}
+
+// ---------- ADD BUTTON TO PROFILE HEADER ----------
+const _origRenderYouTabShare = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabShare();
+
+  setTimeout(() => {
+    const content = document.getElementById('content');
+    if (!content) return;
+
+    const editBtn = document.getElementById('edit-profile-btn');
+    if (editBtn && !document.getElementById('share-profile-btn')) {
+      // Insert share button next to edit profile
+      const shareBtn = document.createElement('button');
+      shareBtn.id = 'share-profile-btn';
+      shareBtn.className = 'btn-press w-full mt-2 py-2.5 rounded-xl bg-gradient-to-r from-primary/20 to-gold/20 border border-primary/40 text-primary text-xs font-bold flex items-center justify-center gap-2';
+      shareBtn.innerHTML = '<span>📤</span> Share My Profile Card';
+      shareBtn.onclick = shareProfileCard;
+
+      editBtn.parentNode.insertBefore(shareBtn, editBtn.nextSibling);
+    }
+  }, 100);
+};
+
+window.generateProfileCard = generateProfileCard;
+window.shareProfileCard = shareProfileCard;
+
+/* END OF CHUNK 15 */
