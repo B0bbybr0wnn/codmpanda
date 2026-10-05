@@ -4956,3 +4956,215 @@ renderSquadTab = function() {
 window.renderLeaderboardSub = renderLeaderboardSub;
 
 /* END OF CHUNK 12 */
+// ============================================
+// Chunk 13: Lemon Squeezy Payments
+// ============================================
+
+const PAYMENT_LINKS = {
+  lemonMonthly: "https://codmpanda.lemonsqueezy.com/checkout/buy/5213aceb-052a-415f-aec4-4f5167c91d5d",
+  lemonLifetime: "https://codmpanda.lemonsqueezy.com/checkout/buy/5a5be449-8af9-4f09-88c5-da31131e6bac"
+};
+
+function openUpgradeSheet() {
+  const p = State.profile || {};
+  if (p.isPro) { showManagePro(); return; }
+
+  openSheet(`
+    <div class="text-center space-y-4">
+      <div class="text-5xl">👑</div>
+      <div>
+        <h3 class="text-xl font-black text-gold glow-text-gold mb-1">CODMPanda Pro</h3>
+        <p class="text-xs text-gray-400">Unlock everything. Support the app.</p>
+      </div>
+    </div>
+
+    <div class="bg-black/40 border border-gold/30 rounded-2xl p-4 mt-4 mb-4">
+      <div class="text-xs text-gray-300 space-y-2">
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Unlimited vault builds</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Full camo tracker (all 80+ guns)</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Create & lead clans</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Pin your LFG posts</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Instant leak alerts</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Zero ads, forever</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Gold crown badge 👑</div>
+      </div>
+    </div>
+
+    <!-- Lifetime -->
+    <div class="bg-gradient-to-br from-gold/10 to-black border border-gold/50 rounded-2xl p-4 mb-3 relative overflow-hidden">
+      <div class="absolute top-3 right-3 text-[9px] px-2 py-0.5 rounded bg-gold text-black font-black">BEST VALUE</div>
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-black text-gold">Lifetime</div>
+          <div class="text-[10px] text-gray-400">Pay once, Pro forever</div>
+        </div>
+        <div class="text-right">
+          <div class="text-2xl font-black text-gold glow-text-gold">$9.99</div>
+          <div class="text-[10px] text-gray-500">one-time</div>
+        </div>
+      </div>
+      <button id="buy-lifetime-btn" class="btn-press w-full py-3.5 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold">
+        Unlock Lifetime →
+      </button>
+    </div>
+
+    <!-- Monthly -->
+    <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-black">Monthly</div>
+          <div class="text-[10px] text-gray-500">Cancel anytime</div>
+        </div>
+        <div class="text-right">
+          <div class="text-xl font-black">$1.99</div>
+          <div class="text-[10px] text-gray-500">/ month</div>
+        </div>
+      </div>
+      <button id="buy-monthly-btn" class="btn-press w-full py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">
+        Subscribe Monthly →
+      </button>
+    </div>
+
+    <div class="text-[10px] text-gray-600 text-center">
+      🔒 Secure payment via Lemon Squeezy<br>
+      Cards · Apple Pay · Google Pay · PayPal
+    </div>
+
+    <div class="text-[10px] text-gray-600 text-center mt-3">
+      Your Pro activates automatically within 1 minute
+    </div>
+  `, 'Upgrade to Pro');
+
+  document.getElementById('buy-lifetime-btn').onclick = () => startPayment('lemonLifetime');
+  document.getElementById('buy-monthly-btn').onclick = () => startPayment('lemonMonthly');
+}
+
+function startPayment(type) {
+  const url = PAYMENT_LINKS[type];
+  if (!url) { toast('Payment link missing', 'error'); return; }
+
+  // Append user info so webhook can identify the buyer
+  const email = State.user.email || '';
+  const uid = State.user.uid;
+
+  const sep = url.includes('?') ? '&' : '?';
+  const finalUrl = url +
+    sep + 'checkout[email]=' + encodeURIComponent(email) +
+    '&checkout[custom][uid]=' + encodeURIComponent(uid);
+
+  toast('Opening checkout...', 'info', 1500);
+
+  // Open Lemon Squeezy checkout in new tab
+  window.open(finalUrl, '_blank');
+
+  closeSheet();
+
+  // Show pending sheet
+  setTimeout(() => showPaymentPendingSheet(type), 500);
+}
+
+function showPaymentPendingSheet(type) {
+  const isLifetime = type === 'lemonLifetime';
+  openSheet(`
+    <div class="text-center space-y-4 py-4">
+      <div class="text-5xl">⏳</div>
+      <div>
+        <h3 class="text-lg font-black mb-1">Complete your payment</h3>
+        <p class="text-xs text-gray-400">
+          Finish checkout in the Lemon Squeezy tab. Your Pro activates automatically once payment confirms (usually 30-60 seconds).
+        </p>
+      </div>
+
+      <div class="bg-card border border-border rounded-xl p-3 text-left text-xs">
+        <div class="text-gray-400 mb-1">Order summary:</div>
+        <div class="flex justify-between">
+          <span>CODMPanda Pro ${isLifetime ? 'Lifetime' : 'Monthly'}</span>
+          <span class="font-bold text-gold">${isLifetime ? '$9.99' : '$1.99'}</span>
+        </div>
+      </div>
+
+      <button id="check-payment-btn" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary flex items-center justify-center gap-2">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i> I've paid — check now
+      </button>
+
+      <button onclick="closeSheet()" class="text-xs text-gray-500">Cancel</button>
+
+      <div class="text-[10px] text-gray-600 pt-2 border-t border-border">
+        Note: If your Pro doesn't activate instantly, it'll sync within 5 minutes. Contact support if issues persist.
+      </div>
+    </div>
+  `, 'Awaiting Payment');
+
+  document.getElementById('check-payment-btn').onclick = () => checkProStatus();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function checkProStatus() {
+  try {
+    toast('Checking...', 'info', 1500);
+    const snap = await getDoc(doc(db, 'users', State.user.uid));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.isPro) {
+        State.profile = { ...State.profile, ...data };
+        toast('👑 Pro activated! Welcome to the club.', 'success', 4000);
+        closeSheet();
+        hideAd();
+        setTimeout(() => {
+          if (State.currentTab === 'you') renderYouTab();
+        }, 500);
+      } else {
+        toast('Not confirmed yet. Wait 30s and try again.', 'warning', 4000);
+      }
+    }
+  } catch (e) {
+    toast('Check failed: ' + e.message, 'error');
+  }
+}
+
+// ---------- OVERRIDE pro upsell card in YOU tab ----------
+const _origRenderProUpsell = renderProUpsell;
+renderProUpsell = function() {
+  return `
+    <div class="bg-gradient-to-br from-black via-black to-[#1a1200] border border-gold/40 rounded-2xl p-5 mb-4 shimmer relative overflow-hidden">
+      <div class="absolute top-3 right-3 text-3xl">👑</div>
+      <div class="text-xs font-black text-gold uppercase tracking-wider mb-1">Upgrade</div>
+      <h3 class="text-xl font-black mb-3">Go <span class="text-gold glow-text-gold">Pro</span></h3>
+      <div class="text-xs text-gray-300 mb-4">
+        <div class="font-bold text-gold mb-2">$1.99/mo · $9.99 lifetime</div>
+        <ul class="space-y-1.5">
+          <li>✦ Unlimited Vault builds</li>
+          <li>✦ Full camo tracker</li>
+          <li>✦ Create & lead clans</li>
+          <li>✦ Pin LFG posts</li>
+          <li>✦ Instant leak alerts</li>
+          <li>✦ Zero ads, forever</li>
+          <li>✦ Gold crown badge 👑</li>
+        </ul>
+      </div>
+      <button id="unlock-pro-btn" class="btn-press w-full py-3.5 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold">
+        Unlock Pro →
+      </button>
+    </div>
+  `;
+};
+
+// Replace goPro with openUpgradeSheet
+goPro = function() { openUpgradeSheet(); };
+
+// Re-wire unlock button after YOU tab renders
+const _origRenderYouTabPayment = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabPayment();
+  setTimeout(() => {
+    const proBtn = document.getElementById('unlock-pro-btn');
+    if (proBtn) proBtn.onclick = openUpgradeSheet;
+  }, 50);
+};
+
+window.openUpgradeSheet = openUpgradeSheet;
+window.startPayment = startPayment;
+window.checkProStatus = checkProStatus;
+window.goPro = goPro;
+
+/* END OF CHUNK 13 */
