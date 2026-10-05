@@ -29,10 +29,14 @@ service cloud.firestore {
           request.resource.data.isPro == resource.data.isPro
           && request.resource.data.proExpiry == resource.data.proExpiry
         )) ||
-        // Allow rating fields to be updated by the system (via client after rating)
+        // Rating fields updated by system
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAvg', 'ratingCount', 'ratingTags']) ||
-        // Allow friend-related field updates from other users
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends', 'friendRequests', 'friendRequestsSent'])
+        // Friend-related updates from other users
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends', 'friendRequests', 'friendRequestsSent']) ||
+        // Party fields
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentParty']) ||
+        // Tournament wins
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tournamentWins'])
       );
       allow delete: if isOwner(uid) || isAdmin();
     }
@@ -114,7 +118,7 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // ---------- LEAK SUBMISSIONS ----------
+    // ---------- SUBMISSIONS ----------
     match /leak_submissions/{subId} {
       allow create: if isSignedIn()
                     && request.resource.data.submitterUid == request.auth.uid
@@ -122,7 +126,6 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
-    // ---------- VAULT SUBMISSIONS ----------
     match /vault_submissions/{subId} {
       allow create: if isSignedIn()
                     && request.resource.data.submitterUid == request.auth.uid
@@ -130,7 +133,6 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
-    // ---------- CLIP SUBMISSIONS ----------
     match /clip_submissions/{subId} {
       allow create: if isSignedIn()
                     && request.resource.data.submitterUid == request.auth.uid
@@ -150,7 +152,7 @@ service cloud.firestore {
       allow write: if isOwner(uid);
     }
 
-    // ---------- RATINGS (LFG reputation) ----------
+    // ---------- RATINGS ----------
     match /ratings/{ratingId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
@@ -173,13 +175,39 @@ service cloud.firestore {
     match /tournaments/{tournamentId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.creatorUid == request.auth.uid;
-      allow update: if isSignedIn(); // Needed for registrations, bracket updates, etc.
+      allow update: if isSignedIn();
       allow delete: if isSignedIn() && (resource.data.creatorUid == request.auth.uid || isAdmin());
     }
 
     match /tournamentHistory/{historyId} {
       allow read: if isSignedIn();
       allow create, update, delete: if isSignedIn();
+    }
+
+    // ---------- MESSAGES (DMs) ----------
+    match /messages/{messageId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.fromUid ||
+        request.auth.uid == resource.data.toUid
+      );
+      allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- PARTIES ----------
+    match /parties/{partyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.leaderUid == request.auth.uid;
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && (resource.data.leaderUid == request.auth.uid || isAdmin());
+    }
+
+    // ---------- NOTIFICATIONS ----------
+    match /notifications/{notifId} {
+      allow read: if isSignedIn() && request.auth.uid == resource.data.userId;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && request.auth.uid == resource.data.userId;
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.userId;
     }
 
     // ---------- DEFAULT DENY ----------
