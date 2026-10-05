@@ -50,6 +50,7 @@ const firebaseConfig = {
 };
 
 const ADMIN_UID = "ItqEYihqxYW4HGm7i8bBYky8XNw1";
+const NOTIFY_WORKER_URL = "https://codmpanda-notify.bobbyjohon8585.workers.dev";
 const APP_VERSION = "1.0.0";
 
 const app = initializeApp(firebaseConfig);
