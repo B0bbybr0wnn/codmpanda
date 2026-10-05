@@ -4931,13 +4931,13 @@ renderSquadTab = function() {
         <p class="text-xs text-gray-500">Clans, scrims, clips, and legends</p>
       </div>
 
-      <div class="flex gap-2 mb-4">
-        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'clans' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="clans">Clans</button>
-        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'scrims' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="scrims">Scrims</button>
-        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'clips' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="clips">Clips</button>
-        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'top' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="top">🏆 Top</button>
-        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'wars' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="wars">🏆 Wars</button>
-        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'tournaments' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="tournaments">🏆</button>
+      <div class="grid grid-cols-3 gap-2 mb-4">
+        <button class="squad-sub py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'clans' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="clans">Clans</button>
+        <button class="squad-sub py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'scrims' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="scrims">Scrims</button>
+        <button class="squad-sub py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'clips' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="clips">Clips</button>
+        <button class="squad-sub py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'top' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="top">Top</button>
+        <button class="squad-sub py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'wars' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="wars">Wars</button>
+        <button class="squad-sub py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'tournaments' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="tournaments">Tournaments</button>
       </div>
 
       <div id="squad-body"></div>
