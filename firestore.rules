@@ -23,10 +23,14 @@ service cloud.firestore {
                     && request.resource.data.ign is string
                     && request.resource.data.ign.size() >= 2
                     && request.resource.data.ign.size() <= 24;
-      allow update: if isOwner(uid) && (
+      allow update: if isSignedIn() && (
         isAdmin() ||
-        (request.resource.data.isPro == resource.data.isPro
-         && request.resource.data.proExpiry == resource.data.proExpiry)
+        (isOwner(uid) && (
+          request.resource.data.isPro == resource.data.isPro
+          && request.resource.data.proExpiry == resource.data.proExpiry
+        )) ||
+        // Allow friend-related field updates from other users
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends', 'friendRequests', 'friendRequestsSent'])
       );
       allow delete: if isOwner(uid) || isAdmin();
     }
@@ -102,7 +106,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
-    // ---------- LEAKS (approved content only) ----------
+    // ---------- LEAKS (admin-only writes) ----------
     match /leaks/{leakId} {
       allow read: if isSignedIn();
       allow create, update, delete: if isAdmin();
