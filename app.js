@@ -7384,3 +7384,1448 @@ window.getCurrentSeasonStart = getCurrentSeasonStart;
 window.getSeasonNumber = getSeasonNumber;
 
 /* END OF CHUNK 19 */
+// ============================================
+// Chunk 20/4: Gunsmith Builder — Data Layer
+// ============================================
+
+// Attachment slot definitions (order matters for UI)
+const GUNSMITH_SLOTS = [
+  { key: 'muzzle', label: 'Muzzle', icon: 'shield' },
+  { key: 'barrel', label: 'Barrel', icon: 'align-vertical-space-around' },
+  { key: 'optic', label: 'Optic', icon: 'eye' },
+  { key: 'stock', label: 'Stock', icon: 'minus' },
+  { key: 'laser', label: 'Laser', icon: 'zap' },
+  { key: 'underbarrel', label: 'Underbarrel', icon: 'grip' },
+  { key: 'ammunition', label: 'Ammunition', icon: 'package' },
+  { key: 'rearGrip', label: 'Rear Grip', icon: 'hand' },
+  { key: 'perk', label: 'Perk', icon: 'star' }
+];
+
+// Stat display config — order of stat bars
+const STAT_CONFIG = [
+  { key: 'accuracy', label: 'Accuracy', color: '#00BFFF' },
+  { key: 'damage', label: 'Damage', color: '#FF3B30' },
+  { key: 'range', label: 'Range', color: '#FF9500' },
+  { key: 'fireRate', label: 'Fire Rate', color: '#FFCC00' },
+  { key: 'mobility', label: 'Mobility', color: '#34C759' },
+  { key: 'control', label: 'Control', color: '#AF52DE' }
+];
+
+// Base stats per gun (0-100 scale) — approximate community averages
+const GUN_BASE_STATS = {
+  'AK117': { accuracy: 65, damage: 70, range: 60, fireRate: 78, mobility: 68, control: 55 },
+  'AK-47': { accuracy: 60, damage: 85, range: 75, fireRate: 55, mobility: 55, control: 45 },
+  'M4': { accuracy: 78, damage: 62, range: 65, fireRate: 72, mobility: 70, control: 75 },
+  'AKBP': { accuracy: 72, damage: 72, range: 68, fireRate: 68, mobility: 62, control: 60 },
+  'DR-H': { accuracy: 70, damage: 78, range: 72, fireRate: 58, mobility: 58, control: 55 },
+  'FR .556': { accuracy: 72, damage: 68, range: 72, fireRate: 65, mobility: 65, control: 65 },
+  'HBRa3': { accuracy: 70, damage: 74, range: 68, fireRate: 68, mobility: 65, control: 60 },
+  'HVK-30': { accuracy: 78, damage: 72, range: 70, fireRate: 62, mobility: 60, control: 65 },
+  'ICR-1': { accuracy: 80, damage: 62, range: 62, fireRate: 75, mobility: 72, control: 78 },
+  'KN-44': { accuracy: 70, damage: 78, range: 68, fireRate: 62, mobility: 62, control: 58 },
+  'LK24': { accuracy: 76, damage: 75, range: 70, fireRate: 62, mobility: 60, control: 65 },
+  'Man-O-War': { accuracy: 65, damage: 88, range: 78, fireRate: 50, mobility: 50, control: 40 },
+  'Oden': { accuracy: 65, damage: 95, range: 80, fireRate: 45, mobility: 48, control: 35 },
+  'ASM10': { accuracy: 68, damage: 82, range: 72, fireRate: 55, mobility: 55, control: 50 },
+  'BK57': { accuracy: 72, damage: 78, range: 68, fireRate: 60, mobility: 58, control: 55 },
+  'AS VAL': { accuracy: 68, damage: 74, range: 62, fireRate: 72, mobility: 65, control: 50 },
+  'CR-56 AMAX': { accuracy: 65, damage: 80, range: 70, fireRate: 58, mobility: 55, control: 50 },
+  'M13': { accuracy: 75, damage: 68, range: 68, fireRate: 78, mobility: 68, control: 65 },
+  'Peacekeeper MK2': { accuracy: 72, damage: 78, range: 72, fireRate: 62, mobility: 60, control: 55 },
+  'FARA 83': { accuracy: 70, damage: 72, range: 70, fireRate: 70, mobility: 62, control: 60 },
+  'Grau 5.56': { accuracy: 75, damage: 68, range: 65, fireRate: 72, mobility: 68, control: 68 },
+  'Maddox': { accuracy: 68, damage: 72, range: 62, fireRate: 78, mobility: 68, control: 55 },
+  'Swordfish': { accuracy: 80, damage: 65, range: 72, fireRate: 68, mobility: 62, control: 70 },
+  'Type 25': { accuracy: 65, damage: 70, range: 62, fireRate: 78, mobility: 65, control: 55 },
+  'Fennec': { accuracy: 55, damage: 60, range: 55, fireRate: 92, mobility: 88, control: 40 },
+  'QQ9': { accuracy: 65, damage: 62, range: 58, fireRate: 82, mobility: 82, control: 55 },
+  'MP5': { accuracy: 70, damage: 62, range: 58, fireRate: 80, mobility: 80, control: 65 },
+  'MP7': { accuracy: 68, damage: 62, range: 55, fireRate: 82, mobility: 82, control: 58 },
+  'PDW-57': { accuracy: 65, damage: 62, range: 58, fireRate: 78, mobility: 78, control: 55 },
+  'RUS-79U': { accuracy: 68, damage: 62, range: 58, fireRate: 80, mobility: 78, control: 62 },
+  'Cordite': { accuracy: 62, damage: 58, range: 58, fireRate: 88, mobility: 78, control: 55 },
+  'GKS': { accuracy: 72, damage: 65, range: 62, fireRate: 72, mobility: 75, control: 65 },
+  'HG 40': { accuracy: 68, damage: 65, range: 58, fireRate: 75, mobility: 78, control: 60 },
+  'MSMC': { accuracy: 60, damage: 65, range: 55, fireRate: 82, mobility: 82, control: 55 },
+  'Pharo': { accuracy: 60, damage: 68, range: 55, fireRate: 78, mobility: 78, control: 55 },
+  'Razorback': { accuracy: 72, damage: 60, range: 62, fireRate: 72, mobility: 75, control: 65 },
+  'Striker 45': { accuracy: 75, damage: 65, range: 62, fireRate: 68, mobility: 72, control: 62 },
+  'PP19 Bizon': { accuracy: 65, damage: 58, range: 58, fireRate: 78, mobility: 78, control: 58 },
+  'QXR': { accuracy: 68, damage: 62, range: 58, fireRate: 82, mobility: 80, control: 60 },
+  'MX9': { accuracy: 65, damage: 60, range: 58, fireRate: 88, mobility: 82, control: 55 },
+  'CX-9': { accuracy: 62, damage: 62, range: 58, fireRate: 85, mobility: 82, control: 55 },
+  'LAPA': { accuracy: 65, damage: 60, range: 58, fireRate: 85, mobility: 80, control: 55 },
+  'PPSh-41': { accuracy: 58, damage: 58, range: 55, fireRate: 88, mobility: 78, control: 55 },
+  'AGR 556': { accuracy: 65, damage: 62, range: 60, fireRate: 78, mobility: 75, control: 58 },
+  'Arctic .50': { accuracy: 85, damage: 92, range: 92, fireRate: 30, mobility: 42, control: 40 },
+  'DL Q33': { accuracy: 88, damage: 92, range: 92, fireRate: 28, mobility: 40, control: 45 },
+  'Locus': { accuracy: 82, damage: 88, range: 88, fireRate: 42, mobility: 55, control: 55 },
+  'M21 EBR': { accuracy: 80, damage: 78, range: 82, fireRate: 62, mobility: 60, control: 55 },
+  'XPR-50': { accuracy: 82, damage: 85, range: 85, fireRate: 42, mobility: 52, control: 45 },
+  'NA-45': { accuracy: 78, damage: 82, range: 80, fireRate: 52, mobility: 55, control: 45 },
+  'Rytec AMR': { accuracy: 80, damage: 95, range: 88, fireRate: 32, mobility: 42, control: 40 },
+  'SP-R 208': { accuracy: 85, damage: 78, range: 82, fireRate: 62, mobility: 62, control: 60 },
+  'HDR': { accuracy: 90, damage: 92, range: 92, fireRate: 28, mobility: 45, control: 50 },
+  'Koshka': { accuracy: 82, damage: 85, range: 88, fireRate: 45, mobility: 58, control: 50 },
+  'Outlaw': { accuracy: 80, damage: 85, range: 85, fireRate: 48, mobility: 55, control: 48 },
+  'RPD': { accuracy: 68, damage: 78, range: 72, fireRate: 75, mobility: 35, control: 55 },
+  'M4LMG': { accuracy: 75, damage: 75, range: 72, fireRate: 68, mobility: 38, control: 62 },
+  'UL736': { accuracy: 78, damage: 75, range: 75, fireRate: 62, mobility: 40, control: 68 },
+  'S36': { accuracy: 75, damage: 78, range: 72, fireRate: 62, mobility: 38, control: 65 },
+  'Chopper': { accuracy: 72, damage: 78, range: 70, fireRate: 68, mobility: 42, control: 55 },
+  'Holger 26': { accuracy: 72, damage: 75, range: 72, fireRate: 72, mobility: 42, control: 58 },
+  'PKM': { accuracy: 70, damage: 85, range: 78, fireRate: 62, mobility: 32, control: 52 },
+  'Bruen MK9': { accuracy: 75, damage: 78, range: 75, fireRate: 68, mobility: 38, control: 60 },
+  'Hades': { accuracy: 75, damage: 75, range: 72, fireRate: 62, mobility: 42, control: 65 },
+  'MG82': { accuracy: 68, damage: 82, range: 78, fireRate: 65, mobility: 35, control: 50 },
+  'BY15': { accuracy: 60, damage: 92, range: 30, fireRate: 45, mobility: 72, control: 40 },
+  'HS0405': { accuracy: 58, damage: 95, range: 32, fireRate: 38, mobility: 70, control: 38 },
+  'HS2126': { accuracy: 55, damage: 82, range: 25, fireRate: 60, mobility: 70, control: 35 },
+  'Striker': { accuracy: 58, damage: 82, range: 28, fireRate: 52, mobility: 72, control: 40 },
+  'KRM 262': { accuracy: 60, damage: 90, range: 32, fireRate: 42, mobility: 68, control: 42 },
+  'Echo': { accuracy: 55, damage: 75, range: 25, fireRate: 82, mobility: 68, control: 35 },
+  'JAK-12': { accuracy: 58, damage: 82, range: 28, fireRate: 72, mobility: 65, control: 38 },
+  'R9-0': { accuracy: 60, damage: 88, range: 28, fireRate: 55, mobility: 70, control: 40 },
+  'Argus': { accuracy: 65, damage: 88, range: 32, fireRate: 45, mobility: 72, control: 45 },
+  'VLK Rogue': { accuracy: 60, damage: 85, range: 30, fireRate: 48, mobility: 70, control: 42 },
+  'SKS': { accuracy: 82, damage: 75, range: 82, fireRate: 62, mobility: 58, control: 55 },
+  'SPR-208': { accuracy: 85, damage: 78, range: 82, fireRate: 62, mobility: 60, control: 60 },
+  'MK2 Carbine': { accuracy: 82, damage: 78, range: 78, fireRate: 62, mobility: 62, control: 58 },
+  'Kar98K': { accuracy: 85, damage: 85, range: 85, fireRate: 45, mobility: 55, control: 55 },
+  'EBR-14': { accuracy: 78, damage: 72, range: 78, fireRate: 68, mobility: 62, control: 55 },
+  'SVD': { accuracy: 80, damage: 78, range: 82, fireRate: 58, mobility: 55, control: 50 },
+  'Type 63': { accuracy: 78, damage: 72, range: 75, fireRate: 70, mobility: 62, control: 58 },
+  'J358': { accuracy: 68, damage: 72, range: 55, fireRate: 62, mobility: 82, control: 55 },
+  'MW11': { accuracy: 65, damage: 62, range: 48, fireRate: 78, mobility: 85, control: 55 },
+  '.50 GS': { accuracy: 70, damage: 82, range: 62, fireRate: 55, mobility: 78, control: 45 },
+  'Renetti': { accuracy: 68, damage: 58, range: 48, fireRate: 82, mobility: 85, control: 58 },
+  'L-CAR 9': { accuracy: 62, damage: 52, range: 45, fireRate: 88, mobility: 88, control: 50 },
+  'Shorty': { accuracy: 55, damage: 85, range: 20, fireRate: 45, mobility: 82, control: 35 },
+  'Crossbow': { accuracy: 75, damage: 92, range: 78, fireRate: 25, mobility: 62, control: 50 },
+  'TEC-9': { accuracy: 65, damage: 62, range: 52, fireRate: 82, mobility: 82, control: 52 },
+  'Nail Gun': { accuracy: 60, damage: 55, range: 42, fireRate: 88, mobility: 85, control: 48 }
+};
+
+// Generic attachment pools — real CODM names, reused across similar guns
+const ATTACHMENT_POOLS = {
+  muzzle: [
+    { name: 'Muzzle Brake', effects: { control: +8, accuracy: +4 } },
+    { name: 'Compensator', effects: { control: +10, accuracy: -2 } },
+    { name: 'Flash Guard', effects: { control: +5 } },
+    { name: 'Suppressor', effects: { range: -5, mobility: +3, control: +6 } },
+    { name: 'Monolithic Suppressor', effects: { range: +5, control: +8, mobility: -3 } },
+    { name: 'Tactical Suppressor', effects: { control: +6, mobility: +2 } },
+    { name: 'Flash Hider', effects: { accuracy: +5, control: +3 } }
+  ],
+  barrel: [
+    { name: 'RTC Light Barrel', effects: { mobility: +8, range: -4 } },
+    { name: 'OWC Marksman', effects: { range: +8, control: +4, mobility: -4 } },
+    { name: 'OWC Ranger', effects: { range: +12, accuracy: +5, mobility: -8, control: -3 } },
+    { name: 'Light Extended Barrel', effects: { range: +4, mobility: +3 } },
+    { name: 'MIP Extended Light Barrel', effects: { range: +6, mobility: +2 } },
+    { name: 'MIP Custom Long Barrel', effects: { range: +10, accuracy: +4, mobility: -6 } },
+    { name: 'Short Barrel', effects: { mobility: +10, accuracy: -4 } },
+    { name: 'Tactical Barrel', effects: { accuracy: +6, control: +3 } },
+    { name: 'Heavy Barrel', effects: { range: +9, damage: +3, mobility: -8 } },
+    { name: 'RTC Heavy Long Barrel', effects: { range: +14, damage: +2, mobility: -12 } }
+  ],
+  optic: [
+    { name: 'Red Dot Sight', effects: { accuracy: +4 } },
+    { name: 'Holographic Sight', effects: { accuracy: +5 } },
+    { name: '3x Tactical Scope', effects: { range: +4, accuracy: +6, mobility: -3 } },
+    { name: '4x Tactical Scope', effects: { range: +6, accuracy: +8, mobility: -5 } },
+    { name: '6x Tactical Scope', effects: { range: +8, accuracy: +10, mobility: -8 } },
+    { name: 'Iron Sights', effects: { mobility: +3 } },
+    { name: 'Classic Holographic', effects: { accuracy: +4 } }
+  ],
+  stock: [
+    { name: 'No Stock', effects: { mobility: +10, control: -6, accuracy: -3 } },
+    { name: 'MIP Strike Stock', effects: { accuracy: +5, control: +5, mobility: -3 } },
+    { name: 'RTC Steady Stock', effects: { control: +8, accuracy: +6, mobility: -5 } },
+    { name: 'YKM Light Stock', effects: { mobility: +6, control: +2 } },
+    { name: 'OWC Skeleton Stock', effects: { mobility: +8, control: +3 } },
+    { name: 'MIP Light Stock', effects: { mobility: +5, accuracy: +2 } },
+    { name: 'Combat Stock', effects: { control: +6, accuracy: +4 } },
+    { name: 'Tactical Stock', effects: { accuracy: +5, control: +4 } }
+  ],
+  laser: [
+    { name: 'OWC Laser - Tactical', effects: { accuracy: +6, mobility: +4 } },
+    { name: 'OWC Laser - Light', effects: { mobility: +6, accuracy: +3 } },
+    { name: 'MIP Laser 5mW', effects: { mobility: +4, accuracy: +2 } },
+    { name: 'Aim Assist Laser', effects: { accuracy: +8, mobility: +2 } },
+    { name: 'Fast Switch Laser', effects: { mobility: +5, control: +2 } }
+  ],
+  underbarrel: [
+    { name: 'Foregrip', effects: { control: +6, accuracy: +3 } },
+    { name: 'Ranger Foregrip', effects: { control: +10, accuracy: +4, mobility: -3 } },
+    { name: 'Strike Foregrip', effects: { mobility: +4, control: +3 } },
+    { name: 'Tactical Foregrip A', effects: { control: +7, accuracy: +4 } },
+    { name: 'Merc Foregrip', effects: { control: +8, accuracy: +3, mobility: -2 } },
+    { name: 'Light Foregrip', effects: { control: +5, mobility: +2 } },
+    { name: 'Operator Foregrip', effects: { control: +9, mobility: -3 } }
+  ],
+  ammunition: [
+    { name: 'Extended Mag', effects: { mobility: -2 } },
+    { name: 'Fast Mag', effects: { mobility: +3 } },
+    { name: 'Extended Mag A', effects: { mobility: -3 } },
+    { name: 'Large Extended Mag', effects: { mobility: -5 } },
+    { name: 'Light Mag', effects: { mobility: +4 } }
+  ],
+  rearGrip: [
+    { name: 'Rubberized Grip Tape', effects: { control: +5, accuracy: +3 } },
+    { name: 'Stippled Grip Tape', effects: { accuracy: +4, control: +3 } },
+    { name: 'Granulated Grip Tape', effects: { control: +6 } },
+    { name: 'Skeletonized Rear Grip', effects: { mobility: +4, control: -2 } },
+    { name: 'Tactical Rear Grip', effects: { accuracy: +4, mobility: +2 } }
+  ],
+  perk: [
+    { name: 'Sleight of Hand', effects: {} },
+    { name: 'Fast Switch', effects: {} },
+    { name: 'Ammo Increase', effects: { mobility: -2 } },
+    { name: 'Disable', effects: {} },
+    { name: 'Long Shot', effects: { range: +3 } },
+    { name: 'Hipfire', effects: { mobility: +3 } },
+    { name: 'Toughness', effects: { control: +4 } },
+    { name: 'Slight of Hand', effects: {} }
+  ]
+};
+
+// ---------- HELPER FUNCTIONS ----------
+function getGunBaseStats(gunName) {
+  return GUN_BASE_STATS[gunName] || { accuracy: 65, damage: 65, range: 65, fireRate: 65, mobility: 65, control: 65 };
+}
+
+function getAttachmentsForSlot(gunName, slotKey) {
+  // Filter pool for this gun — just return the full pool for now
+  return ATTACHMENT_POOLS[slotKey] || [];
+}
+
+function calculateFinalStats(gunName, selectedAttachments) {
+  const base = { ...getGunBaseStats(gunName) };
+  const modifiers = { accuracy: 0, damage: 0, range: 0, fireRate: 0, mobility: 0, control: 0 };
+
+  GUNSMITH_SLOTS.forEach(slot => {
+    const picked = selectedAttachments[slot.key];
+    if (!picked || !picked.effects) return;
+    Object.entries(picked.effects).forEach(([stat, val]) => {
+      if (modifiers[stat] !== undefined) modifiers[stat] += val;
+    });
+  });
+
+  const final = {};
+  Object.keys(base).forEach(k => {
+    final[k] = Math.max(0, Math.min(100, base[k] + modifiers[k]));
+  });
+
+  return { base, modifiers, final };
+}
+
+// Export
+window.GUNSMITH_SLOTS = GUNSMITH_SLOTS;
+window.STAT_CONFIG = STAT_CONFIG;
+window.GUN_BASE_STATS = GUN_BASE_STATS;
+window.ATTACHMENT_POOLS = ATTACHMENT_POOLS;
+window.getGunBaseStats = getGunBaseStats;
+window.getAttachmentsForSlot = getAttachmentsForSlot;
+window.calculateFinalStats = calculateFinalStats;
+
+/* END OF CHUNK 20 */
+// ============================================
+// Chunk 21/4: Gunsmith Builder — UI
+// ============================================
+
+// Builder state
+const BuilderState = {
+  selectedGun: null,
+  selectedAttachments: {}, // { muzzle: {...}, barrel: {...}, ... }
+  activeSlot: null
+};
+
+// ---------- MAIN ENTRY POINT ----------
+function openGunsmithBuilder(gunName) {
+  BuilderState.selectedGun = gunName || null;
+  BuilderState.selectedAttachments = {};
+  BuilderState.activeSlot = null;
+
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <!-- Header -->
+      <div class="flex items-center justify-between mb-4">
+        <button id="builder-back-btn" class="btn-press w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
+          <i data-lucide="arrow-left" class="w-5 h-5"></i>
+        </button>
+        <div class="text-center flex-1">
+          <div class="text-lg font-black">Gunsmith Builder</div>
+          <div class="text-[10px] text-gray-500">Build & share your perfect loadout</div>
+        </div>
+        <button id="builder-reset-btn" class="btn-press w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
+          <i data-lucide="rotate-ccw" class="w-5 h-5 text-gray-400"></i>
+        </button>
+      </div>
+
+      <div id="builder-body"></div>
+    </div>
+  `;
+
+  document.getElementById('builder-back-btn').onclick = () => {
+    // Return to Lab tab
+    labSubTab = 'vault';
+    renderLabTab();
+  };
+  document.getElementById('builder-reset-btn').onclick = () => {
+    confirmDialog('Reset Build', 'Clear all attachments?', () => {
+      BuilderState.selectedAttachments = {};
+      renderBuilderBody();
+    }, 'Reset', true);
+  };
+
+  renderBuilderBody();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- RENDER LOGIC ----------
+function renderBuilderBody() {
+  const body = document.getElementById('builder-body');
+  if (!body) return;
+
+  if (!BuilderState.selectedGun) {
+    renderGunPicker(body);
+  } else {
+    renderLoadoutCanvas(body);
+  }
+}
+
+// ---------- GUN PICKER ----------
+function renderGunPicker(body) {
+  const categories = ['Assault Rifle', 'SMG', 'Sniper', 'LMG', 'Shotgun', 'Marksman', 'Pistol'];
+  let activeCategory = 'Assault Rifle';
+
+  body.innerHTML = `
+    <div class="text-center mb-4">
+      <div class="text-xs text-gray-500 mb-2">Step 1 — Pick your weapon</div>
+    </div>
+
+    <div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1" id="gun-cat-filters">
+      ${categories.map((c, i) => `
+        <button class="chip gun-cat-btn ${i === 0 ? 'active' : ''}" data-cat="${c}">${c}</button>
+      `).join('')}
+    </div>
+
+    <div class="relative mb-4">
+      <i data-lucide="search" class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+      <input id="gun-search" type="text" placeholder="Search guns..." class="pl-10" />
+    </div>
+
+    <div id="gun-grid" class="grid grid-cols-2 gap-3"></div>
+  `;
+
+  const renderGuns = (category, search) => {
+    const grid = document.getElementById('gun-grid');
+    if (!grid) return;
+
+    const gunsInCat = CODM_GUNS[category] || [];
+    const filtered = search
+      ? gunsInCat.filter(g => g.toLowerCase().includes(search.toLowerCase()))
+      : gunsInCat;
+
+    if (filtered.length === 0) {
+      grid.innerHTML = '<div class="col-span-2 text-center py-8 text-xs text-gray-500">No guns found</div>';
+      return;
+    }
+
+    grid.innerHTML = filtered.map(gun => `
+      <button class="gun-pick-btn bg-card border border-border rounded-2xl p-3 text-left hover:border-primary transition-colors" data-gun="${esc(gun)}">
+        <div class="w-full h-16 rounded-xl bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center mb-2">
+          <i data-lucide="crosshair" class="w-6 h-6 text-primary"></i>
+        </div>
+        <div class="text-xs font-bold truncate">${esc(gun)}</div>
+        <div class="text-[9px] text-gray-500">${category}</div>
+      </button>
+    `).join('');
+
+    grid.querySelectorAll('.gun-pick-btn').forEach(btn => {
+      btn.onclick = () => {
+        BuilderState.selectedGun = btn.dataset.gun;
+        BuilderState.selectedAttachments = {};
+        renderBuilderBody();
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  };
+
+  // Wire category filters
+  body.querySelectorAll('.gun-cat-btn').forEach(btn => {
+    btn.onclick = () => {
+      body.querySelectorAll('.gun-cat-btn').forEach(b => b.classList.toggle('active', b === btn));
+      activeCategory = btn.dataset.cat;
+      const search = document.getElementById('gun-search')?.value || '';
+      renderGuns(activeCategory, search);
+    };
+  });
+
+  // Wire search
+  document.getElementById('gun-search').oninput = (e) => {
+    renderGuns(activeCategory, e.target.value);
+  };
+
+  renderGuns(activeCategory, '');
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- LOADOUT CANVAS ----------
+function renderLoadoutCanvas(body) {
+  const gun = BuilderState.selectedGun;
+  const { final, base, modifiers } = calculateFinalStats(gun, BuilderState.selectedAttachments);
+  const attachedCount = Object.keys(BuilderState.selectedAttachments).length;
+
+  body.innerHTML = `
+    <!-- Gun Header -->
+    <div class="bg-card border border-primary/40 rounded-2xl p-4 mb-4 relative overflow-hidden">
+      <div class="absolute top-3 right-3 text-2xl opacity-20">🔧</div>
+      <div class="flex items-center gap-3">
+        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="crosshair" class="w-7 h-7 text-primary"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-lg font-black truncate">${esc(gun)}</div>
+          <div class="text-[10px] text-gray-500">${attachedCount}/9 attachments</div>
+        </div>
+        <button id="change-gun-btn" class="btn-press px-3 py-2 rounded-lg bg-cardAlt border border-border text-[10px] font-bold">
+          Change
+        </button>
+      </div>
+    </div>
+
+    <!-- Stat Bars Preview -->
+    <div id="stat-preview">
+      ${renderStatBars(base, final, modifiers)}
+    </div>
+
+    <!-- Attachments Grid -->
+    <div class="text-xs font-bold text-gray-400 uppercase mb-2 mt-4">Attachments</div>
+    <div class="grid grid-cols-3 gap-2 mb-4" id="slot-grid">
+      ${GUNSMITH_SLOTS.map(slot => {
+        const picked = BuilderState.selectedAttachments[slot.key];
+        return `
+          <button class="slot-btn bg-card border ${picked ? 'border-primary/60 bg-primary/5' : 'border-border'} rounded-xl p-3 flex flex-col items-center gap-1.5" data-slot="${slot.key}">
+            <i data-lucide="${slot.icon}" class="w-5 h-5 ${picked ? 'text-primary' : 'text-gray-500'}"></i>
+            <div class="text-[9px] font-bold ${picked ? 'text-primary' : 'text-gray-400'} text-center leading-tight">${slot.label}</div>
+            ${picked ? `<div class="text-[8px] text-primary truncate w-full text-center">${esc(picked.name)}</div>` : `<div class="text-[8px] text-gray-600">Empty</div>`}
+          </button>
+        `;
+      }).join('')}
+    </div>
+
+    <!-- Actions -->
+    <div class="space-y-2">
+      <button id="builder-save-btn" class="btn-press w-full py-3.5 rounded-xl bg-primary font-black text-sm glow-primary flex items-center justify-center gap-2">
+        <i data-lucide="save" class="w-4 h-4"></i> Save to Vault
+      </button>
+      <button id="builder-share-btn" class="btn-press w-full py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm flex items-center justify-center gap-2">
+        <i data-lucide="share-2" class="w-4 h-4"></i> Share Build
+      </button>
+    </div>
+
+    <div class="text-[10px] text-gray-600 text-center mt-4">
+      Stats are approximate — based on community-sourced data
+    </div>
+  `;
+
+  // Wire change gun
+  document.getElementById('change-gun-btn').onclick = () => {
+    BuilderState.selectedGun = null;
+    BuilderState.selectedAttachments = {};
+    renderBuilderBody();
+  };
+
+  // Wire slots
+  body.querySelectorAll('.slot-btn').forEach(btn => {
+    btn.onclick = () => openAttachmentPicker(btn.dataset.slot);
+  });
+
+  // Wire save
+  document.getElementById('builder-save-btn').onclick = saveBuildToVault;
+
+  // Wire share
+  document.getElementById('builder-share-btn').onclick = shareBuild;
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- STAT BARS (preview — full version in Chunk 22) ----------
+function renderStatBars(base, final, modifiers) {
+  return `
+    <div class="bg-card border border-border rounded-2xl p-4">
+      <div class="text-xs font-bold text-gray-400 uppercase mb-3">📊 Live Stats</div>
+      <div class="space-y-2">
+        ${STAT_CONFIG.map(stat => {
+          const baseVal = base[stat.key];
+          const finalVal = final[stat.key];
+          const mod = modifiers[stat.key];
+          const pct = finalVal;
+          const modText = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : '';
+          const modColor = mod > 0 ? 'text-green-400' : mod < 0 ? 'text-red-400' : 'text-gray-600';
+
+          return `
+            <div>
+              <div class="flex items-center justify-between text-[10px] mb-1">
+                <span class="text-gray-400 font-semibold">${stat.label}</span>
+                <div class="flex items-center gap-2">
+                  ${modText ? `<span class="font-bold ${modColor}">${modText}</span>` : ''}
+                  <span class="font-bold text-gray-300">${finalVal}</span>
+                </div>
+              </div>
+              <div class="progress-bar" style="height:6px;">
+                <div class="progress-fill" style="width:${pct}%; background: ${stat.color};"></div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ---------- ATTACHMENT PICKER ----------
+function openAttachmentPicker(slotKey) {
+  const slot = GUNSMITH_SLOTS.find(s => s.key === slotKey);
+  if (!slot) return;
+
+  const gun = BuilderState.selectedGun;
+  const attachments = getAttachmentsForSlot(gun, slotKey);
+  const current = BuilderState.selectedAttachments[slotKey];
+
+  if (attachments.length === 0) {
+    toast('No attachments available for this slot', 'info');
+    return;
+  }
+
+  openSheet(`
+    <div class="space-y-2 max-h-[70vh] overflow-y-auto">
+      <div class="text-xs text-gray-500 mb-3">Pick one ${slot.label.toLowerCase()} attachment</div>
+
+      ${current ? `
+        <button class="pick-attach-remove w-full text-left px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/40 text-red-400 font-bold text-sm mb-2">
+          ✕ Remove current: ${esc(current.name)}
+        </button>
+      ` : ''}
+
+      ${attachments.map((att, i) => {
+        const isSelected = current && current.name === att.name;
+        const effects = Object.entries(att.effects || {});
+        return `
+          <button class="pick-attach-btn w-full text-left px-4 py-3 rounded-xl ${isSelected ? 'bg-primary/15 border border-primary' : 'bg-card border border-border'} font-semibold text-sm" data-index="${i}">
+            <div class="flex items-center justify-between mb-1">
+              <span class="${isSelected ? 'text-primary' : 'text-white'}">${esc(att.name)}</span>
+              ${isSelected ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-primary text-white font-black">EQUIPPED</span>' : ''}
+            </div>
+            ${effects.length > 0 ? `
+              <div class="flex flex-wrap gap-1.5 mt-1">
+                ${effects.map(([stat, val]) => `
+                  <span class="text-[9px] px-1.5 py-0.5 rounded ${val > 0 ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'} font-bold">
+                    ${stat} ${val > 0 ? '+' + val : val}
+                  </span>
+                `).join('')}
+              </div>
+            ` : '<div class="text-[10px] text-gray-500">No stat changes</div>'}
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `, slot.label);
+
+  // Wire picks
+  document.querySelectorAll('.pick-attach-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.index);
+      BuilderState.selectedAttachments[slotKey] = attachments[idx];
+      closeSheet();
+      renderBuilderBody();
+      toast(`${slot.label}: ${attachments[idx].name}`, 'success', 1500);
+    };
+  });
+
+  // Wire remove
+  const removeBtn = document.querySelector('.pick-attach-remove');
+  if (removeBtn) {
+    removeBtn.onclick = () => {
+      delete BuilderState.selectedAttachments[slotKey];
+      closeSheet();
+      renderBuilderBody();
+      toast(`${slot.label} removed`, 'success', 1500);
+    };
+  }
+}
+
+// ---------- SAVE BUILD TO VAULT ----------
+async function saveBuildToVault() {
+  const gun = BuilderState.selectedGun;
+  const attachedCount = Object.keys(BuilderState.selectedAttachments).length;
+
+  if (attachedCount === 0) {
+    toast('Add at least one attachment', 'warning');
+    return;
+  }
+
+  // Free tier limit — check vault count
+  if (!State.profile?.isPro) {
+    try {
+      const snap = await getDocs(query(collection(db, 'vaults'), where('uid', '==', State.user.uid)));
+      if (snap.size >= 3) {
+        showProPaywall('You\'ve reached the free limit of 3 vaults. Upgrade to Pro for unlimited.');
+        return;
+      }
+    } catch (e) { /* proceed */ }
+  }
+
+  // Build the gunsmith code as a compact string
+  const code = generateGunsmithCode(gun, BuilderState.selectedAttachments);
+
+  try {
+    toast('Saving build...', 'info', 1500);
+
+    // Build attachment map for Firestore
+    const attachments = {};
+    GUNSMITH_SLOTS.forEach(slot => {
+      const picked = BuilderState.selectedAttachments[slot.key];
+      if (picked) attachments[slot.label] = picked.name;
+    });
+
+    await addDoc(collection(db, 'vaults'), {
+      uid: State.user.uid,
+      ign: State.profile.ign,
+      gunName: gun,
+      gunsmithCode: code,
+      type: 'gunsmith',
+      attachments,
+      imageUrl: '',
+      likes: 0,
+      builderVersion: 2,
+      createdAt: serverTimestamp()
+    });
+
+    toast('✅ Build saved to Vault!', 'success', 2500);
+  } catch (e) {
+    console.error(e);
+    toast('Save failed: ' + e.message, 'error');
+  }
+}
+
+function generateGunsmithCode(gun, attachments) {
+  // Compact format: GUN-XXXX-YYYY
+  const slug = gun.replace(/[^A-Z0-9]/gi, '').slice(0, 4).toUpperCase();
+  const slotCodes = GUNSMITH_SLOTS.map(s => {
+    const a = attachments[s.key];
+    if (!a) return '0';
+    const hash = a.name.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
+    return Math.abs(hash % 9999).toString().padStart(4, '0');
+  }).join('');
+  return `${slug}-${slotCodes}`;
+}
+
+// ---------- SHARE BUILD ----------
+function shareBuild() {
+  const gun = BuilderState.selectedGun;
+  const attachedCount = Object.keys(BuilderState.selectedAttachments).length;
+  const { final } = calculateFinalStats(gun, BuilderState.selectedAttachments);
+
+  const attachmentList = GUNSMITH_SLOTS
+    .map(s => BuilderState.selectedAttachments[s.key])
+    .filter(Boolean)
+    .map(a => '• ' + a.name)
+    .join('\n');
+
+  const text = `🔧 ${gun} Build\n\n${attachmentList || '(No attachments)'}\n\nAccuracy: ${final.accuracy} | Damage: ${final.damage} | Range: ${final.range} | Mobility: ${final.mobility}\n\nBuilt with CODMPanda 🐼`;
+
+  openShareSheet({
+    title: `${gun} Build`,
+    text,
+    url: location.origin
+  });
+}
+
+// ---------- ADD "BUILD GUNSMITH" BUTTON TO VAULT SUB-TAB ----------
+const _origRenderVaultSubBuilder = renderVaultSub;
+renderVaultSub = function() {
+  _origRenderVaultSubBuilder();
+
+  setTimeout(() => {
+    const addBtn = document.getElementById('add-vault-btn');
+    if (!addBtn) return;
+    if (document.getElementById('open-builder-btn')) return;
+
+    const body = document.getElementById('lab-body');
+    if (!body) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'open-builder-btn';
+    btn.className = 'btn-press w-full mb-3 py-3.5 rounded-2xl bg-gradient-to-r from-primary to-primaryDark text-white font-black text-sm glow-primary flex items-center justify-center gap-2';
+    btn.innerHTML = '<i data-lucide="wrench" class="w-4 h-4"></i> Build Gunsmith';
+    btn.onclick = () => openGunsmithBuilder();
+
+    const feed = document.getElementById('vault-feed');
+    if (feed) feed.parentNode.insertBefore(btn, feed);
+
+    if (window.lucide) window.lucide.createIcons();
+  }, 100);
+};
+
+window.openGunsmithBuilder = openGunsmithBuilder;
+window.openAttachmentPicker = openAttachmentPicker;
+window.saveBuildToVault = saveBuildToVault;
+window.shareBuild = shareBuild;
+window.renderStatBars = renderStatBars;
+
+/* END OF CHUNK 21 */
+// ============================================
+// Chunk 22/4: Gunsmith Builder — Enhanced Stats
+// ============================================
+
+// Classify stat modifier as beneficial/harmful
+function getStatImpact(statKey, value) {
+  if (value === 0) return 'neutral';
+  // All stats benefit from higher values
+  return value > 0 ? 'positive' : 'negative';
+}
+
+// Rank a completed build quality
+function scoreBuild(final) {
+  const weights = {
+    accuracy: 1.0,
+    damage: 1.2,
+    range: 1.0,
+    fireRate: 0.8,
+    mobility: 1.0,
+    control: 1.0
+  };
+  let total = 0;
+  let maxTotal = 0;
+  Object.keys(weights).forEach(k => {
+    total += (final[k] || 0) * weights[k];
+    maxTotal += 100 * weights[k];
+  });
+  const pct = Math.round((total / maxTotal) * 100);
+
+  let tier, color, emoji;
+  if (pct >= 75) { tier = 'Meta'; color = '#FFD700'; emoji = '🔥'; }
+  else if (pct >= 65) { tier = 'Strong'; color = '#00BFFF'; emoji = '💎'; }
+  else if (pct >= 55) { tier = 'Solid'; color = '#34C759'; emoji = '✅'; }
+  else if (pct >= 45) { tier = 'Niche'; color = '#FF9500'; emoji = '⚡'; }
+  else { tier = 'Off-Meta'; color = '#8E8E93'; emoji = '🎯'; }
+
+  return { pct, tier, color, emoji };
+}
+
+// Generate Pro/Con summary
+function analyzeTradeoffs(modifiers) {
+  const pros = [];
+  const cons = [];
+
+  Object.entries(modifiers).forEach(([stat, val]) => {
+    if (val === 0) return;
+    if (val >= 5) pros.push({ stat, val });
+    else if (val <= -5) cons.push({ stat, val });
+  });
+
+  return { pros, cons };
+}
+
+// ---------- ENHANCED STATS PANEL ----------
+function renderEnhancedStats(base, final, modifiers) {
+  const score = scoreBuild(final);
+  const { pros, cons } = analyzeTradeoffs(modifiers);
+
+  return `
+    <!-- Build Score Card -->
+    <div class="bg-gradient-to-br from-black via-black to-${score.tier === 'Meta' ? '[#1a1200]' : '[#0a0a0a]'} border rounded-2xl p-4 mb-3" style="border-color: ${score.color}40;">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-[10px] text-gray-500 uppercase font-bold">Build Score</div>
+          <div class="flex items-center gap-2 mt-0.5">
+            <span class="text-3xl font-black" style="color: ${score.color};">${score.pct}%</span>
+            <span class="text-lg">${score.emoji}</span>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] text-gray-500 uppercase font-bold">Verdict</div>
+          <div class="text-lg font-black" style="color: ${score.color};">${score.tier}</div>
+        </div>
+      </div>
+      <div class="progress-bar" style="height: 8px;">
+        <div class="progress-fill" style="width: ${score.pct}%; background: ${score.color};"></div>
+      </div>
+    </div>
+
+    <!-- Stat Bars -->
+    <div class="bg-card border border-border rounded-2xl p-4 mb-3">
+      <div class="text-xs font-bold text-gray-400 uppercase mb-3">📊 Stats Breakdown</div>
+      <div class="space-y-2.5">
+        ${STAT_CONFIG.map(stat => {
+          const baseVal = base[stat.key];
+          const finalVal = final[stat.key];
+          const mod = modifiers[stat.key];
+          const pct = finalVal;
+
+          // Base bar (ghost) + final bar overlay
+          const basePct = baseVal;
+
+          const modText = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : '';
+          const modColor = mod > 0 ? 'text-green-400' : mod < 0 ? 'text-red-400' : 'text-gray-600';
+          const arrow = mod > 0 ? '↑' : mod < 0 ? '↓' : '';
+
+          return `
+            <div>
+              <div class="flex items-center justify-between text-[10px] mb-1">
+                <span class="text-gray-400 font-semibold">${stat.label}</span>
+                <div class="flex items-center gap-2">
+                  ${modText ? `<span class="font-bold ${modColor}">${arrow} ${modText}</span>` : ''}
+                  <span class="font-bold text-gray-300">${finalVal}/100</span>
+                </div>
+              </div>
+              <div class="relative h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+                <div class="absolute inset-y-0 left-0 rounded-full" style="width: ${basePct}%; background: rgba(255,255,255,0.08);"></div>
+                <div class="absolute inset-y-0 left-0 rounded-full transition-all duration-300" style="width: ${pct}%; background: ${stat.color};"></div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div class="text-[9px] text-gray-600 mt-3 text-center">Bars show base (dim) → final (bright)</div>
+    </div>
+
+    <!-- Pros & Cons -->
+    ${(pros.length > 0 || cons.length > 0) ? `
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        ${pros.length > 0 ? `
+          <div class="bg-green-500/5 border border-green-500/30 rounded-2xl p-3">
+            <div class="text-[10px] font-bold text-green-400 uppercase mb-2">✓ Pros</div>
+            <div class="space-y-1">
+              ${pros.map(p => `
+                <div class="flex items-center justify-between text-[10px]">
+                  <span class="text-gray-300 capitalize">${p.stat}</span>
+                  <span class="font-bold text-green-400">+${p.val}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : '<div class="bg-card border border-border rounded-2xl p-3 text-center text-[10px] text-gray-600">No strong pros</div>'}
+
+        ${cons.length > 0 ? `
+          <div class="bg-red-500/5 border border-red-500/30 rounded-2xl p-3">
+            <div class="text-[10px] font-bold text-red-400 uppercase mb-2">✕ Cons</div>
+            <div class="space-y-1">
+              ${cons.map(c => `
+                <div class="flex items-center justify-between text-[10px]">
+                  <span class="text-gray-300 capitalize">${c.stat}</span>
+                  <span class="font-bold text-red-400">${c.val}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : '<div class="bg-card border border-border rounded-2xl p-3 text-center text-[10px] text-gray-600">No strong cons</div>'}
+      </div>
+    ` : ''}
+  `;
+}
+
+// ---------- PRESET BUILDS ----------
+const PRESET_BUILDS = {
+  'Fennec': [
+    { name: '⚡ Rusher', slots: { muzzle: 'Monolithic Suppressor', barrel: 'RTC Light Barrel', stock: 'No Stock', laser: 'OWC Laser - Tactical', rearGrip: 'Rubberized Grip Tape' } },
+    { name: '🎯 Hip Fire', slots: { muzzle: 'Muzzle Brake', barrel: 'Short Barrel', stock: 'No Stock', laser: 'Aim Assist Laser', rearGrip: 'Stippled Grip Tape' } }
+  ],
+  'AK117': [
+    { name: '⚡ Balanced Meta', slots: { muzzle: 'Muzzle Brake', barrel: 'MIP Light Barrel', optic: 'Red Dot Sight', stock: 'MIP Strike Stock', rearGrip: 'Rubberized Grip Tape' } },
+    { name: '🎯 Long Range', slots: { muzzle: 'Monolithic Suppressor', barrel: 'MIP Extended Light Barrel', optic: '3x Tactical Scope', stock: 'RTC Steady Stock', rearGrip: 'Rubberized Grip Tape' } }
+  ],
+  'DL Q33': [
+    { name: '🎯 Quick Scope', slots: { muzzle: 'Muzzle Brake', barrel: 'OWC Marksman', stock: 'OWC Skeleton Stock', laser: 'OWC Laser - Tactical', perk: 'Fast Switch' } },
+    { name: '🛡️ Hard Scope', slots: { muzzle: 'Monolithic Suppressor', barrel: 'MIP Custom Long Barrel', optic: '6x Tactical Scope', stock: 'RTC Steady Stock', rearGrip: 'Rubberized Grip Tape' } }
+  ],
+  'QQ9': [
+    { name: '⚡ Aggressive', slots: { muzzle: 'Muzzle Brake', barrel: 'RTC Light Barrel', stock: 'No Stock', laser: 'OWC Laser - Tactical', rearGrip: 'Rubberized Grip Tape' } }
+  ],
+  'AK-47': [
+    { name: '💪 Control God', slots: { muzzle: 'Muzzle Brake', barrel: 'OWC Marksman', stock: 'RTC Steady Stock', underbarrel: 'Ranger Foregrip', rearGrip: 'Rubberized Grip Tape' } }
+  ],
+  'M4': [
+    { name: '⚖️ Balanced', slots: { muzzle: 'Muzzle Brake', barrel: 'MIP Light Barrel', stock: 'MIP Strike Stock', laser: 'OWC Laser - Tactical', rearGrip: 'Rubberized Grip Tape' } }
+  ]
+};
+
+function applyPreset(preset) {
+  const gun = BuilderState.selectedGun;
+  BuilderState.selectedAttachments = {};
+
+  Object.entries(preset.slots).forEach(([slotKey, attName]) => {
+    const pool = getAttachmentsForSlot(gun, slotKey);
+    const att = pool.find(a => a.name === attName);
+    if (att) BuilderState.selectedAttachments[slotKey] = att;
+  });
+
+  closeSheet();
+  renderBuilderBody();
+  toast(`✨ ${preset.name} applied`, 'success');
+}
+
+// ---------- OVERRIDE renderLoadoutCanvas ----------
+const _origRenderLoadoutCanvas = renderLoadoutCanvas;
+renderLoadoutCanvas = function(body) {
+  const gun = BuilderState.selectedGun;
+  const { final, base, modifiers } = calculateFinalStats(gun, BuilderState.selectedAttachments);
+  const attachedCount = Object.keys(BuilderState.selectedAttachments).length;
+  const presets = PRESET_BUILDS[gun] || [];
+  const score = scoreBuild(final);
+
+  body.innerHTML = `
+    <!-- Gun Header -->
+    <div class="bg-card border border-primary/40 rounded-2xl p-4 mb-4 relative overflow-hidden">
+      <div class="absolute top-3 right-3 text-2xl opacity-20">🔧</div>
+      <div class="flex items-center gap-3">
+        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="crosshair" class="w-7 h-7 text-primary"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-lg font-black truncate">${esc(gun)}</div>
+          <div class="text-[10px] text-gray-500">${attachedCount}/9 attachments · ${score.emoji} ${score.tier}</div>
+        </div>
+        <button id="change-gun-btn" class="btn-press px-3 py-2 rounded-lg bg-cardAlt border border-border text-[10px] font-bold">
+          Change
+        </button>
+      </div>
+    </div>
+
+    <!-- Presets (if available) -->
+    ${presets.length > 0 && attachedCount === 0 ? `
+      <div class="mb-4">
+        <div class="text-xs font-bold text-gray-400 uppercase mb-2">✨ Quick Presets</div>
+        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+          ${presets.map((p, i) => `
+            <button class="preset-btn chip" data-preset-index="${i}">${p.name}</button>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- Enhanced Stats Preview -->
+    <div id="stat-preview">
+      ${renderEnhancedStats(base, final, modifiers)}
+    </div>
+
+    <!-- Attachments Grid -->
+    <div class="text-xs font-bold text-gray-400 uppercase mb-2 mt-4">Attachments</div>
+    <div class="grid grid-cols-3 gap-2 mb-4" id="slot-grid">
+      ${GUNSMITH_SLOTS.map(slot => {
+        const picked = BuilderState.selectedAttachments[slot.key];
+        return `
+          <button class="slot-btn bg-card border ${picked ? 'border-primary/60 bg-primary/5' : 'border-border'} rounded-xl p-3 flex flex-col items-center gap-1.5" data-slot="${slot.key}">
+            <i data-lucide="${slot.icon}" class="w-5 h-5 ${picked ? 'text-primary' : 'text-gray-500'}"></i>
+            <div class="text-[9px] font-bold ${picked ? 'text-primary' : 'text-gray-400'} text-center leading-tight">${slot.label}</div>
+            ${picked ? `<div class="text-[8px] text-primary truncate w-full text-center">${esc(picked.name)}</div>` : `<div class="text-[8px] text-gray-600">Empty</div>`}
+          </button>
+        `;
+      }).join('')}
+    </div>
+
+    <!-- Actions -->
+    <div class="space-y-2">
+      <button id="builder-save-btn" class="btn-press w-full py-3.5 rounded-xl bg-primary font-black text-sm glow-primary flex items-center justify-center gap-2">
+        <i data-lucide="save" class="w-4 h-4"></i> Save to Vault
+      </button>
+      <button id="builder-share-btn" class="btn-press w-full py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm flex items-center justify-center gap-2">
+        <i data-lucide="share-2" class="w-4 h-4"></i> Share Build
+      </button>
+    </div>
+
+    <div class="text-[10px] text-gray-600 text-center mt-4">
+      Stats are approximate — based on community-sourced data
+    </div>
+  `;
+
+  // Wire change gun
+  document.getElementById('change-gun-btn').onclick = () => {
+    BuilderState.selectedGun = null;
+    BuilderState.selectedAttachments = {};
+    renderBuilderBody();
+  };
+
+  // Wire slots
+  body.querySelectorAll('.slot-btn').forEach(btn => {
+    btn.onclick = () => openAttachmentPicker(btn.dataset.slot);
+  });
+
+  // Wire presets
+  body.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.presetIndex);
+      applyPreset(presets[idx]);
+    };
+  });
+
+  // Wire save
+  document.getElementById('builder-save-btn').onclick = saveBuildToVault;
+  document.getElementById('builder-share-btn').onclick = shareBuild;
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+window.scoreBuild = scoreBuild;
+window.renderEnhancedStats = renderEnhancedStats;
+
+/* END OF CHUNK 22 */
+// ============================================
+// Chunk 23/4: Gunsmith Builder — Community + Integration
+// ============================================
+
+// ---------- COMMUNITY BUILDS SECTION ----------
+async function openCommunityBuilds(gunName) {
+  openSheet(`
+    <div class="text-center py-8"><div class="spinner mx-auto"></div></div>
+  `, `${gunName} — Community Builds`);
+
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'vaults'),
+      where('gunName', '==', gunName),
+      where('type', '==', 'gunsmith'),
+      limit(30)
+    ));
+
+    const builds = [];
+    snap.forEach(d => builds.push({ id: d.id, ...d.data() }));
+    builds.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (!sheetBody) return;
+
+    if (builds.length === 0) {
+      sheetBody.innerHTML = `
+        <div class="text-center py-12">
+          <div class="text-4xl mb-3">🔧</div>
+          <div class="text-sm font-bold mb-1">No community builds yet</div>
+          <div class="text-xs text-gray-500 mb-4">Be the first to share a ${esc(gunName)} build!</div>
+          <button id="start-empty-build" class="btn-press px-4 py-2.5 rounded-xl bg-primary font-bold text-sm">
+            Build Gunsmith →
+          </button>
+        </div>
+      `;
+      document.getElementById('start-empty-build').onclick = () => {
+        closeSheet();
+        setTimeout(() => openGunsmithBuilder(gunName), 300);
+      };
+      return;
+    }
+
+    sheetBody.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-xs text-gray-500">${builds.length} build${builds.length === 1 ? '' : 's'} shared</div>
+        <button id="new-build-btn" class="btn-press text-[10px] px-3 py-1.5 rounded-lg bg-primary font-bold text-white">
+          + New Build
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        ${builds.map(b => {
+          const attCount = b.attachments ? Object.keys(b.attachments).length : 0;
+          const isMine = b.uid === State.user.uid;
+          return `
+            <div class="bg-card border border-border rounded-2xl p-4">
+              <div class="flex items-start gap-3 mb-3">
+                <div class="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  ${b.avatar ? `<img src="${esc(b.avatar)}" class="w-full h-full object-cover" />` : '<i data-lucide="crosshair" class="w-5 h-5 text-primary"></i>'}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-bold truncate">${esc(b.gunName || 'Build')}</div>
+                  <div class="text-[10px] text-gray-500">
+                    by ${isMine ? 'you' : esc(b.ign || 'Unknown')} · ${attCount} attachments
+                  </div>
+                </div>
+                <button class="build-load-btn btn-press px-3 py-1.5 rounded-lg bg-primary text-white text-[10px] font-bold flex-shrink-0" data-id="${b.id}">
+                  LOAD
+                </button>
+              </div>
+
+              ${b.attachments ? `
+                <div class="space-y-1 mb-3">
+                  ${Object.entries(b.attachments).slice(0, 5).map(([slot, att]) => `
+                    <div class="flex items-center justify-between text-[10px]">
+                      <span class="text-gray-500">${esc(slot)}</span>
+                      <span class="text-gray-300 font-semibold truncate ml-2">${esc(att)}</span>
+                    </div>
+                  `).join('')}
+                  ${Object.keys(b.attachments).length > 5 ? `<div class="text-[9px] text-gray-600 text-center">+${Object.keys(b.attachments).length - 5} more</div>` : ''}
+                </div>
+              ` : ''}
+
+              <div class="flex items-center justify-between pt-2 border-t border-border">
+                <button class="build-like-btn flex items-center gap-1 text-[10px] text-gray-400" data-id="${b.id}">
+                  <i data-lucide="heart" class="w-3.5 h-3.5"></i> ${b.likes || 0}
+                </button>
+                <button class="build-copy-btn text-[10px] text-primary font-bold" data-code="${esc(b.gunsmithCode || '')}">
+                  Copy Code
+                </button>
+                <button class="build-share-btn text-gray-500" data-id="${b.id}" data-gun="${esc(b.gunName)}">
+                  <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+    // Wire new build
+    document.getElementById('new-build-btn').onclick = () => {
+      closeSheet();
+      setTimeout(() => openGunsmithBuilder(gunName), 300);
+    };
+
+    // Wire LOAD — opens builder with this gun
+    sheetBody.querySelectorAll('.build-load-btn').forEach(btn => {
+      btn.onclick = () => {
+        closeSheet();
+        toast('Opening builder — copy attachments manually', 'info', 3000);
+        setTimeout(() => openGunsmithBuilder(gunName), 300);
+      };
+    });
+
+    // Wire likes
+    sheetBody.querySelectorAll('.build-like-btn').forEach(btn => {
+      btn.onclick = async () => {
+        try {
+          await updateDoc(doc(db, 'vaults', btn.dataset.id), { likes: increment(1) });
+          toast('❤️ Liked!', 'success', 1200);
+        } catch (e) { toast('Failed', 'error'); }
+      };
+    });
+
+    // Wire copy code
+    sheetBody.querySelectorAll('.build-copy-btn').forEach(btn => {
+      btn.onclick = () => {
+        if (!btn.dataset.code) { toast('No code available', 'warning'); return; }
+        copyText(btn.dataset.code, 'Gunsmith code copied!');
+      };
+    });
+
+    // Wire share
+    sheetBody.querySelectorAll('.build-share-btn').forEach(btn => {
+      btn.onclick = () => {
+        openShareSheet({
+          title: `${btn.dataset.gun} Build`,
+          text: `🔧 Check out this ${btn.dataset.gun} build on CODMPanda!`,
+          url: `${location.origin}/?vault=${btn.dataset.id}`
+        });
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Community builds error:', e);
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (sheetBody) {
+      sheetBody.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">Failed to load builds</div>';
+    }
+  }
+}
+
+// ---------- ADD "COMMUNITY" TAB IN BUILDER ----------
+const _origRenderLoadoutCanvasCommunity = renderLoadoutCanvas;
+renderLoadoutCanvas = function(body) {
+  _origRenderLoadoutCanvasCommunity(body);
+
+  // Inject "View Community Builds" button
+  setTimeout(() => {
+    const actions = body.querySelector('.space-y-2');
+    if (!actions || body.querySelector('#view-community-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'view-community-btn';
+    btn.className = 'btn-press w-full py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm flex items-center justify-center gap-2 mb-2';
+    btn.innerHTML = '<i data-lucide="users" class="w-4 h-4 text-primary"></i> View Community Builds';
+    btn.onclick = () => openCommunityBuilds(BuilderState.selectedGun);
+
+    actions.insertBefore(btn, actions.firstChild);
+    if (window.lucide) window.lucide.createIcons();
+  }, 60);
+};
+
+// ---------- VAULT CARD ENHANCEMENT ----------
+// Add "VIEW BUILDS" button for gunsmith vault entries
+const _origRenderVaultsCommunity = renderVaults;
+renderVaults = function() {
+  _origRenderVaultsCommunity();
+
+  // Add click handler for gunsmith cards to open community builds
+  setTimeout(() => {
+    const feed = document.getElementById('vault-feed');
+    if (!feed) return;
+
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      if (card.dataset.communityBound) return;
+      const gunNameEl = card.querySelector('.text-xs.font-bold');
+      if (!gunNameEl) return;
+
+      const gunName = gunNameEl.textContent.trim();
+      if (!gunName || gunName === 'Unknown') return;
+
+      // Make the whole card clickable for gunsmith vaults
+      const typeEl = card.querySelector('.text-\\[10px\\].text-gray-500');
+      if (typeEl && typeEl.textContent.includes('gunsmith')) {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('button')) return; // don't trigger on button clicks
+          openCommunityBuilds(gunName);
+        });
+        card.dataset.communityBound = '1';
+      }
+    });
+  }, 120);
+};
+
+// ---------- ENHANCED SAVE WITH SUCCESS FEEDBACK ----------
+const _origSaveBuildToVault = saveBuildToVault;
+saveBuildToVault = async function() {
+  const result = await _origSaveBuildToVault();
+
+  // Show success sheet with quick actions
+  setTimeout(() => {
+    if (document.getElementById('sheet-container').classList.contains('hidden')) {
+      // Save succeeded
+      openSheet(`
+        <div class="text-center space-y-4 py-4">
+          <div class="text-5xl">🎉</div>
+          <div>
+            <h3 class="text-lg font-black mb-1">Build Saved!</h3>
+            <div class="text-xs text-gray-400">Your ${esc(BuilderState.selectedGun)} build is now in the Vault</div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <button id="goto-vault-btn" class="btn-press py-3 rounded-xl bg-primary font-bold text-xs">
+              View Vault
+            </button>
+            <button id="share-build-now" class="btn-press py-3 rounded-xl bg-cardAlt border border-border font-bold text-xs">
+              Share Build
+            </button>
+          </div>
+
+          <button id="continue-building" class="text-xs text-gray-500">Continue building</button>
+        </div>
+      `, 'Success!');
+
+      document.getElementById('goto-vault-btn').onclick = () => {
+        closeSheet();
+        labSubTab = 'vault';
+        renderLabTab();
+      };
+      document.getElementById('share-build-now').onclick = () => {
+        closeSheet();
+        setTimeout(shareBuild, 300);
+      };
+      document.getElementById('continue-building').onclick = () => closeSheet();
+
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }, 800);
+};
+
+// ---------- BUILD SHARE WITH IMAGE ----------
+async function shareBuildAsImage() {
+  const gun = BuilderState.selectedGun;
+  if (!gun) { toast('No build loaded', 'warning'); return; }
+
+  try {
+    toast('Creating image...', 'info', 2000);
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const W = 1080;
+    const H = 1350;
+    canvas.width = W;
+    canvas.height = H;
+
+    // Background
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, W, H);
+
+    // Glow
+    const grad = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, 800);
+    grad.addColorStop(0, 'rgba(255, 107, 0, 0.3)');
+    grad.addColorStop(1, 'rgba(255, 107, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, 800);
+
+    // Border
+    ctx.strokeStyle = '#FF6B00';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(20, 20, W - 40, H - 40);
+
+    // Header
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 42px Inter, sans-serif';
+    ctx.fillStyle = '#FF6B00';
+    ctx.fillText('CODMPanda', W / 2, 110);
+
+    ctx.font = '500 22px Inter, sans-serif';
+    ctx.fillStyle = '#666';
+    ctx.fillText('GUNSMITH BUILD', W / 2, 150);
+
+    // Gun name
+    ctx.font = 'bold 78px Inter, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(gun, W / 2, 260);
+
+    // Score
+    const { final, base, modifiers } = calculateFinalStats(gun, BuilderState.selectedAttachments);
+    const score = scoreBuild(final);
+
+    ctx.font = 'bold 32px Inter, sans-serif';
+    ctx.fillStyle = score.color;
+    ctx.fillText(`${score.emoji} ${score.tier} · ${score.pct}%`, W / 2, 315);
+
+    // Attachments list
+    let y = 420;
+    ctx.font = 'bold 26px Inter, sans-serif';
+    ctx.fillStyle = '#FF6B00';
+    ctx.fillText('ATTACHMENTS', W / 2, y);
+    y += 50;
+
+    ctx.textAlign = 'left';
+    const startX = 100;
+    ctx.font = '500 22px Inter, sans-serif';
+
+    GUNSMITH_SLOTS.forEach(slot => {
+      const picked = BuilderState.selectedAttachments[slot.key];
+      ctx.fillStyle = '#666';
+      ctx.fillText(slot.label.toUpperCase(), startX, y);
+      ctx.fillStyle = picked ? '#fff' : '#444';
+      ctx.font = 'bold 24px Inter, sans-serif';
+      ctx.fillText(picked ? picked.name : '—', startX + 300, y);
+      ctx.font = '500 22px Inter, sans-serif';
+      y += 42;
+    });
+
+    // Stats
+    y += 30;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 26px Inter, sans-serif';
+    ctx.fillStyle = '#FF6B00';
+    ctx.fillText('STATS', W / 2, y);
+    y += 50;
+
+    ctx.textAlign = 'left';
+    STAT_CONFIG.forEach(stat => {
+      const val = final[stat.key];
+      ctx.fillStyle = '#666';
+      ctx.font = '500 20px Inter, sans-serif';
+      ctx.fillText(stat.label, startX, y);
+
+      // Bar background
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(startX + 220, y - 16, 600, 14);
+
+      // Bar fill
+      ctx.fillStyle = stat.color;
+      ctx.fillRect(startX + 220, y - 16, (600 * val) / 100, 14);
+
+      // Value
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 20px Inter, sans-serif';
+      ctx.fillText(val.toString(), startX + 840, y);
+      y += 40;
+    });
+
+    // Footer
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 32px Inter, sans-serif';
+    ctx.fillStyle = '#FF6B00';
+    ctx.fillText('codmpanda.pages.dev', W / 2, H - 90);
+
+    // Convert to blob and share
+    canvas.toBlob(async (blob) => {
+      const file = new File([blob], `codmpanda-${gun}-build.png`, { type: 'image/png' });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: `${gun} Build`,
+            text: `Check out my ${gun} build! 🔧`
+          });
+          toast('Shared!', 'success');
+        } catch (e) { /* cancelled */ }
+      } else {
+        const url = URL.createObjectURL(blob);
+        openSheet(`
+          <div class="space-y-4">
+            <img src="${url}" class="w-full rounded-2xl border border-border" />
+            <a href="${url}" download="codmpanda-build.png" class="btn-press block w-full py-3 rounded-xl bg-primary text-center text-white font-bold text-sm">
+              ⬇️ Save Image
+            </a>
+            <button onclick="closeSheet()" class="text-xs text-gray-500 w-full">Close</button>
+          </div>
+        `, 'Your Build');
+      }
+    }, 'image/png');
+  } catch (e) {
+    console.error('Share image error:', e);
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+// Override shareBuild to offer image option
+shareBuild = function() {
+  openSheet(`
+    <div class="space-y-3">
+      <div class="text-center mb-3">
+        <div class="text-sm font-bold mb-1">Share Your Build</div>
+        <div class="text-[10px] text-gray-500">Choose how to share</div>
+      </div>
+
+      <button id="share-text-btn" class="btn-press w-full py-3.5 rounded-xl bg-cardAlt border border-border font-bold text-sm flex items-center justify-center gap-2">
+        <i data-lucide="message-square" class="w-4 h-4 text-primary"></i> Share as Text
+      </button>
+
+      <button id="share-image-btn" class="btn-press w-full py-3.5 rounded-xl bg-gradient-to-r from-primary to-primaryDark font-bold text-sm text-white flex items-center justify-center gap-2">
+        <i data-lucide="image" class="w-4 h-4"></i> Share as Image
+      </button>
+
+      <button onclick="closeSheet()" class="text-xs text-gray-500 w-full pt-2">Cancel</button>
+    </div>
+  `, 'Share Build');
+
+  document.getElementById('share-text-btn').onclick = () => {
+    closeSheet();
+    setTimeout(() => {
+      const gun = BuilderState.selectedGun;
+      const { final } = calculateFinalStats(gun, BuilderState.selectedAttachments);
+
+      const attachmentList = GUNSMITH_SLOTS
+        .map(s => BuilderState.selectedAttachments[s.key])
+        .filter(Boolean)
+        .map(a => '• ' + a.name)
+        .join('\n');
+
+      const text = `🔧 ${gun} Build\n\n${attachmentList || '(No attachments)'}\n\nAccuracy: ${final.accuracy} | Damage: ${final.damage} | Range: ${final.range} | Mobility: ${final.mobility}\n\nBuilt with CODMPanda 🐼`;
+
+      openShareSheet({
+        title: `${gun} Build`,
+        text,
+        url: location.origin
+      });
+    }, 300);
+  };
+
+  document.getElementById('share-image-btn').onclick = () => {
+    closeSheet();
+    setTimeout(shareBuildAsImage, 300);
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+window.openCommunityBuilds = openCommunityBuilds;
+window.shareBuildAsImage = shareBuildAsImage;
+
+/* END OF CHUNK 23 */
