@@ -13255,3 +13255,306 @@ console.log('%c🐼 CODMPanda v1.0.0 — ALL CHUNKS LOADED', 'color:#FF6B00;font
 console.log('%c32/32 chunks • Full featured • Ready to launch', 'color:#FFD700;font-size:11px');
 
 /* END OF CHUNK 32 — APP COMPLETE */
+// ============================================
+// Chunk 34: Custom Dropdowns + Performance + Back Button
+// ============================================
+
+// ============================================
+// PART 1: GLOBAL DROPDOWN INTERCEPTOR
+// ============================================
+
+function openCustomDropdown(selectEl) {
+  const options = Array.from(selectEl.options);
+  const currentValue = selectEl.value;
+
+  const groups = [];
+  let currentGroup = null;
+
+  options.forEach(opt => {
+    if (opt.parentElement && opt.parentElement.tagName === 'OPTGROUP') {
+      const groupLabel = opt.parentElement.label;
+      let group = groups.find(g => g.label === groupLabel);
+      if (!group) {
+        group = { label: groupLabel, options: [] };
+        groups.push(group);
+      }
+      group.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
+    } else {
+      if (!currentGroup) {
+        currentGroup = { label: null, options: [] };
+        groups.push(currentGroup);
+      }
+      currentGroup.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
+    }
+  });
+
+  const title = selectEl.getAttribute('data-dropdown-title') || selectEl.previousElementSibling?.textContent?.trim() || 'Select';
+
+  openSheet(`
+    <div class="space-y-3 max-h-[70vh] overflow-y-auto">
+      ${groups.map(g => `
+        ${g.label ? `<div class="text-[10px] font-bold text-gray-500 uppercase px-1 pt-2">${esc(g.label)}</div>` : ''}
+        <div class="space-y-1">
+          ${g.options.map(o => `
+            <button class="dropdown-opt btn-press w-full text-left px-4 py-3 rounded-xl ${o.selected ? 'bg-primary/15 border border-primary' : 'bg-card border border-border'} font-semibold text-sm flex items-center justify-between" data-value="${esc(o.value)}">
+              <span class="${o.selected ? 'text-primary' : 'text-white'}">${esc(o.label)}</span>
+              ${o.selected ? '<i data-lucide="check" class="w-4 h-4 text-primary"></i>' : ''}
+            </button>
+          `).join('')}
+        </div>
+      `).join('')}
+    </div>
+  `, title);
+
+  document.querySelectorAll('.dropdown-opt').forEach(btn => {
+    btn.onclick = () => {
+      selectEl.value = btn.dataset.value;
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+      closeSheet();
+      toast(`✓ ${btn.textContent.trim()}`, 'success', 1200);
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+document.addEventListener('click', (e) => {
+  const select = e.target.closest('select');
+  if (!select) return;
+  if (select.id === 'set-theme') return;
+  e.preventDefault();
+  e.stopPropagation();
+  openCustomDropdown(select);
+}, true);
+
+document.addEventListener('focus', (e) => {
+  if (e.target.tagName === 'SELECT' && e.target.id !== 'set-theme') {
+    e.target.blur();
+    openCustomDropdown(e.target);
+  }
+}, true);
+
+// ============================================
+// PART 2: PROFILE CARD INSTANT FEEDBACK
+// ============================================
+
+const _origShareProfileCard = shareProfileCard;
+shareProfileCard = async function() {
+  openSheet(`
+    <div class="text-center py-12 space-y-3">
+      <div class="spinner mx-auto" style="width: 40px; height: 40px; border-width: 3px;"></div>
+      <div class="text-sm font-bold">Generating your card...</div>
+      <div class="text-[10px] text-gray-500">This takes a few seconds</div>
+    </div>
+  `, '🎨 Profile Card');
+
+  await new Promise(r => setTimeout(r, 50));
+  await _origShareProfileCard();
+};
+
+// ============================================
+// PART 3: NOTIFICATIONS INSTANT FEEDBACK
+// ============================================
+
+const _origEnableNotifications = enableNotifications;
+enableNotifications = async function() {
+  const toggle = document.getElementById('notif-toggle');
+  const card = toggle?.closest('.p-4');
+  let statusEl = card?.querySelector('.notif-status-text');
+
+  if (toggle) toggle.style.opacity = '0.5';
+  if (card && !statusEl) {
+    statusEl = document.createElement('div');
+    statusEl.className = 'notif-status-text text-[10px] text-primary mt-2 flex items-center gap-2';
+    statusEl.innerHTML = '<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div> Registering device...';
+    card.appendChild(statusEl);
+  }
+
+  try {
+    await _origEnableNotifications();
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = '<span class="text-red-400">Failed: ' + esc(e.message) + '</span>';
+  } finally {
+    if (toggle) toggle.style.opacity = '1';
+    if (statusEl) setTimeout(() => statusEl.remove(), 2000);
+  }
+};
+
+// ============================================
+// PART 4: SELECT STYLING
+// ============================================
+
+const selectEnhanceStyle = document.createElement('style');
+selectEnhanceStyle.textContent = `
+  select {
+    background: #181818 !important;
+    border: 1px solid #222 !important;
+    color: #fff !important;
+    border-radius: 12px !important;
+    padding: 12px 14px !important;
+    font-size: 15px !important;
+    width: 100% !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FF6B00' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 12px center !important;
+    background-size: 18px !important;
+    padding-right: 42px !important;
+    cursor: pointer !important;
+    transition: border-color 0.2s, background-color 0.2s !important;
+  }
+  select:hover, select:active {
+    border-color: #FF6B00 !important;
+    background-color: #1f1f1f !important;
+  }
+  select:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(255, 107, 0, 0.15) !important;
+  }
+  select option {
+    background: #111 !important;
+    color: #fff !important;
+  }
+`;
+document.head.appendChild(selectEnhanceStyle);
+
+// ============================================
+// PART 5: PROFILE CARD CACHE
+// ============================================
+
+async function primeProfileCardCache() {
+  if (!State.user) return;
+  try {
+    const [vaultSnap, camoSnap] = await Promise.all([
+      getDocs(query(collection(db, 'vaults'), where('uid', '==', State.user.uid))),
+      getDoc(doc(db, 'camos', State.user.uid))
+    ]);
+
+    State.cache.myVaultCount = vaultSnap.size;
+
+    if (camoSnap.exists()) {
+      const totalPossible = ALL_GUNS.length * CAMO_TYPES.length;
+      let checked = 0;
+      Object.values(camoSnap.data()).forEach(gun => {
+        if (typeof gun === 'object') {
+          CAMO_TYPES.forEach(c => { if (gun[c.key]) checked++; });
+        }
+      });
+      State.cache.myCamoPct = Math.round((checked / totalPossible) * 100);
+    } else {
+      State.cache.myCamoPct = 0;
+    }
+  } catch (e) { /* silent */ }
+}
+
+setTimeout(() => {
+  if (State.user) primeProfileCardCache();
+}, 3000);
+
+// ============================================
+// PART 6: BADGE FLICKER FIX
+// ============================================
+
+let badgeUpdateTimer = null;
+const _origUpdateNotifBadge = updateNotifBadge;
+updateNotifBadge = function() {
+  clearTimeout(badgeUpdateTimer);
+  badgeUpdateTimer = setTimeout(() => {
+    _origUpdateNotifBadge();
+  }, 300);
+};
+
+// ============================================
+// PART 7: SMART BACK BUTTON HANDLER
+// ============================================
+
+// Track navigation state
+const NavState = {
+  history: ['play'], // Stack of screens visited
+  isInSheet: false
+};
+
+// Override openSheet to push history
+const _origOpenSheet = openSheet;
+openSheet = function(contentHTML, title) {
+  _origOpenSheet(contentHTML, title);
+  NavState.isInSheet = true;
+  // Push a state so back button closes the sheet
+  try {
+    history.pushState({ sheet: true }, '');
+  } catch (e) { /* silent */ }
+};
+
+// Override closeSheet to also pop
+const _origCloseSheet = closeSheet;
+closeSheet = function() {
+  const wasOpen = document.getElementById('sheet-container')?.classList.contains('hidden') === false;
+  _origCloseSheet();
+  NavState.isInSheet = false;
+  // Only pop if we pushed a state
+  if (wasOpen && history.state?.sheet) {
+    try { history.back(); } catch (e) { /* silent */ }
+  }
+};
+
+// Same for modal
+const _origCloseModal = closeModal;
+closeModal = function() {
+  const wasOpen = document.getElementById('modal-container')?.classList.contains('hidden') === false;
+  _origCloseModal();
+  if (wasOpen && history.state?.modal) {
+    try { history.back(); } catch (e) { /* silent */ }
+  }
+};
+
+// Push initial state
+try {
+  history.pushState({ app: true }, '');
+} catch (e) { /* silent */ }
+
+// Back button handler
+window.addEventListener('popstate', (e) => {
+  // 1. If a sheet is open — close it
+  const sheetContainer = document.getElementById('sheet-container');
+  if (sheetContainer && !sheetContainer.classList.contains('hidden')) {
+    _origCloseSheet();
+    NavState.isInSheet = false;
+    try { history.pushState({ app: true }, ''); } catch (err) { /* silent */ }
+    return;
+  }
+
+  // 2. If a modal is open — close it
+  const modalContainer = document.getElementById('modal-container');
+  if (modalContainer && !modalContainer.classList.contains('hidden')) {
+    _origCloseModal();
+    try { history.pushState({ app: true }, ''); } catch (err) { /* silent */ }
+    return;
+  }
+
+  // 3. If on a non-primary tab — go back to PLAY
+  if (State.currentTab !== 'play') {
+    switchTab('play');
+    try { history.pushState({ app: true }, ''); } catch (err) { /* silent */ }
+    return;
+  }
+
+  // 4. If already on PLAY tab — allow exit (don't push state back)
+  // The user is on the home screen, so we let the browser close the PWA
+});
+
+// Re-push state after tab changes to keep history clean
+const _origSwitchTabBackBtn = switchTab;
+switchTab = function(tab) {
+  _origSwitchTabBackBtn(tab);
+  // Ensure we always have at least one state in history
+  if (!history.state || !history.state.app) {
+    try { history.pushState({ app: true }, ''); } catch (e) { /* silent */ }
+  }
+};
+
+window.openCustomDropdown = openCustomDropdown;
+window.primeProfileCardCache = primeProfileCardCache;
+window.NavState = NavState;
+
+/* END OF CHUNK 34 */
