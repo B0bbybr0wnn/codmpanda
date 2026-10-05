@@ -4455,3 +4455,504 @@ window.renderContributorCard = renderContributorCard;
 window.showGrantProDialog = showGrantProDialog;
 
 /* END OF CHUNK 10 */
+// ============================================
+// Chunk 11: Live Community Tier List
+// ============================================
+
+const ALL_TIER_GUNS = [
+  'AK117', 'AK-47', 'ASM10', 'BK57', 'DR-H', 'FR .556', 'HBRa3', 'HVK-30',
+  'ICR-1', 'KN-44', 'LK24', 'M16', 'M4', 'Man-O-War', 'Oden',
+  'Peacekeeper MK2', 'AKBP', 'AS VAL', 'CR-56 AMAX', 'EM2',
+  'FARA 83', 'Grau 5.56', 'Kilo 141', 'M13', 'Maddox',
+  'Swordfish', 'Type 25', 'Type 19', 'BP50', 'RAM-7',
+  'QQ9', 'MP5', 'MP7', 'PDW-57', 'RUS-79U', 'Cordite', 'GKS',
+  'HG 40', 'MSMC', 'Pharo', 'Razorback', 'QQ10', 'AGR 556',
+  'Fennec', 'Striker 45', 'PP19 Bizon', 'PPSh-41', 'QXR',
+  'MX9', 'CX-9', 'LAPA', 'Vaznev-9K', 'ISO 45',
+  'Arctic .50', 'DL Q33', 'Locus', 'M21 EBR', 'XPR-50',
+  'NA-45', 'Rytec AMR', 'SP-R 208', 'Kilo Bolt-Action',
+  'ZRG 20mm', 'HDR', 'LW3-Tundra', 'Koshka', 'Outlaw',
+  'RPD', 'M4LMG', 'UL736', 'S36', 'Chopper', 'Holger 26',
+  'PKM', 'Bruen MK9', 'FiNN LMG', 'RAAL MG', 'Hades', 'MG82',
+  'BY15', 'HS0405', 'HS2126', 'Striker', 'KRM 262',
+  'Echo', 'JAK-12', 'R9-0', 'Argus', 'VLK Rogue'
+];
+
+const TIER_ORDER = ['S', 'A', 'B', 'C'];
+const TIER_COLORS = {
+  S: { bg: 'bg-red-500', text: 'text-white', glow: 'shadow-lg shadow-red-500/50' },
+  A: { bg: 'bg-orange-500', text: 'text-white', glow: 'shadow-lg shadow-orange-500/50' },
+  B: { bg: 'bg-yellow-500', text: 'text-black', glow: '' },
+  C: { bg: 'bg-gray-500', text: 'text-white', glow: '' }
+};
+
+let tierVotesData = {};
+let tierVotesUnsub = null;
+let myTierVotes = {};
+
+async function loadTierVotes() {
+  const votes = {};
+  myTierVotes = {};
+
+  try {
+    const snap = await getDocs(collection(db, 'tierVotes'));
+    snap.forEach(doc => {
+      const uid = doc.id;
+      const userVotes = doc.data();
+      Object.keys(userVotes).forEach(gun => {
+        const tier = userVotes[gun];
+        if (!votes[gun]) votes[gun] = { S: 0, A: 0, B: 0, C: 0 };
+        if (votes[gun][tier] !== undefined) votes[gun][tier]++;
+      });
+      if (uid === State.user?.uid) {
+        myTierVotes = userVotes;
+      }
+    });
+    tierVotesData = votes;
+  } catch (e) {
+    console.error('Tier votes load error:', e);
+  }
+}
+
+function getDominantTier(gun) {
+  const v = tierVotesData[gun];
+  if (!v) return null;
+  let best = null, bestCount = 0, total = 0;
+  TIER_ORDER.forEach(t => {
+    total += v[t];
+    if (v[t] > bestCount) { bestCount = v[t]; best = t; }
+  });
+  if (total < 3) return null;
+  return { tier: best, count: bestCount, total: total };
+}
+
+function buildLiveTiers() {
+  const tiers = { S: [], A: [], B: [], C: [] };
+  ALL_TIER_GUNS.forEach(gun => {
+    const dom = getDominantTier(gun);
+    if (dom) {
+      tiers[dom.tier].push({ gun, count: dom.count, total: dom.total, pct: Math.round((dom.count / dom.total) * 100) });
+    }
+  });
+  TIER_ORDER.forEach(t => {
+    tiers[t].sort((a, b) => b.total - a.total);
+  });
+  return tiers;
+}
+
+function renderLiveTierList() {
+  return `
+    <div class="space-y-3">
+      ${TIER_ORDER.map(tier => {
+        const color = TIER_COLORS[tier];
+        const guns = window.__liveTiers?.[tier] || [];
+        return `
+          <div class="bg-card border border-border rounded-2xl p-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl ${color.bg} ${color.text} flex items-center justify-center font-black text-lg ${color.glow}">${tier}</div>
+                <div>
+                  <div class="text-sm font-bold">${tier}-Tier</div>
+                  <div class="text-[10px] text-gray-500">${guns.length} gun${guns.length === 1 ? '' : 's'}</div>
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              ${guns.length > 0 ? guns.map(g => `
+                <button class="tier-gun-pill text-[10px] px-2 py-1 rounded-full bg-cardAlt border border-border font-semibold hover:border-primary transition-colors" data-gun="${esc(g.gun)}">
+                  ${esc(g.gun)}
+                  <span class="text-gray-500 ml-1">${g.pct}%</span>
+                </button>
+              `).join('') : `<span class="text-[10px] text-gray-600 italic">No votes yet</span>`}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+async function refreshLiveTierList(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '<div class="text-center py-6"><div class="spinner mx-auto"></div></div>';
+
+  await loadTierVotes();
+  window.__liveTiers = buildLiveTiers();
+  container.innerHTML = renderLiveTierList();
+
+  container.querySelectorAll('.tier-gun-pill').forEach(btn => {
+    btn.onclick = () => showGunTierDetail(btn.dataset.gun);
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function showGunTierDetail(gun) {
+  const v = tierVotesData[gun] || { S: 0, A: 0, B: 0, C: 0 };
+  const total = v.S + v.A + v.B + v.C;
+  const myVote = myTierVotes[gun] || null;
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-center">
+        <div class="text-xs text-gray-500 uppercase font-bold mb-1">Community Ranking</div>
+        <div class="text-2xl font-black mb-3">${esc(gun)}</div>
+        <div class="text-xs text-gray-500">${total} total vote${total === 1 ? '' : 's'}</div>
+      </div>
+
+      <div class="space-y-2">
+        ${TIER_ORDER.map(t => {
+          const count = v[t];
+          const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+          const color = TIER_COLORS[t];
+          return `
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg ${color.bg} ${color.text} flex items-center justify-center font-black text-sm flex-shrink-0">${t}</div>
+              <div class="flex-1">
+                <div class="progress-bar">
+                  <div class="progress-fill" style="width:${pct}%"></div>
+                </div>
+              </div>
+              <div class="text-xs font-bold w-12 text-right">${pct}%</div>
+              <div class="text-[10px] text-gray-500 w-10 text-right">${count}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <div class="pt-3 border-t border-border">
+        <div class="text-xs text-gray-500 mb-2">Your vote:</div>
+        <div class="grid grid-cols-4 gap-2">
+          ${TIER_ORDER.map(t => {
+            const color = TIER_COLORS[t];
+            const selected = myVote === t;
+            return `
+              <button class="vote-tier-btn py-3 rounded-xl ${selected ? color.bg + ' ' + color.text : 'bg-cardAlt border border-border text-gray-400'} font-black text-sm transition-all" data-tier="${t}" data-gun="${esc(gun)}">
+                ${t}
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `, 'Vote & View');
+
+  document.querySelectorAll('.vote-tier-btn').forEach(btn => {
+    btn.onclick = () => castVote(btn.dataset.gun, btn.dataset.tier);
+  });
+}
+
+async function castVote(gun, tier) {
+  try {
+    const ref = doc(db, 'tierVotes', State.user.uid);
+    const snap = await getDoc(ref);
+    const current = snap.exists() ? snap.data() : {};
+    const oldVote = current[gun];
+
+    current[gun] = tier;
+    await setDoc(ref, current);
+
+    myTierVotes[gun] = tier;
+
+    if (!tierVotesData[gun]) tierVotesData[gun] = { S: 0, A: 0, B: 0, C: 0 };
+    if (oldVote && tierVotesData[gun][oldVote] > 0) tierVotesData[gun][oldVote]--;
+    tierVotesData[gun][tier]++;
+
+    toast(`${gun} → ${tier}-Tier ✓`, 'success', 1500);
+    closeSheet();
+
+    const container = document.getElementById('tier-live-container');
+    if (container) {
+      window.__liveTiers = buildLiveTiers();
+      container.innerHTML = renderLiveTierList();
+      container.querySelectorAll('.tier-gun-pill').forEach(btn => {
+        btn.onclick = () => showGunTierDetail(btn.dataset.gun);
+      });
+      if (window.lucide) window.lucide.createIcons();
+    }
+  } catch (e) {
+    console.error('Vote error:', e);
+    toast('Vote failed: ' + e.message, 'error');
+  }
+}
+
+function openVoteGunSheet() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Pick a gun</label>
+        <select id="tv-gun">
+          ${ALL_TIER_GUNS.map(g => `<option>${g}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Its tier</label>
+        <div class="grid grid-cols-4 gap-2">
+          ${TIER_ORDER.map(t => `
+            <button class="pick-tier-btn py-3 rounded-xl ${TIER_COLORS[t].bg} ${TIER_COLORS[t].text} font-black text-sm" data-tier="${t}">${t}</button>
+          `).join('')}
+        </div>
+      </div>
+      <button id="tv-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">Submit Vote</button>
+    </div>
+  `, 'Vote on a Gun');
+
+  let selectedTier = null;
+  document.querySelectorAll('.pick-tier-btn').forEach(btn => {
+    btn.onclick = () => {
+      selectedTier = btn.dataset.tier;
+      document.querySelectorAll('.pick-tier-btn').forEach(b => b.style.opacity = b === btn ? '1' : '0.35');
+    };
+  });
+
+  document.getElementById('tv-submit').onclick = () => {
+    const gun = document.getElementById('tv-gun').value;
+    if (!selectedTier) { toast('Pick a tier', 'error'); return; }
+    castVote(gun, selectedTier);
+  };
+}
+
+// Override the TIER sub tab
+const _origRenderTierSub = renderTierSub;
+renderTierSub = function() {
+  const body = document.getElementById('intel-body');
+  body.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <div class="text-xs text-gray-500">Live community meta</div>
+        <div class="text-[10px] text-gray-600 mt-0.5">Auto-updates as votes come in</div>
+      </div>
+      <button id="vote-gun-btn" class="btn-press px-3 py-2 rounded-xl bg-primary text-xs font-bold flex items-center gap-1">
+        <i data-lucide="plus" class="w-3 h-3"></i> Vote
+      </button>
+    </div>
+    <div id="tier-live-container">
+      <div class="text-center py-6"><div class="spinner mx-auto"></div></div>
+    </div>
+  `;
+  document.getElementById('vote-gun-btn').onclick = openVoteGunSheet;
+  refreshLiveTierList('tier-live-container');
+};
+
+window.castVote = castVote;
+window.openVoteGunSheet = openVoteGunSheet;
+window.refreshLiveTierList = refreshLiveTierList;
+
+/* END OF CHUNK 11 */
+// ============================================
+// Chunk 12: Contributor Leaderboard
+// ============================================
+
+let leaderboardData = { weekly: [], allTime: [] };
+let leaderboardPeriod = 'allTime';
+
+async function loadLeaderboard() {
+  try {
+    // Fetch top contributors (approvedCount > 0)
+    const snap = await getDocs(query(
+      collection(db, 'users'),
+      where('approvedCount', '>', 0),
+      orderBy('approvedCount', 'desc'),
+      limit(50)
+    ));
+
+    const users = [];
+    snap.forEach(d => {
+      const data = d.data();
+      users.push({
+        uid: d.id,
+        ign: data.ign || 'Unknown',
+        avatar: data.avatar || '',
+        rank: data.rank || 'Rookie',
+        region: data.region || 'Global',
+        approvedCount: data.approvedCount || 0,
+        badges: data.badges || [],
+        isPro: data.isPro || false,
+        lastSubmit: data.lastSubmitAt?.seconds || 0
+      });
+    });
+
+    leaderboardData.allTime = users.slice(0, 10);
+
+    // For weekly: filter to those who submitted in last 7 days
+    const weekAgo = Date.now() / 1000 - (7 * 24 * 60 * 60);
+    leaderboardData.weekly = users
+      .filter(u => u.lastSubmit > weekAgo)
+      .slice(0, 10);
+
+    // If weekly is empty, show a message
+  } catch (e) {
+    console.error('Leaderboard error:', e);
+    // Fallback: fetch all users without where clause
+    try {
+      const snap2 = await getDocs(query(collection(db, 'users'), limit(100)));
+      const users = [];
+      snap2.forEach(d => {
+        const data = d.data();
+        if ((data.approvedCount || 0) > 0) {
+          users.push({
+            uid: d.id,
+            ign: data.ign || 'Unknown',
+            avatar: data.avatar || '',
+            rank: data.rank || 'Rookie',
+            region: data.region || 'Global',
+            approvedCount: data.approvedCount || 0,
+            badges: data.badges || [],
+            isPro: data.isPro || false,
+            lastSubmit: data.lastSubmitAt?.seconds || 0
+          });
+        }
+      });
+      users.sort((a, b) => b.approvedCount - a.approvedCount);
+      leaderboardData.allTime = users.slice(0, 10);
+      const weekAgo = Date.now() / 1000 - (7 * 24 * 60 * 60);
+      leaderboardData.weekly = users.filter(u => u.lastSubmit > weekAgo).slice(0, 10);
+    } catch (e2) {
+      console.error('Leaderboard fallback failed:', e2);
+    }
+  }
+}
+
+function renderLeaderboard() {
+  const list = leaderboardPeriod === 'weekly' ? leaderboardData.weekly : leaderboardData.allTime;
+
+  if (list.length === 0) {
+    return `
+      <div class="text-center py-12">
+        <div class="w-20 h-20 mx-auto rounded-full bg-card border border-border flex items-center justify-center mb-4">
+          <span class="text-3xl">🏆</span>
+        </div>
+        <div class="text-sm font-bold mb-1">No contributors yet</div>
+        <div class="text-xs text-gray-500">Be the first to submit and get approved</div>
+      </div>
+    `;
+  }
+
+  const medals = ['🥇', '🥈', '🥉'];
+
+  return `
+    <div class="space-y-2">
+      ${list.map((u, i) => {
+        const pos = i + 1;
+        const medal = medals[i] || `#${pos}`;
+        const isTop3 = i < 3;
+        const isMe = u.uid === State.user?.uid;
+
+        return `
+          <div class="flex items-center gap-3 p-3 rounded-2xl ${isTop3 ? 'bg-gradient-to-r from-gold/10 to-transparent border border-gold/30' : 'bg-card border border-border'} ${isMe ? 'ring-1 ring-primary/40' : ''}">
+            <div class="w-10 h-10 rounded-full ${isTop3 ? 'bg-gold/20' : 'bg-cardAlt'} flex items-center justify-center font-black text-sm flex-shrink-0">
+              ${pos <= 3 ? `<span class="text-lg">${medal}</span>` : `<span class="text-gray-400">${pos}</span>`}
+            </div>
+            <div class="relative flex-shrink-0">
+              <div class="w-10 h-10 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center font-bold text-sm">
+                ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+              </div>
+              ${u.isPro ? `<div class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-gold flex items-center justify-center border-2 border-card text-[8px]">👑</div>` : ''}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span class="text-sm font-bold truncate">${esc(u.ign)}</span>
+                ${isMe ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-primary text-white font-black">YOU</span>' : ''}
+              </div>
+              <div class="text-[10px] text-gray-500 truncate">${esc(u.rank)} · ${esc(u.region)}</div>
+              ${u.badges.length > 0 ? `
+                <div class="flex gap-1 mt-1">
+                  ${u.badges.slice(0, 4).map(b => {
+                    const badgeEmoji = {
+                      first_leak: '🥉',
+                      rising: '🥈',
+                      legend: '🥇',
+                      elite: '💎'
+                    }[b] || '⭐';
+                    return `<span class="text-[10px]">${badgeEmoji}</span>`;
+                  }).join('')}
+                </div>
+              ` : ''}
+            </div>
+            <div class="text-right flex-shrink-0">
+              <div class="text-base font-black text-primary">${u.approvedCount}</div>
+              <div class="text-[9px] text-gray-500 font-bold uppercase">Approved</div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+async function renderLeaderboardSub() {
+  const body = document.getElementById('squad-body');
+  body.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <div class="text-sm font-bold">🏆 Top Contributors</div>
+        <div class="text-[10px] text-gray-500 mt-0.5">Users who've helped the community</div>
+      </div>
+    </div>
+
+    <div class="flex gap-2 mb-4">
+      <button class="chip leaderboard-period ${leaderboardPeriod === 'allTime' ? 'active' : ''}" data-period="allTime">All-Time</button>
+      <button class="chip leaderboard-period ${leaderboardPeriod === 'weekly' ? 'active' : ''}" data-period="weekly">This Week</button>
+    </div>
+
+    <div id="leaderboard-container">
+      <div class="text-center py-6"><div class="spinner mx-auto"></div></div>
+    </div>
+  `;
+
+  document.querySelectorAll('.leaderboard-period').forEach(btn => {
+    btn.onclick = () => {
+      leaderboardPeriod = btn.dataset.period;
+      document.querySelectorAll('.leaderboard-period').forEach(b => b.classList.toggle('active', b === btn));
+      const container = document.getElementById('leaderboard-container');
+      if (container) container.innerHTML = renderLeaderboard();
+      if (window.lucide) window.lucide.createIcons();
+    };
+  });
+
+  await loadLeaderboard();
+  const container = document.getElementById('leaderboard-container');
+  if (container) container.innerHTML = renderLeaderboard();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// ADD LEADERBOARD AS 4TH SUB-TAB IN SQUAD
+// ============================================
+const _origRenderSquadTab = renderSquadTab;
+renderSquadTab = function() {
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <div class="mb-4">
+        <h1 class="text-2xl font-black">Squad</h1>
+        <p class="text-xs text-gray-500">Clans, scrims, clips, and legends</p>
+      </div>
+
+      <div class="flex gap-2 mb-4">
+        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'clans' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="clans">Clans</button>
+        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'scrims' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="scrims">Scrims</button>
+        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'clips' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="clips">Clips</button>
+        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'top' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="top">🏆 Top</button>
+      </div>
+
+      <div id="squad-body"></div>
+    </div>
+  `;
+
+  document.querySelectorAll('.squad-sub').forEach(btn => {
+    btn.onclick = () => { squadSubTab = btn.dataset.sub; renderSquadTab(); };
+  });
+
+  if (squadSubTab === 'clans') renderClansSub();
+  else if (squadSubTab === 'scrims') renderScrimsSub();
+  else if (squadSubTab === 'clips') renderClipsSub();
+  else if (squadSubTab === 'top') renderLeaderboardSub();
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+window.renderLeaderboardSub = renderLeaderboardSub;
+
+/* END OF CHUNK 12 */
