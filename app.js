@@ -4937,6 +4937,7 @@ renderSquadTab = function() {
         <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'clips' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="clips">Clips</button>
         <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'top' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="top">🏆 Top</button>
         <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'wars' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="wars">🏆 Wars</button>
+        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'tournaments' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="tournaments">🏆</button>
       </div>
 
       <div id="squad-body"></div>
@@ -4952,6 +4953,7 @@ renderSquadTab = function() {
   else if (squadSubTab === 'clips') renderClipsSub();
   else if (squadSubTab === 'top') renderLeaderboardSub();
   else if (squadSubTab === 'wars') renderClanWarsSub();
+  else if (squadSubTab === 'tournaments') renderTournamentsSub();
 
   if (window.lucide) window.lucide.createIcons();
 };
@@ -9334,3 +9336,923 @@ window.startTournament = startTournament;
 window.generateBracket = generateBracket;
 
 /* END OF CHUNK 24 */
+// ============================================
+// Chunk 25/4: Tournaments — Matches + Auto-Confirm + Bracket
+// ============================================
+
+const MATCH_CONFIRM_WINDOW_MS = 30 * 60 * 1000; // 30 min
+const MATCH_NO_SHOW_WINDOW_MS = 60 * 60 * 1000; // 60 min
+
+// ---------- BRACKET VIEW ----------
+async function openBracketView(tournamentId) {
+  openSheet('<div class="text-center py-8"><div class="spinner mx-auto"></div></div>', '🏆 Bracket');
+
+  try {
+    const snap = await getDoc(doc(db, 'tournaments', tournamentId));
+    if (!snap.exists()) { toast('Not found', 'error'); return; }
+    const t = { id: tournamentId, ...snap.data() };
+
+    // Auto-resolve any expired matches
+    await autoResolveExpiredMatches(t);
+
+    // Re-fetch in case auto-resolve changed things
+    const snap2 = await getDoc(doc(db, 'tournaments', tournamentId));
+    const t2 = { id: tournamentId, ...snap2.data() };
+
+    const rounds = groupBracketByRound(t2.bracket || []);
+    const isCreator = t2.creatorUid === State.user.uid;
+    const isAdmin = State.user.uid === ADMIN_UID;
+    const canManage = isCreator || isAdmin;
+
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (!sheetBody) return;
+
+    sheetBody.innerHTML = `
+      <div class="space-y-4">
+        <div class="bg-gradient-to-br from-primary/10 to-black border border-primary/30 rounded-2xl p-4">
+          <div class="text-base font-black mb-1">${esc(t2.name)}</div>
+          <div class="text-[10px] text-gray-500">${esc(t2.mode)} · ${esc(t2.region)} · ${(t2.teams || []).length} teams</div>
+          ${t2.status === 'completed' ? `<div class="mt-2 text-xs font-bold text-gold">🏆 Winner: ${esc(t2.winner?.ign || 'TBD')}</div>` : ''}
+        </div>
+
+        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2" id="round-tabs">
+          ${rounds.map((r, i) => `
+            <button class="chip round-tab ${i === rounds.length - 1 ? 'active' : ''}" data-round="${r.round}">Round ${r.round}${r.round === rounds.length ? ' (Live)' : ''}</button>
+          `).join('')}
+        </div>
+
+        <div id="round-matches"></div>
+      </div>
+    `;
+
+    // Render last round by default
+    const defaultRound = rounds[rounds.length - 1]?.round || 1;
+    renderRoundMatches(t2, defaultRound, rounds, canManage);
+
+    document.querySelectorAll('.round-tab').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.round-tab').forEach(b => b.classList.toggle('active', b === btn));
+        renderRoundMatches(t2, parseInt(btn.dataset.round), rounds, canManage);
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Bracket view error:', e);
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+function groupBracketByRound(bracket) {
+  const groups = {};
+  bracket.forEach(m => {
+    if (!groups[m.round]) groups[m.round] = [];
+    groups[m.round].push(m);
+  });
+  return Object.entries(groups).map(([round, matches]) => ({
+    round: parseInt(round),
+    matches: matches.sort((a, b) => a.matchIndex - b.matchIndex)
+  })).sort((a, b) => a.round - b.round);
+}
+
+function renderRoundMatches(tournament, round, rounds, canManage) {
+  const roundData = rounds.find(r => r.round === round);
+  const container = document.getElementById('round-matches');
+  if (!roundData || !container) return;
+
+  container.innerHTML = roundData.matches.map((m, idx) => {
+    const team1 = m.team1 || { ign: 'TBD' };
+    const team2 = m.team2 || { ign: 'TBD' };
+    const isMine = State.user.uid === team1.uid || State.user.uid === team2.uid;
+    const isCompleted = m.status === 'completed';
+    const isPending = m.status === 'pending' && team1.uid && team2.uid;
+    const isDisputed = m.disputed;
+    const timeLeft = m.expiresAt ? Math.max(0, m.expiresAt - Date.now()) : 0;
+
+    return `
+      <div class="bg-card border ${isMine ? 'border-primary/60' : 'border-border'} rounded-2xl p-3 mb-2">
+        <div class="text-[9px] text-gray-500 uppercase font-bold mb-2">Match ${idx + 1}${isDisputed ? ' · <span class="text-red-400">DISPUTED</span>' : ''}</div>
+
+        <!-- Team 1 -->
+        <div class="flex items-center justify-between py-1.5 ${m.winner?.uid === team1.uid ? 'bg-green-500/10 rounded-lg px-2' : ''}">
+          <div class="flex items-center gap-2 flex-1 min-w-0">
+            <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden flex-shrink-0">
+              ${team1.avatar ? `<img src="${esc(team1.avatar)}" class="w-full h-full object-cover" />` : getInitials(team1.ign)}
+            </div>
+            <div class="text-xs font-bold truncate">${esc(team1.ign)}</div>
+            ${m.winner?.uid === team1.uid ? '<span class="text-[8px] text-green-400 font-black">✓ WIN</span>' : ''}
+          </div>
+          <div class="text-sm font-black ${m.score1 !== null && m.score1 !== undefined ? 'text-primary' : 'text-gray-600'}">
+            ${m.score1 !== null && m.score1 !== undefined ? m.score1 : '—'}
+          </div>
+        </div>
+
+        <div class="text-center text-[9px] text-gray-600 py-0.5">vs</div>
+
+        <!-- Team 2 -->
+        <div class="flex items-center justify-between py-1.5 ${m.winner?.uid === team2.uid ? 'bg-green-500/10 rounded-lg px-2' : ''}">
+          <div class="flex items-center gap-2 flex-1 min-w-0">
+            <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden flex-shrink-0">
+              ${team2.avatar ? `<img src="${esc(team2.avatar)}" class="w-full h-full object-cover" />` : getInitials(team2.ign)}
+            </div>
+            <div class="text-xs font-bold truncate">${esc(team2.ign)}</div>
+            ${m.winner?.uid === team2.uid ? '<span class="text-[8px] text-green-400 font-black">✓ WIN</span>' : ''}
+          </div>
+          <div class="text-sm font-black ${m.score2 !== null && m.score2 !== undefined ? 'text-primary' : 'text-gray-600'}">
+            ${m.score2 !== null && m.score2 !== undefined ? m.score2 : '—'}
+          </div>
+        </div>
+
+        <!-- Actions -->
+        ${isMine && isPending && !isCompleted ? `
+          <div class="mt-3 pt-2 border-t border-border">
+            ${!m.reportedBy ? `
+              <button class="report-score-btn btn-press w-full py-2 rounded-lg bg-primary text-white text-xs font-bold" data-match="${m.round}-${m.matchIndex}">
+                Report Score
+              </button>
+            ` : m.reportedBy === State.user.uid ? `
+              <div class="text-[10px] text-center text-yellow-400 font-bold">⏳ Waiting for opponent to confirm</div>
+              <div class="text-[9px] text-center text-gray-500 mt-1">${Math.floor(timeLeft / 60000)}m left</div>
+            ` : `
+              <div class="text-[10px] text-center text-primary font-bold mb-2">Opponent reported: ${m.score1 === null ? m.score2 : m.score1}</div>
+              <div class="grid grid-cols-2 gap-2">
+                <button class="confirm-score-btn btn-press py-2 rounded-lg bg-green-500 text-white text-xs font-bold" data-match="${m.round}-${m.matchIndex}">✓ Confirm</button>
+                <button class="dispute-score-btn btn-press py-2 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 text-xs font-bold" data-match="${m.round}-${m.matchIndex}">✕ Dispute</button>
+              </div>
+            `}
+          </div>
+        ` : ''}
+
+        ${canManage && isPending && !isCompleted && isDisputed ? `
+          <div class="mt-3 pt-2 border-t border-border">
+            <div class="text-[10px] text-red-400 font-bold mb-2 text-center">⚠️ Dispute — override required</div>
+            <button class="override-btn btn-press w-full py-2 rounded-lg bg-gold text-black text-xs font-bold" data-match="${m.round}-${m.matchIndex}">
+              👑 Override Result
+            </button>
+          </div>
+        ` : ''}
+
+        ${isCompleted ? `
+          <div class="mt-2 pt-2 border-t border-border text-center">
+            <div class="text-[9px] text-green-400 font-bold">✓ COMPLETED</div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+
+  // Wire report buttons
+  container.querySelectorAll('.report-score-btn').forEach(btn => {
+    btn.onclick = () => openReportScoreSheet(tournament.id, btn.dataset.match);
+  });
+
+  container.querySelectorAll('.confirm-score-btn').forEach(btn => {
+    btn.onclick = () => confirmReportedScore(tournament.id, btn.dataset.match);
+  });
+
+  container.querySelectorAll('.dispute-score-btn').forEach(btn => {
+    btn.onclick = () => disputeReportedScore(tournament.id, btn.dataset.match);
+  });
+
+  container.querySelectorAll('.override-btn').forEach(btn => {
+    btn.onclick = () => openOverrideSheet(tournament.id, btn.dataset.match);
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- REPORT SCORE ----------
+function openReportScoreSheet(tournamentId, matchKey) {
+  const [round, matchIndex] = matchKey.split('-').map(n => parseInt(n));
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="bg-primary/10 border border-primary/30 rounded-xl p-3">
+        <div class="text-[10px] text-primary font-bold mb-1">ℹ️ Report the final score</div>
+        <div class="text-[10px] text-gray-400">Your opponent will have 30 minutes to confirm. If they don't respond, your score auto-wins.</div>
+      </div>
+
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Your score</label>
+        <input id="rs-mine" type="number" min="0" max="99" placeholder="0" />
+      </div>
+
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Opponent score</label>
+        <input id="rs-theirs" type="number" min="0" max="99" placeholder="0" />
+      </div>
+
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Screenshot proof (optional)</label>
+        <input id="rs-image" type="file" accept="image/*" class="text-xs" />
+      </div>
+
+      <button id="rs-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-black glow-primary">
+        Submit Score
+      </button>
+    </div>
+  `, 'Report Score');
+
+  document.getElementById('rs-submit').onclick = async () => {
+    const myScore = parseInt(document.getElementById('rs-mine').value);
+    const theirScore = parseInt(document.getElementById('rs-theirs').value);
+    const fileInput = document.getElementById('rs-image');
+
+    if (isNaN(myScore) || isNaN(theirScore) || myScore < 0 || theirScore < 0) {
+      toast('Enter valid scores', 'error');
+      return;
+    }
+    if (myScore === theirScore) {
+      toast('Scores cannot be equal in elimination', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('rs-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      let proofImage = '';
+      if (fileInput.files && fileInput.files[0]) {
+        proofImage = await compressImage(fileInput.files[0], 800, 0.7);
+      }
+
+      const snap = await getDoc(doc(db, 'tournaments', tournamentId));
+      if (!snap.exists()) { toast('Not found', 'error'); return; }
+      const t = snap.data();
+      const bracket = [...(t.bracket || [])];
+
+      const matchIdx = bracket.findIndex(m => m.round === round && m.matchIndex === matchIndex);
+      if (matchIdx === -1) { toast('Match not found', 'error'); return; }
+
+      const match = bracket[matchIdx];
+      const isTeam1 = match.team1?.uid === State.user.uid;
+      const isTeam2 = match.team2?.uid === State.user.uid;
+
+      if (!isTeam1 && !isTeam2) { toast('You are not in this match', 'error'); return; }
+
+      // Store both scores as reported by this user
+      match.score1 = isTeam1 ? myScore : theirScore;
+      match.score2 = isTeam2 ? myScore : theirScore;
+      match.reportedBy = State.user.uid;
+      match.reportedAt = Date.now();
+      match.expiresAt = Date.now() + MATCH_CONFIRM_WINDOW_MS;
+      if (proofImage) match.proof = proofImage;
+
+      // Check if both teams happened to report identical scores (rare)
+      // In that case, auto-confirm immediately
+
+      bracket[matchIdx] = match;
+
+      await updateDoc(doc(db, 'tournaments', tournamentId), { bracket });
+
+      toast('✅ Score submitted — waiting for opponent', 'success');
+      closeSheet();
+      setTimeout(() => openBracketView(tournamentId), 400);
+    } catch (e) {
+      console.error(e);
+      toast('Failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Submit Score';
+    }
+  };
+}
+
+// ---------- CONFIRM SCORE ----------
+async function confirmReportedScore(tournamentId, matchKey) {
+  const [round, matchIndex] = matchKey.split('-').map(n => parseInt(n));
+
+  try {
+    const snap = await getDoc(doc(db, 'tournaments', tournamentId));
+    if (!snap.exists()) return;
+    const t = snap.data();
+    const bracket = [...(t.bracket || [])];
+
+    const matchIdx = bracket.findIndex(m => m.round === round && m.matchIndex === matchIndex);
+    if (matchIdx === -1) return;
+
+    const match = bracket[matchIdx];
+    const isTeam1 = match.team1?.uid === State.user.uid;
+    const isTeam2 = match.team2?.uid === State.user.uid;
+    if (!isTeam1 && !isTeam2) { toast('Not your match', 'error'); return; }
+
+    // Determine winner from scores
+    const winner = match.score1 > match.score2 ? match.team1 : match.team2;
+    match.winner = winner;
+    match.status = 'completed';
+    match.disputed = false;
+    match.completedAt = Date.now();
+
+    bracket[matchIdx] = match;
+
+    // Advance winner to next round
+    const advanced = advanceWinner(bracket, round, matchIndex, winner);
+
+    await updateDoc(doc(db, 'tournaments', tournamentId), {
+      bracket: advanced.bracket,
+      currentRound: advanced.currentRound,
+      winner: advanced.tournamentWinner || null,
+      status: advanced.tournamentWinner ? 'completed' : 'in-progress'
+    });
+
+    toast('✅ Confirmed!', 'success');
+    closeSheet();
+    setTimeout(() => openBracketView(tournamentId), 400);
+  } catch (e) {
+    console.error(e);
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+// ---------- DISPUTE ----------
+async function disputeReportedScore(tournamentId, matchKey) {
+  const [round, matchIndex] = matchKey.split('-').map(n => parseInt(n));
+
+  confirmDialog('Dispute Score', 'Are you sure the reported score is wrong? The tournament host will review.', async () => {
+    try {
+      const snap = await getDoc(doc(db, 'tournaments', tournamentId));
+      if (!snap.exists()) return;
+      const t = snap.data();
+      const bracket = [...(t.bracket || [])];
+
+      const matchIdx = bracket.findIndex(m => m.round === round && m.matchIndex === matchIndex);
+      if (matchIdx === -1) return;
+
+      bracket[matchIdx].disputed = true;
+      bracket[matchIdx].disputedBy = State.user.uid;
+      bracket[matchIdx].disputedAt = Date.now();
+
+      await updateDoc(doc(db, 'tournaments', tournamentId), { bracket });
+
+      // Notify creator
+      try {
+        await sendNotificationToUser(
+          t.creatorUid,
+          '⚠️ Score Dispute',
+          `${State.profile.ign} disputed a match in ${t.name}`,
+          { tournamentId }
+        );
+      } catch (e) { /* silent */ }
+
+      toast('Dispute filed — host will review', 'success');
+      closeSheet();
+      setTimeout(() => openBracketView(tournamentId), 400);
+    } catch (e) {
+      toast('Failed: ' + e.message, 'error');
+    }
+  }, 'Dispute', true);
+}
+
+// ---------- OVERRIDE (for host/admin) ----------
+function openOverrideSheet(tournamentId, matchKey) {
+  const [round, matchIndex] = matchKey.split('-').map(n => parseInt(n));
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="bg-gold/10 border border-gold/30 rounded-xl p-3">
+        <div class="text-[10px] text-gold font-bold mb-1">👑 Host Override</div>
+        <div class="text-[10px] text-gray-400">Force-resolve this match. Use only when both teams dispute.</div>
+      </div>
+
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Winner</label>
+        <select id="ov-winner">
+          <option value="team1">Team 1</option>
+          <option value="team2">Team 2</option>
+          <option value="disqualify">Disqualify both</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Score (optional)</label>
+        <input id="ov-score" type="text" placeholder="e.g. 3-1" maxlength="20" />
+      </div>
+
+      <button id="ov-submit" class="btn-press w-full py-4 rounded-2xl bg-gold text-black font-black">
+        Force Resolve
+      </button>
+    </div>
+  `, 'Override Match');
+
+  document.getElementById('ov-submit').onclick = async () => {
+    const winnerKey = document.getElementById('ov-winner').value;
+    const scoreText = document.getElementById('ov-score').value.trim();
+
+    try {
+      const snap = await getDoc(doc(db, 'tournaments', tournamentId));
+      if (!snap.exists()) return;
+      const t = snap.data();
+      const bracket = [...(t.bracket || [])];
+
+      const matchIdx = bracket.findIndex(m => m.round === round && m.matchIndex === matchIndex);
+      if (matchIdx === -1) return;
+
+      const match = bracket[matchIdx];
+
+      if (winnerKey === 'disqualify') {
+        match.winner = { uid: null, ign: 'DISQUALIFIED' };
+        match.status = 'completed';
+        match.disputed = false;
+        match.disqualified = true;
+      } else {
+        match.winner = winnerKey === 'team1' ? match.team1 : match.team2;
+        match.status = 'completed';
+        match.disputed = false;
+        match.overrideBy = State.user.uid;
+        match.overrideAt = Date.now();
+        if (scoreText) {
+          const parts = scoreText.split('-').map(s => parseInt(s.trim()));
+          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            match.score1 = winnerKey === 'team1' ? Math.max(parts[0], parts[1]) : Math.min(parts[0], parts[1]);
+            match.score2 = winnerKey === 'team2' ? Math.max(parts[0], parts[1]) : Math.min(parts[0], parts[1]);
+          }
+        }
+      }
+
+      bracket[matchIdx] = match;
+
+      const advanced = match.winner?.uid
+        ? advanceWinner(bracket, round, matchIndex, match.winner)
+        : { bracket, currentRound: t.currentRound, tournamentWinner: null };
+
+      await updateDoc(doc(db, 'tournaments', tournamentId), {
+        bracket: advanced.bracket,
+        currentRound: advanced.currentRound,
+        winner: advanced.tournamentWinner || t.winner || null,
+        status: advanced.tournamentWinner ? 'completed' : 'in-progress'
+      });
+
+      toast('✅ Match resolved', 'success');
+      closeSheet();
+      setTimeout(() => openBracketView(tournamentId), 400);
+    } catch (e) {
+      toast('Failed: ' + e.message, 'error');
+    }
+  };
+}
+
+// ---------- ADVANCE WINNER ----------
+function advanceWinner(bracket, round, matchIndex, winner) {
+  const currentMatch = bracket.find(m => m.round === round && m.matchIndex === matchIndex);
+  if (!currentMatch) return { bracket, currentRound: round };
+
+  // Find next round match
+  const nextRound = round + 1;
+  const nextMatchIndex = Math.floor(matchIndex / 2);
+  const nextSlot = matchIndex % 2 === 0 ? 'team1' : 'team2';
+
+  const nextMatchIdx = bracket.findIndex(m => m.round === nextRound && m.matchIndex === nextMatchIndex);
+
+  // If next round doesn't exist → this was the final
+  if (nextMatchIdx === -1) {
+    return { bracket, currentRound: round, tournamentWinner: winner };
+  }
+
+  bracket[nextMatchIdx][nextSlot] = winner;
+
+  // If both slots filled → mark as ready
+  if (bracket[nextMatchIdx].team1 && bracket[nextMatchIdx].team2) {
+    bracket[nextMatchIdx].status = 'pending';
+    bracket[nextMatchIdx].startedAt = Date.now();
+  }
+
+  return { bracket, currentRound: nextRound };
+}
+
+// ---------- AUTO-RESOLVE EXPIRED ----------
+async function autoResolveExpiredMatches(tournament) {
+  if (!tournament.bracket) return;
+  const now = Date.now();
+  let changed = false;
+  const bracket = [...tournament.bracket];
+
+  for (let i = 0; i < bracket.length; i++) {
+    const m = bracket[i];
+    if (m.status !== 'pending' || !m.reportedBy || !m.expiresAt) continue;
+    if (now < m.expiresAt) continue;
+
+    // Time expired — the reporter's score stands
+    const isTeam1Reporter = m.reportedBy === m.team1?.uid;
+    const winner = isTeam1Reporter
+      ? (m.score1 > m.score2 ? m.team1 : m.team2)
+      : (m.score2 > m.score1 ? m.team2 : m.team1);
+
+    bracket[i].winner = winner;
+    bracket[i].status = 'completed';
+    bracket[i].autoResolved = true;
+
+    const advanced = advanceWinner(bracket, m.round, m.matchIndex, winner);
+    Object.assign(bracket, advanced.bracket);
+
+    changed = true;
+  }
+
+  if (changed) {
+    // Find tournament winner
+    let tournamentWinner = null;
+    const maxRound = Math.max(...bracket.map(b => b.round));
+    const finalMatch = bracket.find(m => m.round === maxRound);
+    if (finalMatch && finalMatch.winner && finalMatch.status === 'completed') {
+      tournamentWinner = finalMatch.winner;
+    }
+
+    try {
+      await updateDoc(doc(db, 'tournaments', tournament.id), {
+        bracket,
+        status: tournamentWinner ? 'completed' : tournament.status,
+        winner: tournamentWinner || tournament.winner || null,
+        completedAt: tournamentWinner ? Date.now() : null
+      });
+      console.log('✅ Auto-resolved expired match(es)');
+    } catch (e) {
+      console.error('Auto-resolve failed:', e);
+    }
+  }
+}
+
+// ---------- CHAMPION DECLARATION ----------
+async function declareChampion(tournament) {
+  if (!tournament.winner) return;
+  try {
+    // Award winner badge via user doc
+    const winnerUid = tournament.winner.uid;
+    if (!winnerUid) return;
+
+    await updateDoc(doc(db, 'users', winnerUid), {
+      tournamentWins: increment(1)
+    });
+
+    // Log to history
+    await addDoc(collection(db, 'tournamentHistory'), {
+      tournamentId: tournament.id,
+      tournamentName: tournament.name,
+      winnerUid,
+      winnerIgn: tournament.winner.ign,
+      mode: tournament.mode,
+      size: tournament.size,
+      completedAt: serverTimestamp()
+    });
+
+    // Notify winner
+    try {
+      await sendNotificationToUser(
+        winnerUid,
+        '🏆 You Won!',
+        `You are the champion of ${tournament.name}!`,
+        { tournamentId: tournament.id }
+      );
+    } catch (e) { /* silent */ }
+  } catch (e) {
+    console.error('Champion declaration error:', e);
+  }
+}
+
+window.openBracketView = openBracketView;
+window.openReportScoreSheet = openReportScoreSheet;
+window.confirmReportedScore = confirmReportedScore;
+window.disputeReportedScore = disputeReportedScore;
+window.autoResolveExpiredMatches = autoResolveExpiredMatches;
+window.declareChampion = declareChampion;
+
+/* END OF CHUNK 25 */
+// ============================================
+// Chunk 26/4: Tournaments — History + Auto-Polish
+// ============================================
+
+// ---------- TOURNAMENT HISTORY CARD ----------
+const _origRenderTournamentCard = renderTournamentCard;
+renderTournamentCard = function(t) {
+  if (t.status === 'completed' && t.winner) {
+    // Enhanced completed tournament card
+    const teamCount = (t.teams || []).length;
+    return `
+      <div class="tournament-card bg-gradient-to-br from-gold/10 to-card border border-gold/40 rounded-2xl p-4 mb-3 cursor-pointer" data-id="${t.id}">
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">🏆 COMPLETED</span>
+            </div>
+            <div class="text-base font-black truncate">${esc(t.name)}</div>
+            <div class="text-[10px] text-gray-500 mt-0.5">${esc(t.mode)} · ${esc(t.region)} · ${teamCount} teams</div>
+          </div>
+        </div>
+
+        <div class="bg-black/40 border border-gold/30 rounded-xl p-3 mb-3">
+          <div class="text-[10px] text-gold uppercase font-bold mb-1">Champion</div>
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-full bg-gold/20 flex items-center justify-center text-[10px] font-bold overflow-hidden">
+              ${t.winner.avatar ? `<img src="${esc(t.winner.avatar)}" class="w-full h-full object-cover" />` : getInitials(t.winner.ign)}
+            </div>
+            <div class="text-sm font-black text-gold glow-text-gold truncate">${esc(t.winner.ign || 'Unknown')}</div>
+          </div>
+        </div>
+
+        ${t.prize ? `
+          <div class="bg-gold/5 border border-gold/20 rounded-lg px-3 py-2 mb-2">
+            <div class="text-[10px] text-gold">🎁 Prize: ${esc(t.prize)}</div>
+          </div>
+        ` : ''}
+
+        <div class="flex items-center justify-between pt-2 border-t border-border">
+          <div class="text-[10px] text-gray-500">by ${esc(t.creatorIgn || 'Unknown')}</div>
+          <div class="text-[10px] text-gray-500">${timeAgo(t.completedAt || t.createdAt)}</div>
+        </div>
+      </div>
+    `;
+  }
+  return _origRenderTournamentCard(t);
+};
+
+// ---------- CHAMPION BADGE ON PROFILE ----------
+function renderTournamentBadges() {
+  const wins = State.profile?.tournamentWins || 0;
+  if (wins === 0) return '';
+
+  return `
+    <div class="bg-gradient-to-r from-gold/10 to-transparent border border-gold/30 rounded-xl p-3 mb-3">
+      <div class="flex items-center gap-3">
+        <div class="text-3xl">🏆</div>
+        <div class="flex-1">
+          <div class="text-xs font-black text-gold">Tournament Champion</div>
+          <div class="text-[10px] text-gray-500">${wins} win${wins === 1 ? '' : 's'}</div>
+        </div>
+        <div class="text-lg font-black text-gold">×${wins}</div>
+      </div>
+    </div>
+  `;
+}
+
+// Inject tournament badge into YOU tab
+const _origRenderYouTabTournament = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabTournament();
+  setTimeout(() => {
+    const content = document.getElementById('content');
+    if (!content) return;
+    const profileCard = content.querySelector('.bg-card.border.border-border.rounded-2xl');
+    if (!profileCard || document.getElementById('tournament-badge-card')) return;
+
+    const badgeHTML = renderTournamentBadges();
+    if (!badgeHTML) return;
+
+    const badgeDiv = document.createElement('div');
+    badgeDiv.id = 'tournament-badge-card';
+    badgeDiv.innerHTML = badgeHTML;
+    profileCard.parentNode.insertBefore(badgeDiv.firstElementChild, profileCard.nextSibling);
+
+    if (window.lucide) window.lucide.createIcons();
+  }, 120);
+};
+
+// ---------- AUTO-RESOLVE TRIGGER ----------
+// Runs every 5 minutes while app is open — checks for expired matches across ALL tournaments
+async function runAutoResolve() {
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'tournaments'),
+      where('status', '==', 'in-progress'),
+      limit(20)
+    ));
+
+    let resolvedCount = 0;
+    for (const d of snap.docs) {
+      const t = { id: d.id, ...d.data() };
+      const beforeLen = t.bracket?.length || 0;
+      await autoResolveExpiredMatches(t);
+      resolvedCount++;
+    }
+
+    if (resolvedCount > 0) {
+      console.log(`🔄 Checked ${resolvedCount} tournaments for auto-resolve`);
+    }
+  } catch (e) {
+    console.error('Auto-resolve error:', e);
+  }
+}
+
+// Run on app load + every 5 minutes
+setTimeout(() => {
+  if (State.user) runAutoResolve();
+}, 8000);
+
+setInterval(() => {
+  if (State.user) runAutoResolve();
+}, 5 * 60 * 1000);
+
+// ---------- LIVE MATCH ALERTS (check for your pending matches) ----------
+async function checkMyPendingMatches() {
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'tournaments'),
+      where('status', '==', 'in-progress'),
+      limit(20)
+    ));
+
+    let count = 0;
+    for (const d of snap.docs) {
+      const t = d.data();
+      const bracket = t.bracket || [];
+      bracket.forEach(m => {
+        if (m.status !== 'pending') return;
+        const isMine = m.team1?.uid === State.user.uid || m.team2?.uid === State.user.uid;
+        if (!isMine) return;
+        if (m.reportedBy && m.reportedBy !== State.user.uid) {
+          count++; // Opponent reported, need my confirm
+        } else if (!m.reportedBy) {
+          count++; // I need to report
+        }
+      });
+    }
+
+    // Show badge on Squad tab if there are pending matches
+    if (count > 0) {
+      const squadTab = document.querySelector('[data-tab="squad"]');
+      if (squadTab && !squadTab.querySelector('.match-badge')) {
+        const badge = document.createElement('div');
+        badge.className = 'match-badge absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500';
+        squadTab.style.position = 'relative';
+        squadTab.appendChild(badge);
+      }
+    }
+  } catch (e) { /* silent */ }
+}
+
+setTimeout(() => {
+  if (State.user) checkMyPendingMatches();
+}, 12000);
+
+// ---------- TOURNAMENT CREATOR: Notify when registration ends ----------
+// (Runs client-side when creator opens app after 24h)
+async function checkMyTournamentsNeedingStart() {
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'tournaments'),
+      where('creatorUid', '==', State.user.uid),
+      where('status', '==', 'open'),
+      limit(10)
+    ));
+
+    const now = Date.now();
+    for (const d of snap.docs) {
+      const t = d.data();
+      const endsAt = t.registrationEndsAt?.seconds ? t.registrationEndsAt.seconds * 1000 : 0;
+      const teamsCount = (t.teams || []).length;
+
+      // If registration ended OR bracket is full → notify creator
+      if ((endsAt > 0 && endsAt < now) || teamsCount >= t.size) {
+        if (teamsCount >= 2) {
+          // Send notification once
+          const key = 'tournament_ready_' + d.id;
+          if (!localStorage.getItem(key)) {
+            localStorage.setItem(key, '1');
+            toast(`🏆 ${t.name} is ready to start!`, 'success', 5000);
+            // Optional: send push
+            try {
+              await sendNotificationToUser(
+                State.user.uid,
+                '🏆 Tournament Ready',
+                `${t.name} is ready to start — ${teamsCount} teams registered`,
+                { tournamentId: d.id }
+              );
+            } catch (e) { /* silent */ }
+          }
+        }
+      }
+    }
+  } catch (e) { /* silent */ }
+}
+
+setTimeout(() => {
+  if (State.user) checkMyTournamentsNeedingStart();
+}, 15000);
+
+// ---------- ENHANCED TOURNAMENT DETAIL (start button if ready) ----------
+const _origOpenTournamentDetail = openTournamentDetail;
+openTournamentDetail = async function(tournamentId) {
+  await _origOpenTournamentDetail(tournamentId);
+
+  // After opening, check if start button should be more prominent
+  setTimeout(async () => {
+    try {
+      const snap = await getDoc(doc(db, 'tournaments', tournamentId));
+      if (!snap.exists()) return;
+      const t = snap.data();
+
+      const startBtn = document.getElementById('start-tour-btn');
+      if (!startBtn) return;
+
+      const now = Date.now();
+      const endsAt = t.registrationEndsAt?.seconds ? t.registrationEndsAt.seconds * 1000 : 0;
+      const isReady = (endsAt > 0 && endsAt < now) || (t.teams || []).length >= t.size;
+
+      if (isReady) {
+        // Make it pulse
+        startBtn.className = 'btn-press w-full py-4 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold animate-pulse';
+        startBtn.innerHTML = '🚀 START NOW — Registration Closed';
+      }
+    } catch (e) { /* silent */ }
+  }, 500);
+};
+
+// ---------- TOURNAMENT STATS IN ANALYTICS ----------
+const _origShowAdminAnalytics = showAdminAnalytics;
+showAdminAnalytics = async function() {
+  await _origShowAdminAnalytics();
+
+  // Add tournament stats to analytics sheet
+  setTimeout(async () => {
+    try {
+      const snap = await getDocs(query(collection(db, 'tournaments'), limit(100)));
+      let active = 0, completed = 0, totalMatches = 0;
+      snap.forEach(d => {
+        const t = d.data();
+        if (t.status === 'open' || t.status === 'in-progress') active++;
+        if (t.status === 'completed') completed++;
+        if (t.bracket) totalMatches += t.bracket.length;
+      });
+
+      const sheetBody = document.querySelector('#sheet-container .px-5');
+      if (!sheetBody) return;
+
+      const statsHTML = `
+        <div class="bg-card border border-border rounded-2xl p-4 mt-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i data-lucide="trophy" class="w-4 h-4 text-gold"></i>
+            <div class="text-xs font-bold text-gold uppercase">Tournaments</div>
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <div class="bg-black/40 rounded-xl p-3 text-center">
+              <div class="text-xl font-black text-green-400">${active}</div>
+              <div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Active</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3 text-center">
+              <div class="text-xl font-black text-gold">${completed}</div>
+              <div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Completed</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3 text-center">
+              <div class="text-xl font-black text-primary">${totalMatches}</div>
+              <div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Matches</div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Insert before the refresh button
+      const refreshBtn = sheetBody.querySelector('#refresh-analytics-btn');
+      if (refreshBtn) {
+        const div = document.createElement('div');
+        div.innerHTML = statsHTML;
+        refreshBtn.parentNode.insertBefore(div.firstElementChild, refreshBtn);
+        if (window.lucide) window.lucide.createIcons();
+      }
+    } catch (e) { /* silent */ }
+  }, 300);
+};
+
+// ---------- CLEANUP OLD TOURNAMENTS (60+ days) ----------
+async function cleanupOldTournaments() {
+  try {
+    const sixtyDaysAgo = Date.now() - 60 * 24 * 60 * 60 * 1000;
+    const snap = await getDocs(query(
+      collection(db, 'tournaments'),
+      where('status', '==', 'completed'),
+      limit(20)
+    ));
+
+    let cleaned = 0;
+    for (const d of snap.docs) {
+      const t = d.data();
+      const completedAt = t.completedAt || (t.createdAt?.seconds * 1000) || 0;
+      if (completedAt < sixtyDaysAgo) {
+        // Keep the record but trim the bracket (save space)
+        if (t.bracket && t.bracket.length > 20) {
+          const trimmedBracket = t.bracket.filter(m => m.round === Math.max(...t.bracket.map(b => b.round)));
+          await updateDoc(doc(db, 'tournaments', d.id), { bracket: trimmedBracket, archived: true });
+          cleaned++;
+        }
+      }
+    }
+
+    if (cleaned > 0) console.log(`🧹 Cleaned ${cleaned} old tournaments`);
+  } catch (e) { /* silent */ }
+}
+
+// Run cleanup once per day (client-side)
+setTimeout(() => {
+  if (State.user) {
+    const lastCleanup = localStorage.getItem('codmpanda_last_tournament_cleanup');
+    const dayMs = 24 * 60 * 60 * 1000;
+    if (!lastCleanup || Date.now() - parseInt(lastCleanup) > dayMs) {
+      cleanupOldTournaments();
+      localStorage.setItem('codmpanda_last_tournament_cleanup', Date.now().toString());
+    }
+  }
+}, 20000);
+
+// ---------- EXPORTS ----------
+window.runAutoResolve = runAutoResolve;
+window.checkMyPendingMatches = checkMyPendingMatches;
+window.checkMyTournamentsNeedingStart = checkMyTournamentsNeedingStart;
+window.cleanupOldTournaments = cleanupOldTournaments;
+
+/* END OF CHUNK 26 */
