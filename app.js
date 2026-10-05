@@ -10256,3 +10256,1021 @@ window.checkMyTournamentsNeedingStart = checkMyTournamentsNeedingStart;
 window.cleanupOldTournaments = cleanupOldTournaments;
 
 /* END OF CHUNK 26 */
+// ============================================
+// Chunk 27/12: Notifications Wiring + Profile View + Settings
+// ============================================
+
+// ============================================
+// PART 1: NOTIFICATION TRIGGERS
+// ============================================
+
+// Fire notifications on key events
+
+async function notifySubmissionApproved(submitterUid, contentType, itemName) {
+  if (!submitterUid) return;
+  try {
+    await sendNotificationToUser(
+      submitterUid,
+      '✅ Submission Approved',
+      `Your ${contentType} "${itemName}" was approved and is now live!`,
+      { type: 'approval', contentType }
+    );
+  } catch (e) { /* silent */ }
+}
+
+async function notifySubmissionRejected(submitterUid, contentType) {
+  if (!submitterUid) return;
+  try {
+    await sendNotificationToUser(
+      submitterUid,
+      '❌ Submission Rejected',
+      `Your ${contentType} submission was rejected. You can try again with better content.`,
+      { type: 'rejection', contentType }
+    );
+  } catch (e) { /* silent */ }
+}
+
+async function notifyNewLeakPosted(leakTitle) {
+  try {
+    await broadcastNotification(
+      '🔥 New Leak Dropped',
+      leakTitle,
+      { type: 'leak', title: leakTitle }
+    );
+  } catch (e) { /* silent */ }
+}
+
+async function notifyBadgeEarned(uid, badge) {
+  if (!uid) return;
+  const badgeLabels = {
+    first_leak: '🥉 First Leak',
+    rising: '🥈 Rising Contributor',
+    legend: '🥇 Community Legend',
+    elite: '💎 CODMPanda Elite'
+  };
+  try {
+    await sendNotificationToUser(
+      uid,
+      '🏆 New Badge Earned!',
+      `You unlocked: ${badgeLabels[badge] || badge}`,
+      { type: 'badge', badge }
+    );
+  } catch (e) { /* silent */ }
+}
+
+// ---------- HOOK INTO APPROVAL FLOW ----------
+const _origApproveSubmissionNotif = approveSubmission;
+approveSubmission = async function(type, id) {
+  try {
+    // Get submission data BEFORE it's deleted
+    const collectionMap = {
+      leak: { sub: 'leak_submissions', main: 'leaks' },
+      vault: { sub: 'vault_submissions', main: 'vaults' },
+      clip: { sub: 'clip_submissions', main: 'clips' }
+    };
+    const { sub } = collectionMap[type];
+    const subSnap = await getDoc(doc(db, sub, id));
+    const subData = subSnap.exists() ? subSnap.data() : null;
+
+    // Call original
+    const result = await _origApproveSubmissionNotif(type, id);
+
+    // Fire notification
+    if (subData?.submitterUid) {
+      const itemName = subData.title || subData.gunName || 'your submission';
+      setTimeout(() => notifySubmissionApproved(subData.submitterUid, type, itemName), 800);
+    }
+
+    return result;
+  } catch (e) {
+    console.error('Approval notif error:', e);
+    return;
+  }
+};
+
+// ---------- HOOK INTO REJECTION FLOW ----------
+const _origRejectSubmissionNotif = rejectSubmission;
+rejectSubmission = async function(type, id) {
+  try {
+    const collectionMap = {
+      leak: 'leak_submissions',
+      vault: 'vault_submissions',
+      clip: 'clip_submissions'
+    };
+    const subSnap = await getDoc(doc(db, collectionMap[type], id));
+    const subData = subSnap.exists() ? subSnap.data() : null;
+
+    const result = await _origRejectSubmissionNotif(type, id);
+
+    if (subData?.submitterUid) {
+      setTimeout(() => notifySubmissionRejected(subData.submitterUid, type), 800);
+    }
+
+    return result;
+  } catch (e) {
+    console.error('Rejection notif error:', e);
+    return;
+  }
+};
+
+// ---------- HOOK INTO LEAK POSTING (admin) ----------
+const _origOpenPostLeakSheet = openPostLeakSheet;
+openPostLeakSheet = function() {
+  _origOpenPostLeakSheet();
+  setTimeout(() => {
+    const submitBtn = document.getElementById('lk-submit');
+    if (!submitBtn) return;
+    const originalOnclick = submitBtn.onclick;
+    submitBtn.onclick = async (e) => {
+      const title = document.getElementById('lk-title')?.value.trim();
+      const result = await originalOnclick.call(submitBtn, e);
+      setTimeout(() => {
+        if (title) notifyNewLeakPosted(title);
+      }, 1500);
+    };
+  }, 200);
+};
+
+// ---------- HOOK INTO BADGE AWARDING ----------
+const _origUpdateContributorStats = updateContributorStats;
+updateContributorStats = async function(uid) {
+  try {
+    const userRef = doc(db, 'users', uid);
+    const snap = await getDoc(userRef);
+    const oldBadges = snap.exists() ? (snap.data().badges || []) : [];
+
+    await _origUpdateContributorStats(uid);
+
+    // Check for new badges
+    const newSnap = await getDoc(userRef);
+    const newBadges = newSnap.exists() ? (newSnap.data().badges || []) : [];
+    const newBadge = newBadges.find(b => !oldBadges.includes(b));
+    if (newBadge) {
+      setTimeout(() => notifyBadgeEarned(uid, newBadge), 800);
+    }
+  } catch (e) {
+    console.error('Badge notif error:', e);
+  }
+};
+
+// ============================================
+// PART 2: PROFILE VIEW (see other users)
+// ============================================
+
+async function openUserProfile(uid) {
+  if (!uid) return;
+  if (uid === State.user.uid) {
+    switchTab('you');
+    return;
+  }
+
+  openSheet('<div class="text-center py-8"><div class="spinner mx-auto"></div></div>', 'Profile');
+
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    if (!snap.exists()) {
+      toast('User not found', 'error');
+      return;
+    }
+    const u = { id: uid, ...snap.data() };
+
+    // Check friend status
+    const mySnap = await getDoc(doc(db, 'users', State.user.uid));
+    const myData = mySnap.exists() ? mySnap.data() : {};
+    const isFriend = (myData.friends || []).includes(uid);
+    const reqSent = (myData.friendRequestsSent || []).includes(uid);
+    const reqReceived = (myData.friendRequests || []).includes(uid);
+
+    // Get their stats
+    let vaultCount = 0;
+    let camoPct = 0;
+    try {
+      const [vaultSnap, camoSnap] = await Promise.all([
+        getDocs(query(collection(db, 'vaults'), where('uid', '==', uid))),
+        getDoc(doc(db, 'camos', uid))
+      ]);
+      vaultCount = vaultSnap.size;
+      if (camoSnap.exists()) {
+        const totalPossible = ALL_GUNS.length * CAMO_TYPES.length;
+        let checked = 0;
+        Object.values(camoSnap.data()).forEach(gun => {
+          CAMO_TYPES.forEach(c => { if (gun[c.key]) checked++; });
+        });
+        camoPct = Math.round((checked / totalPossible) * 100);
+      }
+    } catch (e) { /* silent */ }
+
+    // Friends count
+    const friendsCount = (u.friends || []).length;
+    const approvedCount = u.approvedCount || 0;
+    const tournamentWins = u.tournamentWins || 0;
+
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (!sheetBody) return;
+
+    sheetBody.innerHTML = `
+      <div class="space-y-4">
+        <!-- Profile Header -->
+        <div class="bg-card border ${u.isPro ? 'border-gold glow-gold' : 'border-border'} rounded-2xl p-4">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="relative">
+              <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-2xl overflow-hidden">
+                ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+              </div>
+              ${u.isPro ? `<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>` : ''}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-base font-black truncate">${esc(u.ign || 'Unknown')}</span>
+                ${u.isPro ? `<span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">PRO</span>` : ''}
+              </div>
+              <div class="text-[11px] text-gray-500 mt-0.5">${esc(u.rank || 'Rookie')} · ${esc(u.region || 'Global')}</div>
+              ${u.lastSeen?.seconds ? `
+                <div class="flex items-center gap-1.5 mt-1">
+                  ${(Date.now() / 1000 - u.lastSeen.seconds) < 300
+                    ? `<div class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div><span class="text-[9px] text-green-400 font-bold">ONLINE</span>`
+                    : `<div class="w-1.5 h-1.5 rounded-full bg-gray-500"></div><span class="text-[9px] text-gray-500">${timeAgo(u.lastSeen)}</span>`
+                  }
+                </div>
+              ` : ''}
+            </div>
+          </div>
+          ${u.bio ? `<p class="text-xs text-gray-400 mb-3">${esc(u.bio)}</p>` : ''}
+          ${u.favGun ? `<div class="text-[11px] text-gray-500">🎯 Favourite: <span class="font-bold text-gray-300">${esc(u.favGun)}</span></div>` : ''}
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-4 gap-2">
+          <div class="bg-card border border-border rounded-xl p-2.5 text-center">
+            <div class="text-base font-black text-primary">${vaultCount}</div>
+            <div class="text-[8px] text-gray-500 uppercase">Vaults</div>
+          </div>
+          <div class="bg-card border border-border rounded-xl p-2.5 text-center">
+            <div class="text-base font-black text-gold">${camoPct}%</div>
+            <div class="text-[8px] text-gray-500 uppercase">Camos</div>
+          </div>
+          <div class="bg-card border border-border rounded-xl p-2.5 text-center">
+            <div class="text-base font-black text-blue-400">${friendsCount}</div>
+            <div class="text-[8px] text-gray-500 uppercase">Friends</div>
+          </div>
+          <div class="bg-card border border-border rounded-xl p-2.5 text-center">
+            <div class="text-base font-black text-green-400">${approvedCount}</div>
+            <div class="text-[8px] text-gray-500 uppercase">Approved</div>
+          </div>
+        </div>
+
+        <!-- Badges -->
+        ${(u.badges && u.badges.length > 0) || tournamentWins > 0 ? `
+          <div class="bg-card border border-border rounded-2xl p-3">
+            <div class="text-[10px] font-bold text-gray-400 uppercase mb-2">🏅 Achievements</div>
+            <div class="flex flex-wrap gap-1.5">
+              ${(u.badges || []).map(b => {
+                const emoji = { first_leak: '🥉', rising: '🥈', legend: '🥇', elite: '💎' }[b] || '⭐';
+                return `<span class="text-base" title="${b}">${emoji}</span>`;
+              }).join('')}
+              ${tournamentWins > 0 ? `<span class="text-base" title="Tournament Champion">🏆×${tournamentWins}</span>` : ''}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Actions -->
+        <div class="space-y-2">
+          ${isFriend ? `
+            <button id="up-remove-friend" class="btn-press w-full py-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-sm">
+              Remove Friend
+            </button>
+          ` : reqSent ? `
+            <div class="text-center py-2 text-xs text-yellow-400 font-bold">⏳ Friend request pending</div>
+          ` : reqReceived ? `
+            <button id="up-accept-friend" class="btn-press w-full py-3 rounded-xl bg-green-500 text-white font-bold text-sm">
+              ✓ Accept Friend Request
+            </button>
+          ` : `
+            <button id="up-add-friend" class="btn-press w-full py-3 rounded-xl bg-primary font-bold text-sm glow-primary">
+              + Add Friend
+            </button>
+          `}
+          <button id="up-invite-btn" class="btn-press w-full py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">
+            📨 Invite to Lobby
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Wire actions
+    const addBtn = document.getElementById('up-add-friend');
+    if (addBtn) addBtn.onclick = async () => {
+      await sendFriendRequest(uid, u.ign);
+      closeSheet();
+    };
+
+    const removeBtn = document.getElementById('up-remove-friend');
+    if (removeBtn) removeBtn.onclick = () => {
+      confirmDialog('Remove Friend', `Remove ${u.ign}?`, async () => {
+        try {
+          await updateDoc(doc(db, 'users', State.user.uid), { friends: arrayRemove(uid) });
+          await updateDoc(doc(db, 'users', uid), { friends: arrayRemove(State.user.uid) });
+          toast('Friend removed', 'success');
+          closeSheet();
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Remove', true);
+    };
+
+    const acceptBtn = document.getElementById('up-accept-friend');
+    if (acceptBtn) acceptBtn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          friends: arrayUnion(uid),
+          friendRequests: arrayRemove(uid)
+        });
+        await updateDoc(doc(db, 'users', uid), {
+          friends: arrayUnion(State.user.uid),
+          friendRequestsSent: arrayRemove(State.user.uid)
+        });
+        toast('Friend added! 🎉', 'success');
+        closeSheet();
+      } catch (e) { toast('Failed', 'error'); }
+    };
+
+    document.getElementById('up-invite-btn').onclick = async () => {
+      // Show invite message
+      openSheet(`
+        <div class="space-y-3 text-center">
+          <div class="text-4xl">📨</div>
+          <div class="text-sm font-bold">Send invite</div>
+          <div class="text-xs text-gray-500">Copy this link and send it to ${esc(u.ign)}</div>
+          <div class="bg-card border border-border rounded-xl p-3 text-xs font-mono break-all text-primary">
+            ${location.origin}/?invite=${State.user.uid}
+          </div>
+          <button onclick="copyText('${location.origin}/?invite=${State.user.uid}', 'Link copied!'); closeSheet();" class="btn-press w-full py-3 rounded-xl bg-primary font-bold text-sm">
+            Copy Invite Link
+          </button>
+        </div>
+      `, 'Invite to Lobby');
+    };
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Profile view error:', e);
+    toast('Failed to load profile', 'error');
+  }
+}
+
+// ---------- MAKE USERNAMES CLICKABLE THROUGHOUT APP ----------
+// Hook into common user name renders
+function makeUsernamesClickable(container) {
+  if (!container) return;
+  container.querySelectorAll('.user-name-link').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.onclick = (e) => {
+      e.stopPropagation();
+      openUserProfile(el.dataset.uid);
+    };
+  });
+}
+
+// ============================================
+// PART 3: SETTINGS EXPANSION
+// ============================================
+
+function openAdvancedSettings() {
+  const p = State.profile || {};
+
+  openSheet(`
+    <div class="space-y-4">
+      <!-- Appearance -->
+      <div class="bg-card border border-border rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-border">
+          <div class="text-xs font-bold text-gray-400 uppercase">Appearance</div>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Theme</div>
+              <div class="text-[10px] text-gray-500">Currently AMOLED only</div>
+            </div>
+            <select id="set-theme" class="!w-auto text-xs">
+              <option value="amoled">AMOLED Dark</option>
+            </select>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Show Online Status</div>
+              <div class="text-[10px] text-gray-500">Friends see when you're online</div>
+            </div>
+            <div class="toggle ${p.showOnline !== false ? 'on' : ''}" id="set-online"></div>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Compact Mode</div>
+              <div class="text-[10px] text-gray-500">Smaller cards, more content</div>
+            </div>
+            <div class="toggle ${p.compactMode ? 'on' : ''}" id="set-compact"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Privacy -->
+      <div class="bg-card border border-border rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-border">
+          <div class="text-xs font-bold text-gray-400 uppercase">Privacy</div>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Private Profile</div>
+              <div class="text-[10px] text-gray-500">Only friends can see your stats</div>
+            </div>
+            <div class="toggle ${p.privateProfile ? 'on' : ''}" id="set-private"></div>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Hide from Leaderboards</div>
+              <div class="text-[10px] text-gray-500">Don't show in contributor list</div>
+            </div>
+            <div class="toggle ${p.hideLeaderboard ? 'on' : ''}" id="set-hide-lb"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Content Preferences -->
+      <div class="bg-card border border-border rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-border">
+          <div class="text-xs font-bold text-gray-400 uppercase">Content</div>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Show Ads</div>
+              <div class="text-[10px] text-gray-500">${p.isPro ? 'Auto-disabled for Pro' : 'Supports the app'}</div>
+            </div>
+            <div class="toggle ${p.showAds !== false && !p.isPro ? 'on' : ''} ${p.isPro ? 'opacity-50' : ''}" id="set-ads" ${p.isPro ? 'disabled' : ''}></div>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Auto-play Clips</div>
+              <div class="text-[10px] text-gray-500">Play videos on scroll</div>
+            </div>
+            <div class="toggle ${p.autoPlay !== false ? 'on' : ''}" id="set-autoplay"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- App Info -->
+      <div class="bg-card border border-border rounded-2xl p-4">
+        <div class="text-xs font-bold text-gray-400 uppercase mb-3">App Info</div>
+        <div class="space-y-2 text-[11px]">
+          <div class="flex justify-between"><span class="text-gray-500">Version</span><span class="font-bold">1.0.0</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">Build</span><span class="font-mono text-gray-400">${new Date().toISOString().slice(0, 10)}</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">Environment</span><span class="font-bold text-green-400">Production</span></div>
+        </div>
+      </div>
+
+      <button id="set-save" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+        Save Preferences
+      </button>
+    </div>
+  `, '⚙️ Advanced Settings');
+
+  // Wire toggles
+  ['online', 'compact', 'private', 'hide-lb', 'ads', 'autoplay'].forEach(key => {
+    const el = document.getElementById('set-' + key);
+    if (el && !el.hasAttribute('disabled')) {
+      el.onclick = () => el.classList.toggle('on');
+    }
+  });
+
+  document.getElementById('set-save').onclick = async () => {
+    try {
+      const updates = {
+        showOnline: document.getElementById('set-online').classList.contains('on'),
+        compactMode: document.getElementById('set-compact').classList.contains('on'),
+        privateProfile: document.getElementById('set-private').classList.contains('on'),
+        hideLeaderboard: document.getElementById('set-hide-lb').classList.contains('on'),
+        showAds: document.getElementById('set-ads').classList.contains('on'),
+        autoPlay: document.getElementById('set-autoplay').classList.contains('on')
+      };
+      await updateDoc(doc(db, 'users', State.user.uid), updates);
+      State.profile = { ...State.profile, ...updates };
+
+      // Apply theme changes
+      if (updates.compactMode) document.body.classList.add('compact-mode');
+      else document.body.classList.remove('compact-mode');
+
+      toast('Preferences saved', 'success');
+      closeSheet();
+    } catch (e) {
+      toast('Failed: ' + e.message, 'error');
+    }
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- ADD ADVANCED SETTINGS BUTTON TO SETTINGS LIST ----------
+const _origHandleSettingActionSettings = handleSettingAction;
+handleSettingAction = function(action) {
+  if (action === 'advanced-settings') {
+    openAdvancedSettings();
+    return;
+  }
+  return _origHandleSettingActionSettings(action);
+};
+
+// Inject into YOU tab settings list
+const _origRenderYouTabSettings = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabSettings();
+  setTimeout(() => {
+    const content = document.getElementById('content');
+    if (!content) return;
+
+    // Find the Settings section divider
+    const settingsCards = content.querySelectorAll('.bg-card.border.border-border.rounded-2xl');
+    let settingsList = null;
+    settingsCards.forEach(card => {
+      const header = card.querySelector('.text-xs.font-bold.text-gray-400.uppercase');
+      if (header && header.textContent.trim() === 'Settings') {
+        settingsList = card.querySelector('.divide-y');
+      }
+    });
+
+    if (settingsList && !settingsList.querySelector('[data-action="advanced-settings"]')) {
+      const btn = document.createElement('button');
+      btn.className = 'settings-row w-full flex items-center justify-between px-4 py-3 text-left';
+      btn.dataset.action = 'advanced-settings';
+      btn.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0">
+          <i data-lucide="settings-2" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+          <div class="min-w-0">
+            <div class="text-sm font-semibold">Advanced Settings</div>
+            <div class="text-[10px] text-gray-500 truncate">Appearance, privacy, content</div>
+          </div>
+        </div>
+        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+      `;
+      btn.onclick = () => handleSettingAction('advanced-settings');
+      settingsList.insertBefore(btn, settingsList.firstChild);
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }, 130);
+};
+
+// ---------- HOOK INTO LOBBY USERNAMES ----------
+const _origRenderLobbiesClickable = renderLobbies;
+renderLobbies = function() {
+  _origRenderLobbiesClickable();
+
+  setTimeout(() => {
+    // Make username elements clickable
+    document.querySelectorAll('#lobbies-feed .font-bold.text-sm').forEach(el => {
+      if (el.textContent && el.textContent.length > 1 && !el.dataset.clickable) {
+        el.dataset.clickable = '1';
+        el.style.cursor = 'pointer';
+        el.style.textDecoration = 'underline';
+        el.style.textDecorationColor = 'rgba(255, 107, 0, 0.3)';
+        el.style.textUnderlineOffset = '2px';
+      }
+    });
+  }, 150);
+};
+
+// Export
+window.openUserProfile = openUserProfile;
+window.openAdvancedSettings = openAdvancedSettings;
+window.notifySubmissionApproved = notifySubmissionApproved;
+window.notifySubmissionRejected = notifySubmissionRejected;
+window.notifyNewLeakPosted = notifyNewLeakPosted;
+window.notifyBadgeEarned = notifyBadgeEarned;
+
+/* END OF CHUNK 27 */
+// ============================================
+// Chunk 28/12: LFG Reputation + Friend Activity + Gun Attachments
+// ============================================
+
+// ============================================
+// PART 1: LFG REPUTATION SYSTEM
+// ============================================
+
+const REPUTATION_TAGS = [
+  { key: 'teamplayer', label: 'Team Player', emoji: '🤝' },
+  { key: 'skilled', label: 'Skilled', emoji: '🎯' },
+  { key: 'chill', label: 'Chill Vibes', emoji: '😎' },
+  { key: 'communicative', label: 'Good Comms', emoji: '🎙️' },
+  { key: 'clutch', label: 'Clutch Player', emoji: '🔥' }
+];
+
+async function openRateTeammateSheet(targetUid, targetIgn) {
+  if (!targetUid || targetUid === State.user.uid) return;
+
+  // Check if already rated recently
+  try {
+    const rateSnap = await getDocs(query(
+      collection(db, 'ratings'),
+      where('fromUid', '==', State.user.uid),
+      where('toUid', '==', targetUid),
+      limit(1)
+    ));
+    if (!rateSnap.empty) {
+      const lastRating = rateSnap.docs[0].data();
+      const lastTime = lastRating.createdAt?.seconds ? lastRating.createdAt.seconds * 1000 : 0;
+      if (Date.now() - lastTime < 24 * 60 * 60 * 1000) {
+        toast('You already rated this player today', 'info');
+        return;
+      }
+    }
+  } catch (e) { /* proceed */ }
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-center">
+        <div class="w-16 h-16 mx-auto rounded-full bg-primary/20 flex items-center justify-center mb-2">
+          <span class="text-2xl">${getInitials(targetIgn)}</span>
+        </div>
+        <div class="text-sm font-bold">${esc(targetIgn)}</div>
+        <div class="text-[10px] text-gray-500">Rate your experience</div>
+      </div>
+
+      <div class="flex justify-center gap-3 my-4" id="rating-stars">
+        ${[1,2,3,4,5].map(n => `
+          <button class="rating-star btn-press w-11 h-11 rounded-xl bg-card border border-border flex items-center justify-center" data-rating="${n}">
+            <i data-lucide="star" class="w-5 h-5 text-gray-500"></i>
+          </button>
+        `).join('')}
+      </div>
+
+      <div>
+        <div class="text-xs font-bold text-gray-400 uppercase mb-2">Tags (pick all that apply)</div>
+        <div class="flex flex-wrap gap-2">
+          ${REPUTATION_TAGS.map(t => `
+            <button class="rep-tag chip" data-tag="${t.key}">${t.emoji} ${t.label}</button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div>
+        <div class="text-xs font-bold text-gray-400 uppercase mb-2">Note (optional)</div>
+        <textarea id="rate-note" rows="2" maxlength="150" placeholder="e.g. Great teammate, clean comms"></textarea>
+      </div>
+
+      <button id="rate-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-black glow-primary" disabled>
+        Select Rating
+      </button>
+    </div>
+  `, '⭐ Rate Teammate');
+
+  let selectedRating = 0;
+  const tags = new Set();
+
+  document.querySelectorAll('.rating-star').forEach(btn => {
+    btn.onclick = () => {
+      selectedRating = parseInt(btn.dataset.rating);
+      document.querySelectorAll('.rating-star').forEach(b => {
+        const r = parseInt(b.dataset.rating);
+        const star = b.querySelector('i');
+        if (r <= selectedRating) {
+          b.classList.add('bg-gold/15', 'border-gold');
+          b.classList.remove('bg-card', 'border-border');
+          star.classList.add('text-gold');
+          star.classList.remove('text-gray-500');
+        } else {
+          b.classList.remove('bg-gold/15', 'border-gold');
+          b.classList.add('bg-card', 'border-border');
+          star.classList.remove('text-gold');
+          star.classList.add('text-gray-500');
+        }
+      });
+      const submitBtn = document.getElementById('rate-submit');
+      submitBtn.disabled = false;
+      submitBtn.textContent = `Submit ${selectedRating} Star Rating`;
+    };
+  });
+
+  document.querySelectorAll('.rep-tag').forEach(btn => {
+    btn.onclick = () => {
+      const tag = btn.dataset.tag;
+      if (tags.has(tag)) {
+        tags.delete(tag);
+        btn.classList.remove('active');
+      } else {
+        tags.add(tag);
+        btn.classList.add('active');
+      }
+    };
+  });
+
+  document.getElementById('rate-submit').onclick = async () => {
+    if (!selectedRating) return;
+
+    const btn = document.getElementById('rate-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      const note = document.getElementById('rate-note').value.trim();
+      await addDoc(collection(db, 'ratings'), {
+        fromUid: State.user.uid,
+        fromIgn: State.profile.ign,
+        toUid: targetUid,
+        rating: selectedRating,
+        tags: Array.from(tags),
+        note,
+        createdAt: serverTimestamp()
+      });
+
+      // Update target user's aggregate rating
+      await recalcUserRating(targetUid);
+
+      toast(`⭐ Rated ${targetIgn}`, 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function recalcUserRating(uid) {
+  try {
+    const snap = await getDocs(query(collection(db, 'ratings'), where('toUid', '==', uid)));
+    if (snap.empty) return;
+
+    let total = 0;
+    const tagCounts = {};
+
+    snap.forEach(d => {
+      const r = d.data();
+      total += r.rating || 0;
+      (r.tags || []).forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; });
+    });
+
+    const avg = total / snap.size;
+    const topTags = Object.entries(tagCounts).sort((a,b) => b[1] - a[1]).slice(0, 3).map(([k]) => k);
+
+    await updateDoc(doc(db, 'users', uid), {
+      ratingAvg: Math.round(avg * 10) / 10,
+      ratingCount: snap.size,
+      ratingTags: topTags
+    });
+  } catch (e) { /* silent */ }
+}
+
+// ============================================
+// PART 2: FRIEND ACTIVITY FEED
+// ============================================
+
+async function renderFriendActivity() {
+  const body = document.getElementById('friends-body');
+  if (!body) return;
+
+  body.innerHTML = '<div class="text-center py-6"><div class="spinner mx-auto"></div></div>';
+
+  try {
+    const mySnap = await getDoc(doc(db, 'users', State.user.uid));
+    const myData = mySnap.exists() ? mySnap.data() : {};
+    const friendUids = myData.friends || [];
+
+    if (friendUids.length === 0) {
+      body.innerHTML = `
+        <div class="text-center py-12">
+          <div class="text-5xl mb-3">👥</div>
+          <div class="text-sm font-bold mb-1">No friends yet</div>
+          <div class="text-xs text-gray-500">Add friends to see their activity</div>
+        </div>
+      `;
+      return;
+    }
+
+    // Fetch friend data
+    const friends = [];
+    for (const uid of friendUids) {
+      try {
+        const s = await getDoc(doc(db, 'users', uid));
+        if (s.exists()) friends.push({ id: uid, ...s.data() });
+      } catch (e) { /* skip */ }
+    }
+
+    // Sort by last seen
+    friends.sort((a, b) => {
+      const aTime = a.lastSeen?.seconds || 0;
+      const bTime = b.lastSeen?.seconds || 0;
+      return bTime - aTime;
+    });
+
+    const online = friends.filter(f => f.lastSeen?.seconds && (Date.now() / 1000 - f.lastSeen.seconds) < 300);
+    const recentlyActive = friends.filter(f => {
+      const t = f.lastSeen?.seconds || 0;
+      return (Date.now() / 1000 - t) < 24 * 60 * 60 && (Date.now() / 1000 - t) >= 300;
+    });
+    const offline = friends.filter(f => {
+      const t = f.lastSeen?.seconds || 0;
+      return (Date.now() / 1000 - t) >= 24 * 60 * 60;
+    });
+
+    body.innerHTML = `
+      ${online.length > 0 ? `
+        <div class="text-[10px] font-bold text-green-400 uppercase mb-2 flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> Online Now (${online.length})
+        </div>
+        ${online.map(f => renderFriendActivityCard(f, 'online')).join('')}
+      ` : ''}
+
+      ${recentlyActive.length > 0 ? `
+        <div class="text-[10px] font-bold text-yellow-400 uppercase mb-2 mt-4">Recent (${recentlyActive.length})</div>
+        ${recentlyActive.map(f => renderFriendActivityCard(f, 'recent')).join('')}
+      ` : ''}
+
+      ${offline.length > 0 ? `
+        <div class="text-[10px] font-bold text-gray-500 uppercase mb-2 mt-4">Offline (${offline.length})</div>
+        ${offline.map(f => renderFriendActivityCard(f, 'offline')).join('')}
+      ` : ''}
+    `;
+
+    // Wire cards
+    body.querySelectorAll('.friend-activity-card').forEach(card => {
+      card.onclick = () => openUserProfile(card.dataset.uid);
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Activity error:', e);
+    body.innerHTML = '<div class="text-center py-6 text-red-400 text-xs">Failed to load</div>';
+  }
+}
+
+function renderFriendActivityCard(f, status) {
+  const dotColor = status === 'online' ? 'bg-green-500 animate-pulse'
+    : status === 'recent' ? 'bg-yellow-500' : 'bg-gray-500';
+
+  const rankInfo = f.rank ? ` · ${f.rank}` : '';
+  const rating = f.ratingAvg ? ` ⭐ ${f.ratingAvg}` : '';
+
+  return `
+    <div class="friend-activity-card bg-card border border-border rounded-xl p-3 mb-2 cursor-pointer hover:border-primary/40 transition-colors flex items-center gap-3" data-uid="${f.id}">
+      <div class="relative flex-shrink-0">
+        <div class="w-11 h-11 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden">
+          ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
+        </div>
+        <div class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${dotColor} border-2 border-card"></div>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-bold truncate flex items-center gap-1.5">
+          ${esc(f.ign || 'Unknown')}
+          ${f.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
+        </div>
+        <div class="text-[10px] text-gray-500 truncate">
+          ${f.region || 'Global'}${rankInfo}${rating}
+        </div>
+      </div>
+      <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+    </div>
+  `;
+}
+
+// Update Friends panel to include Activity tab
+const _origShowFriendsPanel = showFriendsPanel;
+showFriendsPanel = async function() {
+  await _origShowFriendsPanel();
+
+  setTimeout(() => {
+    const tabsContainer = document.querySelector('#sheet-container .flex.gap-2.mb-4');
+    if (!tabsContainer || tabsContainer.querySelector('.friends-tab[data-tab="activity"]')) return;
+
+    const btn = document.createElement('button');
+    btn.className = 'chip friends-tab';
+    btn.dataset.tab = 'activity';
+    btn.textContent = 'Activity';
+    btn.onclick = () => {
+      friendsTab = 'activity';
+      document.querySelectorAll('.friends-tab').forEach(b => b.classList.toggle('active', b === btn));
+      renderFriendActivity();
+    };
+    tabsContainer.appendChild(btn);
+    if (window.lucide) window.lucide.createIcons();
+  }, 150);
+};
+
+// ============================================
+// PART 3: GUN-SPECIFIC ATTACHMENTS
+// ============================================
+
+const GUN_SPECIFIC_ATTACHMENTS = {
+  'AK117': {
+    muzzle: ['Muzzle Brake', 'Tactical Suppressor', 'Monolithic Suppressor', 'Flash Guard'],
+    barrel: ['MIP Light Barrel (Short)', 'MIP Extended Light Barrel', 'RTC Light Barrel', 'OWC Marksman'],
+    optic: ['Red Dot Sight', 'Holographic Sight', '3x Tactical Scope'],
+    stock: ['MIP Strike Stock', 'YKM Light Stock', 'No Stock', 'MIP Light Stock'],
+    laser: ['OWC Laser - Tactical', 'OWC Laser - Light', 'MIP Laser 5mW'],
+    underbarrel: ['Foregrip', 'Light Foregrip', 'Merc Foregrip', 'Tactical Foregrip A'],
+    ammunition: ['Extended Mag', 'Fast Mag', 'Extended Mag A'],
+    rearGrip: ['Rubberized Grip Tape', 'Stippled Grip Tape', 'Granulated Grip Tape'],
+    perk: ['Sleight of Hand', 'Fast Switch', 'Toughness']
+  },
+  'Fennec': {
+    muzzle: ['Muzzle Brake', 'Monolithic Suppressor', 'Compensator', 'Flash Guard'],
+    barrel: ['RTC Light Barrel', 'MIP Custom Long Barrel', 'Reinforced Heavy Barrel'],
+    optic: ['Red Dot Sight', 'Holographic Sight', 'Classic Holographic'],
+    stock: ['No Stock', 'YKM Light Stock', 'MIP Strike Stock', 'RTC Steady Stock'],
+    laser: ['OWC Laser - Tactical', 'MIP Laser 5mW', 'Aim Assist Laser'],
+    underbarrel: ['Light Foregrip', 'Merc Foregrip', 'Tactical Foregrip A'],
+    ammunition: ['Extended Mag', 'Fast Mag', 'Large Extended Mag'],
+    rearGrip: ['Rubberized Grip Tape', 'Stippled Grip Tape', 'Skeletonized Rear Grip'],
+    perk: ['Sleight of Hand', 'Fast Switch', 'Ammo Increase']
+  },
+  'DL Q33': {
+    muzzle: ['Muzzle Brake', 'Monolithic Suppressor', 'Tactical Suppressor'],
+    barrel: ['OWC Marksman', 'MIP Custom Long Barrel', 'Light Extended Barrel'],
+    optic: ['3x Tactical Scope', '4x Tactical Scope', '6x Tactical Scope'],
+    stock: ['OWC Skeleton Stock', 'RTC Steady Stock', 'MIP Strike Stock'],
+    laser: ['OWC Laser - Tactical', 'OWC Laser - Light'],
+    underbarrel: ['Ranger Foregrip', 'Operator Foregrip', 'Light Foregrip'],
+    ammunition: ['Extended Mag', 'Fast Mag', 'Extended Mag A'],
+    rearGrip: ['Rubberized Grip Tape', 'Stippled Grip Tape'],
+    perk: ['Fast Switch', 'Sleight of Hand', 'Ammo Increase']
+  },
+  'QQ9': {
+    muzzle: ['Muzzle Brake', 'Monolithic Suppressor', 'Tactical Suppressor'],
+    barrel: ['RTC Light Barrel', 'MIP Extended Light Barrel', 'OWC Marksman'],
+    optic: ['Red Dot Sight', 'Holographic Sight'],
+    stock: ['No Stock', 'MIP Strike Stock', 'YKM Light Stock'],
+    laser: ['OWC Laser - Tactical', 'OWC Laser - Light'],
+    underbarrel: ['Light Foregrip', 'Merc Foregrip', 'Tactical Foregrip A'],
+    ammunition: ['Extended Mag', 'Fast Mag', 'Extended Mag A'],
+    rearGrip: ['Rubberized Grip Tape', 'Stippled Grip Tape'],
+    perk: ['Sleight of Hand', 'Fast Switch', 'Toughness']
+  },
+  'AK-47': {
+    muzzle: ['Muzzle Brake', 'Monolithic Suppressor', 'Compensator'],
+    barrel: ['OWC Marksman', 'MIP Custom Long Barrel', 'RTC Light Barrel'],
+    optic: ['Red Dot Sight', '3x Tactical Scope', 'Holographic Sight'],
+    stock: ['RTC Steady Stock', 'MIP Strike Stock', 'No Stock'],
+    laser: ['OWC Laser - Tactical', 'MIP Laser 5mW'],
+    underbarrel: ['Ranger Foregrip', 'Merc Foregrip', 'Operator Foregrip'],
+    ammunition: ['Extended Mag', 'Fast Mag', 'Extended Mag A'],
+    rearGrip: ['Rubberized Grip Tape', 'Stippled Grip Tape', 'Granulated Grip Tape'],
+    perk: ['Sleight of Hand', 'Toughness', 'Fast Switch']
+  }
+};
+
+// Override getAttachmentsForSlot to use gun-specific pools
+const _origGetAttachmentsForSlot = getAttachmentsForSlot;
+getAttachmentsForSlot = function(gunName, slotKey) {
+  // Check gun-specific attachments first
+  const gunSpecific = GUN_SPECIFIC_ATTACHMENTS[gunName];
+  if (gunSpecific && gunSpecific[slotKey]) {
+    const names = gunSpecific[slotKey];
+    // Find each attachment in the master pool
+    const masterPool = ATTACHMENT_POOLS[slotKey] || [];
+    const result = [];
+    names.forEach(name => {
+      const found = masterPool.find(a => a.name === name);
+      if (found) result.push(found);
+      else result.push({ name, effects: {} }); // fallback
+    });
+    return result;
+  }
+  // Fall back to generic pool
+  return _origGetAttachmentsForSlot(gunName, slotKey);
+};
+
+// ---------- ADD RATE TEAMMATE BUTTON ON LOBBY CARDS ----------
+const _origRenderLobbiesRate = renderLobbies;
+renderLobbies = function() {
+  _origRenderLobbiesRate();
+
+  setTimeout(() => {
+    // Add "Rate" button on lobby cards (after joining)
+    document.querySelectorAll('#lobbies-feed .bg-card').forEach(card => {
+      if (card.querySelector('.rate-teammate-btn')) return;
+
+      const uid = card.querySelector('.report-lobby')?.dataset.uid;
+      const ign = card.querySelector('.font-bold.text-sm')?.textContent?.trim();
+      if (!uid || !ign || uid === State.user.uid) return;
+
+      const actionsRow = card.querySelector('.flex.gap-2');
+      if (!actionsRow) return;
+
+      const rateBtn = document.createElement('button');
+      rateBtn.className = 'rate-teammate-btn btn-press w-10 h-10 rounded-xl bg-cardAlt border border-border flex items-center justify-center';
+      rateBtn.innerHTML = '<i data-lucide="star" class="w-4 h-4 text-gold"></i>';
+      rateBtn.title = 'Rate teammate';
+      rateBtn.onclick = (e) => {
+        e.stopPropagation();
+        openRateTeammateSheet(uid, ign);
+      };
+      actionsRow.appendChild(rateBtn);
+    });
+    if (window.lucide) window.lucide.createIcons();
+  }, 200);
+};
+
+window.openRateTeammateSheet = openRateTeammateSheet;
+window.recalcUserRating = recalcUserRating;
+window.renderFriendActivity = renderFriendActivity;
+window.GUN_SPECIFIC_ATTACHMENTS = GUN_SPECIFIC_ATTACHMENTS;
+
+/* END OF CHUNK 28 */
