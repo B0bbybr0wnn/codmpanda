@@ -5991,6 +5991,18 @@ window.shareProfileCard = shareProfileCard;
 // ============================================
 
 const VAPID_KEY = "BB38qRzf4R5T_szvw7SvPklifWz_PhM1e4XQ8KKjqaIcauiUeJAZUKmJpWSbzusdny75mzckpAKXB78qSBWdU8A";
+// Initialize compat Firebase app for FCM
+if (window.firebase && !window.firebase.apps.length) {
+  window.firebase.initializeApp({
+    apiKey: "AIzaSyC4wVCT-ITLRFPDtzENnDjxL_1aVCAqWHg",
+    authDomain: "codmpanda-app.firebaseapp.com",
+    projectId: "codmpanda-app",
+    storageBucket: "codmpanda-app.firebasestorage.app",
+    messagingSenderId: "604146891375",
+    appId: "1:604146891375:web:ae74f70c184fd89d572b9a"
+  });
+  console.log('Compat Firebase initialized for FCM');
+}
 
 async function enableNotifications() {
   try {
