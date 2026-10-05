@@ -10635,6 +10635,7 @@ function makeUsernamesClickable(container) {
 
 function openAdvancedSettings() {
   const p = State.profile || {};
+  const currentTheme = p.theme || 'amoled';
 
   openSheet(`
     <div class="space-y-4">
@@ -10643,16 +10644,25 @@ function openAdvancedSettings() {
         <div class="px-4 py-3 border-b border-border">
           <div class="text-xs font-bold text-gray-400 uppercase">Appearance</div>
         </div>
-        <div class="p-4 space-y-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-sm font-semibold">Theme</div>
-              <div class="text-[10px] text-gray-500">Currently AMOLED only</div>
+        <div class="p-4 space-y-4">
+          <div>
+            <div class="text-sm font-semibold mb-2">Theme</div>
+            <div class="grid grid-cols-3 gap-2">
+              <button class="theme-btn btn-press py-3 rounded-xl ${currentTheme === 'amoled' ? 'bg-primary/15 border-2 border-primary' : 'bg-cardAlt border border-border'} flex flex-col items-center gap-1" data-theme="amoled">
+                <div class="w-6 h-6 rounded-md bg-black border border-gray-700"></div>
+                <span class="text-[10px] font-bold ${currentTheme === 'amoled' ? 'text-primary' : 'text-gray-400'}">AMOLED</span>
+              </button>
+              <button class="theme-btn btn-press py-3 rounded-xl ${currentTheme === 'dark' ? 'bg-primary/15 border-2 border-primary' : 'bg-cardAlt border border-border'} flex flex-col items-center gap-1" data-theme="dark">
+                <div class="w-6 h-6 rounded-md bg-[#1a1a1a] border border-gray-700"></div>
+                <span class="text-[10px] font-bold ${currentTheme === 'dark' ? 'text-primary' : 'text-gray-400'}">Dark</span>
+              </button>
+              <button class="theme-btn btn-press py-3 rounded-xl ${currentTheme === 'light' ? 'bg-primary/15 border-2 border-primary' : 'bg-cardAlt border border-border'} flex flex-col items-center gap-1" data-theme="light">
+                <div class="w-6 h-6 rounded-md bg-white border border-gray-300"></div>
+                <span class="text-[10px] font-bold ${currentTheme === 'light' ? 'text-primary' : 'text-gray-400'}">Light</span>
+              </button>
             </div>
-            <select id="set-theme" class="!w-auto text-xs">
-              <option value="amoled">AMOLED Dark</option>
-            </select>
           </div>
+
           <div class="flex items-center justify-between">
             <div>
               <div class="text-sm font-semibold">Show Online Status</div>
@@ -10660,6 +10670,7 @@ function openAdvancedSettings() {
             </div>
             <div class="toggle ${p.showOnline !== false ? 'on' : ''}" id="set-online"></div>
           </div>
+
           <div class="flex items-center justify-between">
             <div>
               <div class="text-sm font-semibold">Compact Mode</div>
@@ -10693,19 +10704,12 @@ function openAdvancedSettings() {
         </div>
       </div>
 
-      <!-- Content Preferences -->
+      <!-- Content -->
       <div class="bg-card border border-border rounded-2xl overflow-hidden">
         <div class="px-4 py-3 border-b border-border">
           <div class="text-xs font-bold text-gray-400 uppercase">Content</div>
         </div>
-        <div class="p-4 space-y-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-sm font-semibold">Show Ads</div>
-              <div class="text-[10px] text-gray-500">${p.isPro ? 'Auto-disabled for Pro' : 'Supports the app'}</div>
-            </div>
-            <div class="toggle ${p.showAds !== false && !p.isPro ? 'on' : ''} ${p.isPro ? 'opacity-50' : ''}" id="set-ads" ${p.isPro ? 'disabled' : ''}></div>
-          </div>
+        <div class="p-4">
           <div class="flex items-center justify-between">
             <div>
               <div class="text-sm font-semibold">Auto-play Clips</div>
@@ -10723,6 +10727,7 @@ function openAdvancedSettings() {
           <div class="flex justify-between"><span class="text-gray-500">Version</span><span class="font-bold">1.0.0</span></div>
           <div class="flex justify-between"><span class="text-gray-500">Build</span><span class="font-mono text-gray-400">${new Date().toISOString().slice(0, 10)}</span></div>
           <div class="flex justify-between"><span class="text-gray-500">Environment</span><span class="font-bold text-green-400">Production</span></div>
+          ${p.isPro ? `<div class="flex justify-between"><span class="text-gray-500">Account</span><span class="font-bold text-gold">👑 Pro Member</span></div>` : ''}
         </div>
       </div>
 
@@ -10732,32 +10737,54 @@ function openAdvancedSettings() {
     </div>
   `, '⚙️ Advanced Settings');
 
+  // Track selected theme
+  let selectedTheme = currentTheme;
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.onclick = () => {
+      selectedTheme = btn.dataset.theme;
+      document.querySelectorAll('.theme-btn').forEach(b => {
+        if (b === btn) {
+          b.classList.add('bg-primary/15', 'border-2', 'border-primary');
+          b.classList.remove('bg-cardAlt', 'border', 'border-border');
+          b.querySelector('span').classList.add('text-primary');
+          b.querySelector('span').classList.remove('text-gray-400');
+        } else {
+          b.classList.remove('bg-primary/15', 'border-2', 'border-primary');
+          b.classList.add('bg-cardAlt', 'border', 'border-border');
+          b.querySelector('span').classList.remove('text-primary');
+          b.querySelector('span').classList.add('text-gray-400');
+        }
+      });
+    };
+  });
+
   // Wire toggles
-  ['online', 'compact', 'private', 'hide-lb', 'ads', 'autoplay'].forEach(key => {
+  ['online', 'compact', 'private', 'hide-lb', 'autoplay'].forEach(key => {
     const el = document.getElementById('set-' + key);
-    if (el && !el.hasAttribute('disabled')) {
-      el.onclick = () => el.classList.toggle('on');
-    }
+    if (el) el.onclick = () => el.classList.toggle('on');
   });
 
   document.getElementById('set-save').onclick = async () => {
     try {
       const updates = {
+        theme: selectedTheme,
         showOnline: document.getElementById('set-online').classList.contains('on'),
         compactMode: document.getElementById('set-compact').classList.contains('on'),
         privateProfile: document.getElementById('set-private').classList.contains('on'),
         hideLeaderboard: document.getElementById('set-hide-lb').classList.contains('on'),
-        showAds: document.getElementById('set-ads').classList.contains('on'),
         autoPlay: document.getElementById('set-autoplay').classList.contains('on')
       };
       await updateDoc(doc(db, 'users', State.user.uid), updates);
       State.profile = { ...State.profile, ...updates };
 
-      // Apply theme changes
+      // Apply theme instantly
+      applyTheme(selectedTheme);
+
+      // Apply compact mode
       if (updates.compactMode) document.body.classList.add('compact-mode');
       else document.body.classList.remove('compact-mode');
 
-      toast('Preferences saved', 'success');
+      toast('✅ Preferences saved', 'success');
       closeSheet();
     } catch (e) {
       toast('Failed: ' + e.message, 'error');
@@ -10766,6 +10793,105 @@ function openAdvancedSettings() {
 
   if (window.lucide) window.lucide.createIcons();
 }
+
+// ---------- THEME APPLICATION ----------
+function applyTheme(theme) {
+  const root = document.documentElement;
+  const themes = {
+    amoled: {
+      bg: '#050505',
+      card: '#111111',
+      cardAlt: '#181818',
+      border: '#222222',
+      text: '#ffffff',
+      textMuted: '#888888'
+    },
+    dark: {
+      bg: '#0f0f0f',
+      card: '#1a1a1a',
+      cardAlt: '#222222',
+      border: '#2e2e2e',
+      text: '#f0f0f0',
+      textMuted: '#999999'
+    },
+    light: {
+      bg: '#f5f5f5',
+      card: '#ffffff',
+      cardAlt: '#eeeeee',
+      border: '#dddddd',
+      text: '#0a0a0a',
+      textMuted: '#666666'
+    }
+  };
+
+  const t = themes[theme] || themes.amoled;
+
+  // Apply CSS variables
+  root.style.setProperty('--theme-bg', t.bg);
+  root.style.setProperty('--theme-card', t.card);
+  root.style.setProperty('--theme-card-alt', t.cardAlt);
+  root.style.setProperty('--theme-border', t.border);
+  root.style.setProperty('--theme-text', t.text);
+  root.style.setProperty('--theme-text-muted', t.textMuted);
+
+  // Update body
+  document.body.style.background = t.bg;
+  document.body.style.color = t.text;
+
+  // Update all cards/borders via CSS injection
+  let styleEl = document.getElementById('theme-styles');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'theme-styles';
+    document.head.appendChild(styleEl);
+  }
+
+  if (theme === 'light') {
+    styleEl.textContent = `
+      body { background: ${t.bg} !important; color: ${t.text} !important; }
+      .bg-amoled { background: ${t.bg} !important; }
+      .bg-card { background: ${t.card} !important; }
+      .bg-cardAlt { background: ${t.cardAlt} !important; }
+      .border-border { border-color: ${t.border} !important; }
+      .text-white { color: ${t.text} !important; }
+      .text-gray-300, .text-gray-400 { color: ${t.textMuted} !important; }
+      .text-gray-500, .text-gray-600 { color: #888 !important; }
+      input, select, textarea { background: ${t.card} !important; color: ${t.text} !important; border-color: ${t.border} !important; }
+      .sheet { background: ${t.card} !important; }
+      .modal-backdrop { background: rgba(0,0,0,0.5) !important; }
+      .skeleton { background: linear-gradient(90deg, #e0e0e0 0%, #f0f0f0 50%, #e0e0e0 100%) !important; }
+      #top-bar, #bottom-nav { background: ${t.bg}dd !important; border-color: ${t.border} !important; }
+    `;
+  } else if (theme === 'dark') {
+    styleEl.textContent = `
+      body { background: ${t.bg} !important; color: ${t.text} !important; }
+      .bg-amoled { background: ${t.bg} !important; }
+      .bg-card { background: ${t.card} !important; }
+      .bg-cardAlt { background: ${t.cardAlt} !important; }
+      .border-border { border-color: ${t.border} !important; }
+      input, select, textarea { background: ${t.card} !important; color: ${t.text} !important; border-color: ${t.border} !important; }
+      .sheet { background: ${t.card} !important; }
+      #top-bar, #bottom-nav { background: ${t.bg}dd !important; border-color: ${t.border} !important; }
+    `;
+  } else {
+    // AMOLED — clear custom styles
+    styleEl.textContent = '';
+  }
+
+  // Save to localStorage for instant apply on next load
+  localStorage.setItem('codmpanda_theme', theme);
+  State.profile = { ...State.profile, theme };
+}
+
+// Apply saved theme on startup
+function loadSavedTheme() {
+  const saved = localStorage.getItem('codmpanda_theme') || State.profile?.theme || 'amoled';
+  if (saved !== 'amoled') {
+    setTimeout(() => applyTheme(saved), 500);
+  }
+}
+
+loadSavedTheme();
 
 // ---------- ADD ADVANCED SETTINGS BUTTON TO SETTINGS LIST ----------
 const _origHandleSettingActionSettings = handleSettingAction;
