@@ -4936,6 +4936,7 @@ renderSquadTab = function() {
         <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'scrims' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="scrims">Scrims</button>
         <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'clips' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="clips">Clips</button>
         <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'top' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="top">🏆 Top</button>
+        <button class="squad-sub flex-1 py-2.5 rounded-xl font-bold text-xs ${squadSubTab === 'wars' ? 'bg-primary' : 'bg-card border border-border text-gray-400'}" data-sub="wars">🏆 Wars</button>
       </div>
 
       <div id="squad-body"></div>
@@ -4950,6 +4951,7 @@ renderSquadTab = function() {
   else if (squadSubTab === 'scrims') renderScrimsSub();
   else if (squadSubTab === 'clips') renderClipsSub();
   else if (squadSubTab === 'top') renderLeaderboardSub();
+  else if (squadSubTab === 'wars') renderClanWarsSub();
 
   if (window.lucide) window.lucide.createIcons();
 };
