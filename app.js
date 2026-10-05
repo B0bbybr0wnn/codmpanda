@@ -8829,3 +8829,508 @@ window.openCommunityBuilds = openCommunityBuilds;
 window.shareBuildAsImage = shareBuildAsImage;
 
 /* END OF CHUNK 23 */
+// ============================================
+// Chunk 24/4: Tournaments — Data + Create + Bracket
+// ============================================
+
+const TOURNAMENT_SIZES = [4, 8, 16, 32];
+const TOURNAMENT_REGISTRATION_HOURS = 24;
+const TOURNAMENT_MODES = ['MP 5v5', 'BR Squad', 'Scrim 5v5', 'Sniper 1v1', '1v1'];
+
+let tournamentsSubTab = 'active';
+
+// ---------- MAIN RENDER ----------
+async function renderTournamentsSub() {
+  const body = document.getElementById('squad-body');
+  if (!body) return;
+
+  body.innerHTML = '<div class="text-center py-8"><div class="spinner mx-auto"></div></div>';
+
+  try {
+    const snap = await getDocs(query(collection(db, 'tournaments'), orderBy('createdAt', 'desc'), limit(30)));
+    const allTournaments = [];
+    snap.forEach(d => allTournaments.push({ id: d.id, ...d.data() }));
+
+    const active = allTournaments.filter(t => t.status === 'open' || t.status === 'in-progress');
+    const completed = allTournaments.filter(t => t.status === 'completed');
+
+    const list = tournamentsSubTab === 'active' ? active : completed;
+
+    body.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-xs text-gray-500">
+          ${tournamentsSubTab === 'active' ? active.length + ' active' : completed.length + ' completed'}
+        </div>
+        <button id="create-tournament-btn" class="btn-press px-3 py-2 rounded-xl bg-primary text-xs font-bold flex items-center gap-1">
+          <i data-lucide="plus" class="w-3 h-3"></i> Create
+        </button>
+      </div>
+
+      <div class="flex gap-2 mb-4">
+        <button class="chip tour-tab ${tournamentsSubTab === 'active' ? 'active' : ''}" data-tab="active">Active</button>
+        <button class="chip tour-tab ${tournamentsSubTab === 'completed' ? 'active' : ''}" data-tab="completed">History</button>
+      </div>
+
+      <div id="tournaments-list">
+        ${list.length === 0 ? renderTournamentEmpty() : list.map(t => renderTournamentCard(t)).join('')}
+      </div>
+    `;
+
+    document.getElementById('create-tournament-btn').onclick = openCreateTournament;
+    document.querySelectorAll('.tour-tab').forEach(btn => {
+      btn.onclick = () => { tournamentsSubTab = btn.dataset.tab; renderTournamentsSub(); };
+    });
+
+    document.querySelectorAll('.tournament-card').forEach(card => {
+      card.onclick = (e) => {
+        if (e.target.closest('button')) return;
+        openTournamentDetail(card.dataset.id);
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Tournaments error:', e);
+    body.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">Failed to load</div>';
+  }
+}
+
+function renderTournamentEmpty() {
+  return `
+    <div class="text-center py-12">
+      <div class="text-5xl mb-3">🏆</div>
+      <div class="text-sm font-bold mb-1">No tournaments yet</div>
+      <div class="text-xs text-gray-500 mb-4">${tournamentsSubTab === 'active' ? 'Be the first to host one!' : 'Completed tournaments will show here'}</div>
+      ${tournamentsSubTab === 'active' ? `
+        <button onclick="openCreateTournament()" class="btn-press px-5 py-2.5 rounded-xl bg-primary font-bold text-sm glow-primary">
+          Create Tournament
+        </button>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderTournamentCard(t) {
+  const statusColors = {
+    'open': { bg: 'bg-green-500/15', text: 'text-green-400', label: 'REGISTRATION OPEN' },
+    'in-progress': { bg: 'bg-orange-500/15', text: 'text-orange-400', label: 'IN PROGRESS' },
+    'completed': { bg: 'bg-gray-500/15', text: 'text-gray-400', label: 'COMPLETED' }
+  };
+  const sc = statusColors[t.status] || statusColors.open;
+  const teamCount = (t.teams || []).length;
+  const filled = Math.round((teamCount / t.size) * 100);
+
+  return `
+    <div class="tournament-card bg-card border border-border rounded-2xl p-4 mb-3 cursor-pointer hover:border-primary transition-colors" data-id="${t.id}">
+      <div class="flex items-start justify-between mb-3">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-[9px] px-2 py-0.5 rounded-full ${sc.bg} ${sc.text} font-black">${sc.label}</span>
+          </div>
+          <div class="text-base font-black truncate">${esc(t.name)}</div>
+          <div class="text-[10px] text-gray-500 mt-0.5">${esc(t.mode)} · ${esc(t.region)}</div>
+        </div>
+        <div class="text-2xl">🏆</div>
+      </div>
+
+      ${t.prize ? `
+        <div class="bg-gold/10 border border-gold/30 rounded-lg p-2 mb-3">
+          <div class="text-[10px] font-bold text-gold">🎁 Prize: ${esc(t.prize)}</div>
+        </div>
+      ` : ''}
+
+      <div class="mb-2">
+        <div class="flex items-center justify-between text-[10px] mb-1">
+          <span class="text-gray-500">Teams</span>
+          <span class="font-bold">${teamCount}/${t.size}</span>
+        </div>
+        <div class="progress-bar" style="height: 5px;">
+          <div class="progress-fill" style="width: ${filled}%"></div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 border-t border-border mt-2">
+        <div class="text-[10px] text-gray-500">by ${esc(t.creatorIgn || 'Unknown')}</div>
+        <div class="text-[10px] text-gray-500">${timeAgo(t.createdAt)}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ---------- CREATE TOURNAMENT ----------
+function openCreateTournament() {
+  if (!State.profile?.isPro && State.user?.uid !== ADMIN_UID) {
+    showProPaywall('Creating tournaments is a Pro feature. Upgrade to host your own!');
+    return;
+  }
+
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Tournament Name *</label>
+        <input id="tc-name" type="text" placeholder="e.g. Friday Night Scrim" maxlength="50" />
+      </div>
+
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Mode *</label>
+        <select id="tc-mode">
+          ${TOURNAMENT_MODES.map(m => `<option>${m}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Bracket Size *</label>
+          <select id="tc-size">
+            ${TOURNAMENT_SIZES.map(s => `<option value="${s}">${s} teams</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Region</label>
+          <select id="tc-region">
+            ${REGIONS.map(r => `<option ${r === State.profile?.region ? 'selected' : ''}>${r}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Prize (optional)</label>
+        <input id="tc-prize" type="text" placeholder="e.g. 500 CP or Free Pro for a month" maxlength="100" />
+      </div>
+
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Rules (optional)</label>
+        <textarea id="tc-rules" rows="3" maxlength="500" placeholder="e.g. No snipers, WAT timezone, best of 1"></textarea>
+      </div>
+
+      <div class="bg-primary/5 border border-primary/30 rounded-xl p-3">
+        <div class="text-[10px] text-primary font-bold mb-1">ℹ️ Auto-managed</div>
+        <div class="text-[10px] text-gray-400">Registration runs for 24 hours. Bracket auto-generates when full or when time ends. Matches auto-resolve with 30-min confirm window.</div>
+      </div>
+
+      <button id="tc-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-black glow-primary">
+        Create Tournament
+      </button>
+    </div>
+  `, '🏆 Create Tournament');
+
+  document.getElementById('tc-submit').onclick = async () => {
+    const name = document.getElementById('tc-name').value.trim();
+    const mode = document.getElementById('tc-mode').value;
+    const size = parseInt(document.getElementById('tc-size').value);
+    const region = document.getElementById('tc-region').value;
+    const prize = document.getElementById('tc-prize').value.trim();
+    const rules = document.getElementById('tc-rules').value.trim();
+
+    if (name.length < 3) { toast('Name too short', 'error'); return; }
+
+    const btn = document.getElementById('tc-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      const registrationEndsAt = Timestamp.fromMillis(Date.now() + TOURNAMENT_REGISTRATION_HOURS * 60 * 60 * 1000);
+
+      await addDoc(collection(db, 'tournaments'), {
+        name, mode, size, region, prize, rules,
+        creatorUid: State.user.uid,
+        creatorIgn: State.profile.ign,
+        creatorAvatar: State.profile.avatar || '',
+        teams: [],
+        bracket: [],
+        currentRound: 0,
+        status: 'open',
+        registrationEndsAt,
+        createdAt: serverTimestamp()
+      });
+
+      toast('🏆 Tournament created!', 'success');
+      closeSheet();
+      setTimeout(renderTournamentsSub, 300);
+    } catch (e) {
+      console.error(e);
+      toast('Failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Create Tournament';
+    }
+  };
+}
+
+// ---------- TOURNAMENT DETAIL ----------
+async function openTournamentDetail(tournamentId) {
+  openSheet('<div class="text-center py-8"><div class="spinner mx-auto"></div></div>', 'Tournament');
+
+  try {
+    const snap = await getDoc(doc(db, 'tournaments', tournamentId));
+    if (!snap.exists()) { toast('Tournament not found', 'error'); return; }
+    const t = { id: tournamentId, ...snap.data() };
+
+    const isCreator = t.creatorUid === State.user.uid;
+    const isAdmin = State.user.uid === ADMIN_UID;
+    const teams = t.teams || [];
+    const isRegistered = teams.some(tm => tm.uid === State.user.uid);
+    const canStart = (t.status === 'open') && teams.length >= 2 && (isCreator || isAdmin);
+    const canRegister = t.status === 'open' && teams.length < t.size && !isRegistered;
+
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (!sheetBody) return;
+
+    sheetBody.innerHTML = `
+      <div class="space-y-4">
+        <div class="bg-gradient-to-br from-primary/10 to-black border border-primary/30 rounded-2xl p-4">
+          <div class="text-lg font-black mb-1">${esc(t.name)}</div>
+          <div class="text-[10px] text-gray-500 mb-3">${esc(t.mode)} · ${esc(t.region)} · ${t.size} teams</div>
+          ${t.prize ? `<div class="bg-gold/10 border border-gold/30 rounded-lg px-3 py-2 mb-2"><div class="text-[10px] font-bold text-gold">🎁 ${esc(t.prize)}</div></div>` : ''}
+          ${t.rules ? `<div class="text-[10px] text-gray-400 mt-2">${esc(t.rules)}</div>` : ''}
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-card border border-border rounded-xl p-3 text-center">
+            <div class="text-lg font-black text-primary">${teams.length}/${t.size}</div>
+            <div class="text-[9px] text-gray-500 uppercase">Teams</div>
+          </div>
+          <div class="bg-card border border-border rounded-xl p-3 text-center">
+            <div class="text-lg font-black text-${t.status === 'open' ? 'green-400' : t.status === 'in-progress' ? 'orange-400' : 'gray-400'}">${t.status.toUpperCase()}</div>
+            <div class="text-[9px] text-gray-500 uppercase">Status</div>
+          </div>
+        </div>
+
+        <!-- Teams -->
+        <div class="bg-card border border-border rounded-2xl p-3">
+          <div class="text-xs font-bold text-gray-400 uppercase mb-2">Registered (${teams.length})</div>
+          ${teams.length === 0 ? '<div class="text-center py-3 text-[10px] text-gray-600">No teams yet</div>' : `
+            <div class="space-y-2">
+              ${teams.map(tm => `
+                <div class="flex items-center gap-2">
+                  <div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden">
+                    ${tm.avatar ? `<img src="${esc(tm.avatar)}" class="w-full h-full object-cover" />` : getInitials(tm.ign)}
+                  </div>
+                  <div class="flex-1 text-xs font-bold truncate">${esc(tm.ign)}</div>
+                  ${tm.uid === t.creatorUid ? '<span class="text-[8px] px-1.5 py-0.5 rounded bg-gold text-black font-black">HOST</span>' : ''}
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- Actions -->
+        <div class="space-y-2">
+          ${canRegister ? `
+            <button id="reg-btn" class="btn-press w-full py-3 rounded-xl bg-primary font-black text-sm glow-primary">
+              ✅ Register Team
+            </button>
+          ` : ''}
+          ${isRegistered && t.status === 'open' ? `
+            <button id="unreg-btn" class="btn-press w-full py-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-sm">
+              Withdraw
+            </button>
+          ` : ''}
+          ${canStart ? `
+            <button id="start-tour-btn" class="btn-press w-full py-3 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold">
+              🚀 Start Tournament
+            </button>
+          ` : ''}
+          ${t.status === 'in-progress' ? `
+            <button id="view-bracket-btn" class="btn-press w-full py-3 rounded-xl bg-primary font-black text-sm">
+              🏆 View Bracket
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+
+    // Wire buttons
+    const regBtn = document.getElementById('reg-btn');
+    if (regBtn) {
+      regBtn.onclick = () => registerForTournament(t.id, teams, t.size);
+    }
+
+    const unregBtn = document.getElementById('unreg-btn');
+    if (unregBtn) {
+      unregBtn.onclick = () => withdrawFromTournament(t.id);
+    }
+
+    const startBtn = document.getElementById('start-tour-btn');
+    if (startBtn) {
+      startBtn.onclick = () => {
+        confirmDialog('Start Tournament', 'This will generate the bracket. No more registrations allowed.', () => {
+          startTournament(t.id, t);
+        }, 'Start', false);
+      };
+    }
+
+    const bracketBtn = document.getElementById('view-bracket-btn');
+    if (bracketBtn) {
+      bracketBtn.onclick = () => openBracketView(t.id);
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Tournament detail error:', e);
+    toast('Failed to load', 'error');
+  }
+}
+
+// ---------- REGISTER ----------
+async function registerForTournament(tournamentId, currentTeams, maxSize) {
+  if (currentTeams.length >= maxSize) {
+    toast('Tournament is full', 'error');
+    return;
+  }
+
+  if (currentTeams.some(t => t.uid === State.user.uid)) {
+    toast('Already registered', 'warning');
+    return;
+  }
+
+  try {
+    const newTeam = {
+      uid: State.user.uid,
+      ign: State.profile.ign,
+      avatar: State.profile.avatar || '',
+      rank: State.profile.rank || 'Rookie',
+      registeredAt: Date.now()
+    };
+
+    await updateDoc(doc(db, 'tournaments', tournamentId), {
+      teams: arrayUnion(newTeam)
+    });
+
+    toast('✅ Registered!', 'success');
+    closeSheet();
+    setTimeout(() => openTournamentDetail(tournamentId), 500);
+  } catch (e) {
+    console.error(e);
+    toast('Registration failed: ' + e.message, 'error');
+  }
+}
+
+async function withdrawFromTournament(tournamentId) {
+  confirmDialog('Withdraw', 'Remove your team from this tournament?', async () => {
+    try {
+      const snap = await getDoc(doc(db, 'tournaments', tournamentId));
+      if (!snap.exists()) return;
+      const t = snap.data();
+      const updated = (t.teams || []).filter(tm => tm.uid !== State.user.uid);
+      await updateDoc(doc(db, 'tournaments', tournamentId), { teams: updated });
+      toast('Withdrawn', 'success');
+      closeSheet();
+    } catch (e) {
+      toast('Failed: ' + e.message, 'error');
+    }
+  }, 'Withdraw', true);
+}
+
+// ---------- START TOURNAMENT (AUTO-BRACKET) ----------
+async function startTournament(tournamentId, tournament) {
+  try {
+    toast('Generating bracket...', 'info', 2000);
+
+    const teams = [...(tournament.teams || [])];
+    if (teams.length < 2) {
+      toast('Need at least 2 teams', 'error');
+      return;
+    }
+
+    // Shuffle teams for random seeding
+    const shuffled = teams.sort(() => Math.random() - 0.5);
+
+    // Generate single elimination bracket
+    const bracket = generateBracket(shuffled, tournament.size);
+
+    await updateDoc(doc(db, 'tournaments', tournamentId), {
+      teams: shuffled,
+      bracket,
+      currentRound: 1,
+      status: 'in-progress',
+      startedAt: serverTimestamp()
+    });
+
+    toast('🏆 Tournament started!', 'success');
+    closeSheet();
+    setTimeout(() => openBracketView(tournamentId), 500);
+    setTimeout(renderTournamentsSub, 1000);
+  } catch (e) {
+    console.error('Start error:', e);
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+// ---------- BRACKET GENERATION ----------
+function generateBracket(teams, targetSize) {
+  // Pad with byes if needed (fills up to next power of 2)
+  const padded = [...teams];
+  while (padded.length < targetSize) {
+    padded.push({ bye: true, uid: null, ign: 'BYE' });
+  }
+
+  // Round 1 matches
+  const round1 = [];
+  for (let i = 0; i < padded.length; i += 2) {
+    round1.push({
+      round: 1,
+      matchIndex: round1.length,
+      team1: padded[i],
+      team2: padded[i + 1] || { bye: true, uid: null, ign: 'BYE' },
+      winner: null,
+      score1: null,
+      score2: null,
+      status: 'pending',
+      startedAt: null,
+      reportedBy: null,
+      reportedAt: null,
+      disputed: false,
+      expiresAt: null
+    });
+  }
+
+  // Auto-resolve byes in round 1
+  round1.forEach((m, idx) => {
+    if (m.team1.bye) {
+      m.winner = m.team2;
+      m.status = 'completed';
+    } else if (m.team2.bye) {
+      m.winner = m.team1;
+      m.status = 'completed';
+    }
+  });
+
+  const bracket = [...round1];
+
+  // Generate future rounds (empty placeholders)
+  let teamsRemaining = round1.length;
+  let roundNum = 2;
+  while (teamsRemaining > 1) {
+    teamsRemaining = Math.floor(teamsRemaining / 2);
+    const matchesInRound = teamsRemaining;
+    for (let i = 0; i < matchesInRound; i++) {
+      bracket.push({
+        round: roundNum,
+        matchIndex: i,
+        team1: null,
+        team2: null,
+        winner: null,
+        score1: null,
+        score2: null,
+        status: 'waiting',
+        startedAt: null,
+        reportedBy: null,
+        reportedAt: null,
+        disputed: false,
+        expiresAt: null
+      });
+    }
+    roundNum++;
+  }
+
+  return bracket;
+}
+
+window.renderTournamentsSub = renderTournamentsSub;
+window.openCreateTournament = openCreateTournament;
+window.openTournamentDetail = openTournamentDetail;
+window.registerForTournament = registerForTournament;
+window.startTournament = startTournament;
+window.generateBracket = generateBracket;
+
+/* END OF CHUNK 24 */
