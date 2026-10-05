@@ -6213,4 +6213,790 @@ window.sendNotificationToUser = sendNotificationToUser;
 window.broadcastNotification = broadcastNotification;
 
 /* END OF CHUNK 16 */
-  
+// ============================================
+// Chunk 17: Admin Analytics Dashboard
+// ============================================
+
+async function showAdminAnalytics() {
+  openSheet(`
+    <div class="text-center py-8">
+      <div class="spinner mx-auto mb-3"></div>
+      <div class="text-xs text-gray-500">Loading analytics...</div>
+    </div>
+  `, 'Analytics');
+
+  try {
+    // ---------- PARALLEL FETCHES ----------
+    const [
+      usersSnap,
+      lobbiesSnap,
+      vaultsSnap,
+      leakSubsSnap,
+      vaultSubsSnap,
+      clipSubsSnap,
+      reportsSnap,
+      clansSnap
+    ] = await Promise.all([
+      getDocs(collection(db, 'users')),
+      getDocs(collection(db, 'lobbies')),
+      getDocs(collection(db, 'vaults')),
+      getDocs(collection(db, 'leak_submissions')),
+      getDocs(collection(db, 'vault_submissions')),
+      getDocs(collection(db, 'clip_submissions')),
+      getDocs(collection(db, 'reports')),
+      getDocs(collection(db, 'clans'))
+    ]);
+
+    // ---------- PROCESS USERS ----------
+    const users = [];
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const weekAgo = now - 7 * dayMs;
+    const monthAgo = now - 30 * dayMs;
+
+    let proCount = 0;
+    let dau = 0;
+    let wau = 0;
+    let mau = 0;
+    let newThisWeek = 0;
+    const regionBreakdown = {};
+    const recentUsers = [];
+
+    usersSnap.forEach(d => {
+      const u = d.data();
+      users.push({ id: d.id, ...u });
+
+      // Pro count
+      if (u.isPro) proCount++;
+
+      // Activity windows
+      const lastSeen = u.lastSeen?.seconds ? u.lastSeen.seconds * 1000 : 0;
+      const createdAt = u.createdAt?.seconds ? u.createdAt.seconds * 1000 : 0;
+
+      if (lastSeen > now - dayMs) dau++;
+      if (lastSeen > weekAgo) wau++;
+      if (lastSeen > monthAgo) mau++;
+
+      if (createdAt > weekAgo) newThisWeek++;
+
+      // Region breakdown
+      const region = u.region || 'Unknown';
+      regionBreakdown[region] = (regionBreakdown[region] || 0) + 1;
+
+      // Recent users (last 30 days)
+      if (createdAt > monthAgo) {
+        recentUsers.push({ id: d.id, ign: u.ign, avatar: u.avatar, createdAt, region: u.region });
+      }
+    });
+
+    recentUsers.sort((a, b) => b.createdAt - a.createdAt);
+    const topRecentUsers = recentUsers.slice(0, 10);
+
+    // ---------- PROCESS SUBMISSIONS ----------
+    let pendingLeaks = 0, pendingVaults = 0, pendingClips = 0;
+    leakSubsSnap.forEach(d => { if (d.data().status === 'pending') pendingLeaks++; });
+    vaultSubsSnap.forEach(d => { if (d.data().status === 'pending') pendingVaults++; });
+    clipSubsSnap.forEach(d => { if (d.data().status === 'pending') pendingClips++; });
+
+    const totalPending = pendingLeaks + pendingVaults + pendingClips;
+
+    // ---------- PROCESS REPORTS ----------
+    let openReports = 0;
+    reportsSnap.forEach(d => {
+      const r = d.data();
+      if (r.type === 'bug' || r.type === 'feature' || r.type === 'user-report') openReports++;
+    });
+
+    // ---------- TOP CONTRIBUTORS ----------
+    const contributors = users
+      .filter(u => (u.approvedCount || 0) > 0)
+      .sort((a, b) => (b.approvedCount || 0) - (a.approvedCount || 0))
+      .slice(0, 5);
+
+    // ---------- REGION SORT ----------
+    const sortedRegions = Object.entries(regionBreakdown)
+      .sort((a, b) => b[1] - a[1]);
+
+    // ---------- RENDER ----------
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (!sheetBody) return;
+
+    sheetBody.innerHTML = `
+      <div class="space-y-4">
+
+        <!-- USERS CARD -->
+        <div class="bg-card border border-primary/40 rounded-2xl p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i data-lucide="users" class="w-4 h-4 text-primary"></i>
+            <div class="text-xs font-bold text-primary uppercase">Users</div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-primary">${users.length}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Total</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-green-400">${dau}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Daily Active</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-blue-400">${wau}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Weekly Active</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-purple-400">${mau}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Monthly Active</div>
+            </div>
+          </div>
+          <div class="flex items-center justify-between mt-3 pt-3 border-t border-border">
+            <div class="text-xs text-gray-400">New this week</div>
+            <div class="text-sm font-bold text-green-400">+${newThisWeek}</div>
+          </div>
+        </div>
+
+        <!-- REVENUE CARD -->
+        <div class="bg-gradient-to-br from-gold/10 to-black border border-gold/40 rounded-2xl p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i data-lucide="crown" class="w-4 h-4 text-gold"></i>
+            <div class="text-xs font-bold text-gold uppercase">Revenue</div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-gold">${proCount}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Pro Members</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-gold">$${(proCount * 1.99).toFixed(2)}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Est. Monthly</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CONTENT CARD -->
+        <div class="bg-card border border-border rounded-2xl p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i data-lucide="database" class="w-4 h-4 text-orange-400"></i>
+            <div class="text-xs font-bold text-orange-400 uppercase">Content</div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-xl font-black text-orange-400">${lobbiesSnap.size}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Lobbies Posted</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-xl font-black text-primary">${vaultsSnap.size}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Vault Builds</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-xl font-black text-blue-400">${clansSnap.size}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Clans</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-xl font-black text-purple-400">${leakSubsSnap.size + vaultSubsSnap.size + clipSubsSnap.size}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Total Subs</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MODERATION CARD -->
+        <div class="bg-card border ${totalPending > 0 ? 'border-yellow-500/50' : 'border-border'} rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="inbox" class="w-4 h-4 text-yellow-400"></i>
+              <div class="text-xs font-bold text-yellow-400 uppercase">Moderation Queue</div>
+            </div>
+            ${totalPending > 0 ? `<span class="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-black">${totalPending}</span>` : ''}
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-gray-400">🔥 Leak submissions</span>
+              <span class="font-bold ${pendingLeaks > 0 ? 'text-yellow-400' : 'text-gray-600'}">${pendingLeaks}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-gray-400">🔧 Vault submissions</span>
+              <span class="font-bold ${pendingVaults > 0 ? 'text-yellow-400' : 'text-gray-600'}">${pendingVaults}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-gray-400">🎬 Clip submissions</span>
+              <span class="font-bold ${pendingClips > 0 ? 'text-yellow-400' : 'text-gray-600'}">${pendingClips}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs pt-2 border-t border-border">
+              <span class="text-gray-400">🐛 Bug reports</span>
+              <span class="font-bold">${openReports}</span>
+            </div>
+          </div>
+          ${totalPending > 0 ? `
+            <button id="goto-submissions-btn" class="btn-press w-full mt-3 py-2.5 rounded-xl bg-yellow-500 text-black font-bold text-xs">
+              Review Submissions →
+            </button>
+          ` : ''}
+        </div>
+
+        <!-- TOP CONTRIBUTORS -->
+        ${contributors.length > 0 ? `
+          <div class="bg-card border border-border rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <i data-lucide="trophy" class="w-4 h-4 text-gold"></i>
+              <div class="text-xs font-bold text-gold uppercase">Top Contributors</div>
+            </div>
+            <div class="space-y-2">
+              ${contributors.map((u, i) => {
+                const medal = ['🥇', '🥈', '🥉', '#4', '#5'][i];
+                return `
+                  <div class="flex items-center gap-2">
+                    <div class="w-6 text-center text-sm">${medal}</div>
+                    <div class="w-7 h-7 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                      ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
+                    </div>
+                    <div class="text-xs font-black text-primary">${u.approvedCount}</div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- REGION BREAKDOWN -->
+        ${sortedRegions.length > 0 ? `
+          <div class="bg-card border border-border rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <i data-lucide="globe" class="w-4 h-4 text-blue-400"></i>
+              <div class="text-xs font-bold text-blue-400 uppercase">By Region</div>
+            </div>
+            <div class="space-y-2">
+              ${sortedRegions.slice(0, 8).map(([region, count]) => {
+                const pct = Math.round((count / users.length) * 100);
+                return `
+                  <div>
+                    <div class="flex items-center justify-between text-[11px] mb-1">
+                      <span class="text-gray-300">${esc(region)}</span>
+                      <span class="font-bold">${count} <span class="text-gray-600">(${pct}%)</span></span>
+                    </div>
+                    <div class="progress-bar" style="height:5px;">
+                      <div class="progress-fill" style="width:${pct}%"></div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- RECENT SIGNUPS -->
+        ${topRecentUsers.length > 0 ? `
+          <div class="bg-card border border-border rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <i data-lucide="user-plus" class="w-4 h-4 text-green-400"></i>
+              <div class="text-xs font-bold text-green-400 uppercase">Recent Signups</div>
+            </div>
+            <div class="space-y-2">
+              ${topRecentUsers.map(u => `
+                <div class="flex items-center gap-2">
+                  <div class="w-7 h-7 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                    ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
+                    <div class="text-[10px] text-gray-500">${esc(u.region || 'Unknown')}</div>
+                  </div>
+                  <div class="text-[10px] text-gray-500">${timeAgo({ seconds: Math.floor(u.createdAt / 1000) })}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- REFRESH BUTTON -->
+        <button id="refresh-analytics-btn" class="btn-press w-full py-3 rounded-2xl bg-cardAlt border border-border font-bold text-xs">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5 inline mr-1"></i> Refresh Data
+        </button>
+
+        <div class="text-[10px] text-gray-600 text-center pt-2">
+          Data loaded live from Firestore
+        </div>
+      </div>
+    `;
+
+    // Wire buttons
+    const subsBtn = document.getElementById('goto-submissions-btn');
+    if (subsBtn) {
+      subsBtn.onclick = () => { closeSheet(); setTimeout(showAdminSubmissions, 300); };
+    }
+    document.getElementById('refresh-analytics-btn').onclick = () => {
+      closeSheet();
+      setTimeout(showAdminAnalytics, 300);
+    };
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Analytics error:', e);
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (sheetBody) {
+      sheetBody.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">Failed to load: ' + esc(e.message) + '</div>';
+    }
+  }
+}
+
+// ---------- ADD ANALYTICS BUTTON TO ADMIN PANEL ----------
+const _origHandleSettingActionAnalytics = handleSettingAction;
+handleSettingAction = function(action) {
+  if (action === 'admin-analytics') {
+    showAdminAnalytics();
+    return;
+  }
+  return _origHandleSettingActionAnalytics(action);
+};
+
+// ---------- INJECT BUTTON INTO YOU TAB ADMIN SECTION ----------
+const _origRenderYouTabAnalytics = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabAnalytics();
+  setTimeout(() => {
+    const adminSection = document.querySelector('.bg-card.border-gold\\/40');
+    if (!adminSection) return;
+
+    const list = adminSection.querySelector('.divide-y');
+    if (list && !list.querySelector('[data-action="admin-analytics"]')) {
+      const btn = document.createElement('button');
+      btn.className = 'settings-row w-full flex items-center justify-between px-4 py-3 text-left';
+      btn.dataset.action = 'admin-analytics';
+      btn.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0">
+          <i data-lucide="bar-chart-3" class="w-4 h-4 text-gold flex-shrink-0"></i>
+          <div class="min-w-0">
+            <div class="text-sm font-semibold">Analytics</div>
+            <div class="text-[10px] text-gray-500 truncate">Users, revenue, activity</div>
+          </div>
+        </div>
+        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+      `;
+      btn.onclick = () => showAdminAnalytics();
+      list.insertBefore(btn, list.firstChild);
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }, 120);
+};
+
+window.showAdminAnalytics = showAdminAnalytics;
+
+/* END OF CHUNK 17 */
+// ============================================
+// Chunk 18: Friend System
+// ============================================
+
+let friendsTab = 'friends'; // 'friends' | 'requests' | 'search'
+
+// ---------- MAIN RENDER ----------
+async function showFriendsPanel() {
+  openSheet(`
+    <div class="text-center py-8"><div class="spinner mx-auto"></div></div>
+  `, '👥 Friends');
+
+  const sheetBody = document.querySelector('#sheet-container .px-5');
+  if (!sheetBody) return;
+
+  sheetBody.innerHTML = `
+    <div class="flex gap-2 mb-4">
+      <button class="chip friends-tab ${friendsTab === 'friends' ? 'active' : ''}" data-tab="friends">Friends</button>
+      <button class="chip friends-tab ${friendsTab === 'requests' ? 'active' : ''}" data-tab="requests">Requests</button>
+      <button class="chip friends-tab ${friendsTab === 'search' ? 'active' : ''}" data-tab="search">Search</button>
+    </div>
+    <div id="friends-body"></div>
+  `;
+
+  document.querySelectorAll('.friends-tab').forEach(btn => {
+    btn.onclick = () => {
+      friendsTab = btn.dataset.tab;
+      document.querySelectorAll('.friends-tab').forEach(b => b.classList.toggle('active', b === btn));
+      renderFriendsBody();
+    };
+  });
+
+  renderFriendsBody();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function renderFriendsBody() {
+  const body = document.getElementById('friends-body');
+  if (!body) return;
+
+  body.innerHTML = '<div class="text-center py-6"><div class="spinner mx-auto"></div></div>';
+
+  try {
+    const userRef = doc(db, 'users', State.user.uid);
+    const snap = await getDoc(userRef);
+    const data = snap.exists() ? snap.data() : {};
+
+    const friendUids = data.friends || [];
+    const incomingReqs = data.friendRequests || [];
+    const outgoingReqs = data.friendRequestsSent || [];
+
+    if (friendsTab === 'friends') {
+      await renderFriendsList(body, friendUids);
+    } else if (friendsTab === 'requests') {
+      await renderRequestsList(body, incomingReqs, outgoingReqs);
+    } else {
+      renderSearchBody(body);
+    }
+  } catch (e) {
+    console.error('Friends error:', e);
+    body.innerHTML = '<div class="text-center py-6 text-red-400 text-sm">Failed to load</div>';
+  }
+}
+
+// ---------- FRIENDS LIST ----------
+async function renderFriendsList(body, friendUids) {
+  if (friendUids.length === 0) {
+    body.innerHTML = `
+      <div class="text-center py-12">
+        <div class="text-5xl mb-3">👥</div>
+        <div class="text-sm font-bold mb-1">No friends yet</div>
+        <div class="text-xs text-gray-500 mb-4">Search for players to add</div>
+        <button id="goto-search-btn" class="btn-press px-4 py-2.5 rounded-xl bg-primary font-bold text-sm">
+          Find Players
+        </button>
+      </div>
+    `;
+    document.getElementById('goto-search-btn').onclick = () => {
+      friendsTab = 'search';
+      document.querySelectorAll('.friends-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === 'search'));
+      renderFriendsBody();
+    };
+    return;
+  }
+
+  // Fetch friend profiles
+  const friends = [];
+  for (const uid of friendUids) {
+    try {
+      const s = await getDoc(doc(db, 'users', uid));
+      if (s.exists()) friends.push({ id: uid, ...s.data() });
+    } catch (e) { /* skip */ }
+  }
+
+  body.innerHTML = friends.map(f => `
+    <div class="flex items-center gap-3 p-3 bg-card border border-border rounded-xl mb-2">
+      <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden flex-shrink-0">
+        ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-bold truncate flex items-center gap-1.5">
+          ${esc(f.ign || 'Unknown')}
+          ${f.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
+        </div>
+        <div class="text-[10px] text-gray-500">${esc(f.rank || '—')} · ${esc(f.region || '—')}</div>
+      </div>
+      <button class="remove-friend-btn w-9 h-9 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center" data-uid="${f.id}" data-ign="${esc(f.ign)}">
+        <i data-lucide="user-minus" class="w-4 h-4 text-red-400"></i>
+      </button>
+    </div>
+  `).join('');
+
+  body.querySelectorAll('.remove-friend-btn').forEach(btn => {
+    btn.onclick = () => {
+      confirmDialog('Remove Friend', `Remove ${btn.dataset.ign} from your friends?`, async () => {
+        try {
+          await updateDoc(doc(db, 'users', State.user.uid), { friends: arrayRemove(btn.dataset.uid) });
+          await updateDoc(doc(db, 'users', btn.dataset.uid), { friends: arrayRemove(State.user.uid) });
+          toast('Friend removed', 'success');
+          renderFriendsBody();
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Remove', true);
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- REQUESTS ----------
+async function renderRequestsList(body, incomingReqs, outgoingReqs) {
+  let html = '';
+
+  // Incoming
+  if (incomingReqs.length > 0) {
+    html += `<div class="text-[10px] font-bold text-primary uppercase mb-2">Incoming (${incomingReqs.length})</div>`;
+    const incoming = [];
+    for (const uid of incomingReqs) {
+      try {
+        const s = await getDoc(doc(db, 'users', uid));
+        if (s.exists()) incoming.push({ id: uid, ...s.data() });
+      } catch (e) { /* skip */ }
+    }
+    html += incoming.map(u => `
+      <div class="flex items-center gap-3 p-3 bg-primary/5 border border-primary/30 rounded-xl mb-2">
+        <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden flex-shrink-0">
+          ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+          <div class="text-[10px] text-gray-500">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
+        </div>
+        <button class="accept-friend-btn w-9 h-9 rounded-lg bg-green-500 flex items-center justify-center" data-uid="${u.id}" data-ign="${esc(u.ign)}">
+          <i data-lucide="check" class="w-4 h-4 text-white"></i>
+        </button>
+        <button class="decline-friend-btn w-9 h-9 rounded-lg bg-red-500/20 border border-red-500/40 flex items-center justify-center" data-uid="${u.id}">
+          <i data-lucide="x" class="w-4 h-4 text-red-400"></i>
+        </button>
+      </div>
+    `).join('');
+  }
+
+  // Outgoing
+  if (outgoingReqs.length > 0) {
+    html += `<div class="text-[10px] font-bold text-gray-400 uppercase mb-2 mt-4">Sent (${outgoingReqs.length})</div>`;
+    const outgoing = [];
+    for (const uid of outgoingReqs) {
+      try {
+        const s = await getDoc(doc(db, 'users', uid));
+        if (s.exists()) outgoing.push({ id: uid, ...s.data() });
+      } catch (e) { /* skip */ }
+    }
+    html += outgoing.map(u => `
+      <div class="flex items-center gap-3 p-3 bg-card border border-border rounded-xl mb-2">
+        <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden flex-shrink-0">
+          ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+          <div class="text-[10px] text-yellow-400">Pending...</div>
+        </div>
+        <button class="cancel-req-btn w-9 h-9 rounded-lg bg-cardAlt border border-border flex items-center justify-center" data-uid="${u.id}">
+          <i data-lucide="x" class="w-4 h-4 text-gray-400"></i>
+        </button>
+      </div>
+    `).join('');
+  }
+
+  if (!html) {
+    html = `
+      <div class="text-center py-12">
+        <div class="text-5xl mb-3">📬</div>
+        <div class="text-sm font-bold mb-1">No pending requests</div>
+        <div class="text-xs text-gray-500">Friend requests will appear here</div>
+      </div>
+    `;
+  }
+
+  body.innerHTML = html;
+
+  // Wire accept
+  body.querySelectorAll('.accept-friend-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        const myUid = State.user.uid;
+        const theirUid = btn.dataset.uid;
+
+        // Add each other
+        await updateDoc(doc(db, 'users', myUid), {
+          friends: arrayUnion(theirUid),
+          friendRequests: arrayRemove(theirUid)
+        });
+        await updateDoc(doc(db, 'users', theirUid), {
+          friends: arrayUnion(myUid),
+          friendRequestsSent: arrayRemove(myUid)
+        });
+
+        toast('Friend added! 🎉', 'success');
+        renderFriendsBody();
+      } catch (e) {
+        console.error(e);
+        toast('Failed: ' + e.message, 'error');
+      }
+    };
+  });
+
+  // Wire decline
+  body.querySelectorAll('.decline-friend-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          friendRequests: arrayRemove(btn.dataset.uid)
+        });
+        toast('Request declined', 'success');
+        renderFriendsBody();
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+
+  // Wire cancel
+  body.querySelectorAll('.cancel-req-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          friendRequestsSent: arrayRemove(btn.dataset.uid)
+        });
+        await updateDoc(doc(db, 'users', btn.dataset.uid), {
+          friendRequests: arrayRemove(State.user.uid)
+        });
+        toast('Request cancelled', 'success');
+        renderFriendsBody();
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- SEARCH ----------
+function renderSearchBody(body) {
+  body.innerHTML = `
+    <div class="relative mb-4">
+      <i data-lucide="search" class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+      <input id="friend-search-input" type="text" placeholder="Search by IGN..." class="pl-10" />
+    </div>
+    <div id="search-results" class="space-y-2">
+      <div class="text-center py-8 text-xs text-gray-500">Start typing to search players</div>
+    </div>
+  `;
+
+  const input = document.getElementById('friend-search-input');
+  let debounceTimer;
+
+  input.oninput = () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => performFriendSearch(input.value.trim()), 400);
+  };
+
+  input.focus();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function performFriendSearch(query) {
+  const results = document.getElementById('search-results');
+  if (!results) return;
+
+  if (query.length < 2) {
+    results.innerHTML = '<div class="text-center py-8 text-xs text-gray-500">Type at least 2 characters</div>';
+    return;
+  }
+
+  results.innerHTML = '<div class="text-center py-6"><div class="spinner mx-auto"></div></div>';
+
+  try {
+    // Fetch users and filter client-side (Firestore doesn't support LIKE queries)
+    const snap = await getDocs(query(collection(db, 'users'), limit(200)));
+    const q = query.toLowerCase();
+
+    const matches = [];
+    snap.forEach(d => {
+      const u = d.data();
+      if (d.id === State.user.uid) return;
+      if ((u.ign || '').toLowerCase().includes(q)) {
+        matches.push({ id: d.id, ...u });
+      }
+    });
+
+    if (matches.length === 0) {
+      results.innerHTML = '<div class="text-center py-8 text-xs text-gray-500">No players found</div>';
+      return;
+    }
+
+    // Check relationship status
+    const mySnap = await getDoc(doc(db, 'users', State.user.uid));
+    const myData = mySnap.exists() ? mySnap.data() : {};
+    const myFriends = myData.friends || [];
+    const mySent = myData.friendRequestsSent || [];
+    const myIncoming = myData.friendRequests || [];
+
+    results.innerHTML = matches.slice(0, 20).map(u => {
+      let actionHTML = '';
+      if (myFriends.includes(u.id)) {
+        actionHTML = '<span class="text-[10px] px-2 py-1 rounded-full bg-green-500/20 text-green-400 font-bold">✓ Friend</span>';
+      } else if (mySent.includes(u.id)) {
+        actionHTML = '<span class="text-[10px] px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-400 font-bold">Pending</span>';
+      } else if (myIncoming.includes(u.id)) {
+        actionHTML = '<button class="send-req-btn text-[10px] px-2 py-1 rounded-full bg-primary text-white font-bold" data-uid="' + u.id + '" data-ign="' + esc(u.ign) + '">Accept</button>';
+      } else {
+        actionHTML = '<button class="send-req-btn text-[10px] px-2.5 py-1.5 rounded-lg bg-primary text-white font-bold flex items-center gap-1" data-uid="' + u.id + '" data-ign="' + esc(u.ign) + '">+ Add</button>';
+      }
+
+      return `
+        <div class="flex items-center gap-3 p-3 bg-card border border-border rounded-xl">
+          <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden flex-shrink-0">
+            ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+            <div class="text-[10px] text-gray-500">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
+          </div>
+          ${actionHTML}
+        </div>
+      `;
+    }).join('');
+
+    results.querySelectorAll('.send-req-btn').forEach(btn => {
+      btn.onclick = () => sendFriendRequest(btn.dataset.uid, btn.dataset.ign);
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Search error:', e);
+    results.innerHTML = '<div class="text-center py-8 text-red-400 text-xs">Search failed</div>';
+  }
+}
+
+async function sendFriendRequest(targetUid, targetIgn) {
+  try {
+    // Add to my sent list
+    await updateDoc(doc(db, 'users', State.user.uid), {
+      friendRequestsSent: arrayUnion(targetUid)
+    });
+
+    // Add to their incoming list
+    await updateDoc(doc(db, 'users', targetUid), {
+      friendRequests: arrayUnion(State.user.uid)
+    });
+
+    toast(`Request sent to ${targetIgn}`, 'success');
+
+    // Send notification
+    try {
+      await sendNotificationToUser(
+        targetUid,
+        '👋 New Friend Request',
+        `${State.profile.ign} wants to be your friend`,
+        { type: 'friend_request' }
+      );
+    } catch (e) { /* silent */ }
+
+    // Refresh search
+    const input = document.getElementById('friend-search-input');
+    if (input) performFriendSearch(input.value.trim());
+  } catch (e) {
+    console.error(e);
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+// ---------- ADD "FRIENDS" BUTTON TO PROFILE HEADER ----------
+const _origRenderYouTabFriends = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabFriends();
+  setTimeout(() => {
+    const editBtn = document.getElementById('edit-profile-btn');
+    if (editBtn && !document.getElementById('open-friends-btn')) {
+      const btn = document.createElement('button');
+      btn.id = 'open-friends-btn';
+      btn.className = 'btn-press w-full mt-2 py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold flex items-center justify-center gap-2';
+      btn.innerHTML = '<span>👥</span> Friends';
+
+      // Add badge if incoming requests
+      const reqs = (State.profile?.friendRequests || []).length;
+      if (reqs > 0) {
+        btn.innerHTML += ` <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-black">${reqs}</span>`;
+      }
+
+      btn.onclick = showFriendsPanel;
+      editBtn.parentNode.insertBefore(btn, editBtn.nextSibling);
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }, 100);
+};
+
+window.showFriendsPanel = showFriendsPanel;
+window.sendFriendRequest = sendFriendRequest;
+
+/* END OF CHUNK 18 */
