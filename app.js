@@ -4992,14 +4992,14 @@ function openUpgradeSheet() {
 
     <!-- Lifetime -->
     <div class="bg-gradient-to-br from-gold/10 to-black border border-gold/50 rounded-2xl p-4 mb-3 relative overflow-hidden">
-      <div class="absolute top-3 right-3 text-[9px] px-2 py-0.5 rounded bg-gold text-black font-black">BEST VALUE</div>
+      <div class="absolute top-2 right-2 text-[8px] px-1.5 py-0.5 rounded bg-gold text-black font-black z-10">BEST VALUE</div>
       <div class="flex items-center justify-between mb-3">
         <div>
           <div class="text-sm font-black text-gold">Lifetime</div>
           <div class="text-[10px] text-gray-400">Pay once, Pro forever</div>
         </div>
         <div class="text-right">
-          <div class="text-2xl font-black text-gold glow-text-gold">$9.99</div>
+          <<div class="text-2xl font-black text-gold glow-text-gold mt-4">$9.99</div>
           <div class="text-[10px] text-gray-500">one-time</div>
         </div>
       </div>
