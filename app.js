@@ -5740,15 +5740,21 @@ async function generateProfileCard() {
   const startX = (W - totalW) / 2;
 
   // Stats to display
-  let vaultCount = 0;
-  let camoPct = 0;
-  try {
-    const vaultSnap = await getDocs(query(collection(db, 'vaults'), where('uid', '==', State.user.uid)));
-    vaultCount = vaultSnap.size;
-  } catch (e) { /* silent */ }
+  let vaultCount = State.cache.myVaultCount || 0;
+  let camoPct = State.cache.myCamoPct || 0;
 
+if (!vaultCount || !camoPct) {
   try {
-    const camoSnap = await getDoc(doc(db, 'camos', State.user.uid));
+    const results = await Promise.all([
+      getDocs(query(collection(db, 'vaults'), where('uid', '==', State.user.uid))),
+      getDoc(doc(db, 'camos', State.user.uid))
+    ]);
+    const vaultSnap = results[0];
+    const camoSnap = results[1];
+
+    vaultCount = vaultSnap.size;
+    State.cache.myVaultCount = vaultCount;
+
     const totalPossible = ALL_GUNS.length * CAMO_TYPES.length;
     if (camoSnap.exists()) {
       let checked = 0;
@@ -5757,7 +5763,9 @@ async function generateProfileCard() {
       });
       camoPct = Math.round((checked / totalPossible) * 100);
     }
+    State.cache.myCamoPct = camoPct;
   } catch (e) { /* silent */ }
+ }
 
   const approved = p.approvedCount || 0;
   const stats = [
