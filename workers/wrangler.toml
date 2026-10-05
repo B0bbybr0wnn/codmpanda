@@ -1,3 +1,0 @@
-name = "codmpanda-notify"
-main = "notification-worker.js"
-compatibility_date = "2024-10-01"
