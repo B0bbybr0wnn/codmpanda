@@ -13486,26 +13486,19 @@ openSheet = function(contentHTML, title) {
   } catch (e) { /* silent */ }
 };
 
-// Override closeSheet to also pop
+// Override closeSheet — just close, don't touch history
+// The history entry stays until the user actually presses back,
+// which the popstate handler cleans up.
 const _origCloseSheet = closeSheet;
 closeSheet = function() {
-  const wasOpen = document.getElementById('sheet-container')?.classList.contains('hidden') === false;
   _origCloseSheet();
   NavState.isInSheet = false;
-  // Only pop if we pushed a state
-  if (wasOpen && history.state?.sheet) {
-    try { history.back(); } catch (e) { /* silent */ }
-  }
 };
 
 // Same for modal
 const _origCloseModal = closeModal;
 closeModal = function() {
-  const wasOpen = document.getElementById('modal-container')?.classList.contains('hidden') === false;
   _origCloseModal();
-  if (wasOpen && history.state?.modal) {
-    try { history.back(); } catch (e) { /* silent */ }
-  }
 };
 
 // Push initial state
@@ -13515,7 +13508,7 @@ try {
 
 // Back button handler
 window.addEventListener('popstate', (e) => {
-  // 1. If a sheet is open — close it
+  // 1. Sheet open → close it and re-push state
   const sheetContainer = document.getElementById('sheet-container');
   if (sheetContainer && !sheetContainer.classList.contains('hidden')) {
     _origCloseSheet();
@@ -13524,7 +13517,7 @@ window.addEventListener('popstate', (e) => {
     return;
   }
 
-  // 2. If a modal is open — close it
+  // 2. Modal open → close it and re-push state
   const modalContainer = document.getElementById('modal-container');
   if (modalContainer && !modalContainer.classList.contains('hidden')) {
     _origCloseModal();
@@ -13532,17 +13525,15 @@ window.addEventListener('popstate', (e) => {
     return;
   }
 
-  // 3. If on a non-primary tab — go back to PLAY
+  // 3. On a non-primary tab → go to PLAY
   if (State.currentTab !== 'play') {
     switchTab('play');
     try { history.pushState({ app: true }, ''); } catch (err) { /* silent */ }
     return;
   }
 
-  // 4. If already on PLAY tab — allow exit (don't push state back)
-  // The user is on the home screen, so we let the browser close the PWA
+  // 4. Nothing open, on PLAY → let it exit naturally
 });
-
 // Re-push state after tab changes to keep history clean
 const _origSwitchTabBackBtn = switchTab;
 switchTab = function(tab) {
