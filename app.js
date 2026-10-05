@@ -13478,12 +13478,18 @@ const NavState = {
 // Override openSheet to push history
 const _origOpenSheet = openSheet;
 openSheet = function(contentHTML, title) {
+  // Check if a sheet is ALREADY open (nested sheets like dropdown-on-top-of-form)
+  const alreadyOpen = document.getElementById('sheet-container')?.classList.contains('hidden') === false;
+
   _origOpenSheet(contentHTML, title);
   NavState.isInSheet = true;
-  // Push a state so back button closes the sheet
-  try {
-    history.pushState({ sheet: true }, '');
-  } catch (e) { /* silent */ }
+
+  // Only push a new history state if this is a FRESH sheet (not nested)
+  if (!alreadyOpen) {
+    try {
+      history.pushState({ sheet: true }, '');
+    } catch (e) { /* silent */ }
+  }
 };
 
 // Override closeSheet — just close, don't touch history
