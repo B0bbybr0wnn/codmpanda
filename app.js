@@ -11875,24 +11875,30 @@ async function openDMThread(friendUid, friendIgn) {
   const loadMessages = async () => {
     try {
       const snap = await getDocs(query(
-        collection(db, 'messages'),
-        where('chatId', '==', chatId),
-        orderBy('createdAt', 'asc'),
-        limit(100)
-      ));
+  collection(db, 'messages'),
+  where('chatId', '==', chatId),
+  limit(100)
+));
 
-      if (snap.empty) {
-        messagesContainer.innerHTML = `
-          <div class="text-center py-8">
-            <div class="text-3xl mb-2">💬</div>
-            <div class="text-xs text-gray-500">Start the conversation</div>
-          </div>
-        `;
-        return;
-      }
+if (snap.empty) {
+  messagesContainer.innerHTML = `
+    <div class="text-center py-8">
+      <div class="text-3xl mb-2">💬</div>
+      <div class="text-xs text-gray-500">Start the conversation</div>
+    </div>
+  `;
+  return;
+}
 
-      const messages = [];
-      snap.forEach(d => messages.push({ id: d.id, ...d.data() }));
+const messages = [];
+snap.forEach(d => messages.push({ id: d.id, ...d.data() }));
+
+// Sort client-side by createdAt
+messages.sort((a, b) => {
+  const aT = a.createdAt?.seconds || 0;
+  const bT = b.createdAt?.seconds || 0;
+  return aT - bT;
+});
 
       messagesContainer.innerHTML = messages.map(m => {
         const isMine = m.fromUid === State.user.uid;
