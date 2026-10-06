@@ -13708,3 +13708,617 @@ console.log('✅ Chunk 34: Clean version loaded');
 })();
 
 /* END OF CHUNK 35 */
+// ============================================
+// Chunk 36: Delete Own Content + Smart Expiry + ToS Update
+// ============================================
+
+const LOBBY_EXPIRY_HOURS = 24;
+const SCRIM_EXPIRY_HOURS = 12;
+const SOFT_CLOSE_HOURS = 1440; // 60 days — lower this when you have more users
+
+// ============================================
+// PART 1: LOBBY POST (24h active window)
+// ============================================
+
+openPostLobbySheet = function() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Rank</label>
+        <select id="pl-rank" data-dropdown-title="Rank">${RANKS.map(r => `<option ${State.profile?.rank === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Mode</label>
+        <select id="pl-mode" data-dropdown-title="Mode">${MODES.map(m => `<option>${m}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Region</label>
+        <select id="pl-region" data-dropdown-title="Region">${REGIONS.map(r => `<option ${State.profile?.region === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Role</label>
+        <select id="pl-role" data-dropdown-title="Role">${ROLES.map(r => `<option>${r}</option>`).join('')}</select>
+      </div>
+      <div class="flex items-center justify-between p-3 rounded-xl bg-card border border-border">
+        <div>
+          <div class="text-sm font-semibold">Voice Chat</div>
+          <div class="text-xs text-gray-500">Enable mic on join</div>
+        </div>
+        <div id="pl-mic" class="toggle on"></div>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Note (optional)</label>
+        <textarea id="pl-note" rows="3" maxlength="150" placeholder="e.g. Need 3 more for Ranked MP"></textarea>
+      </div>
+      <button id="pl-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold text-base glow-primary">
+        Post Lobby
+      </button>
+    </div>
+  `, 'Create Lobby');
+
+  document.getElementById('pl-mic').onclick = function() { this.classList.toggle('on'); };
+
+  document.getElementById('pl-submit').onclick = async () => {
+    const rank = document.getElementById('pl-rank').value;
+    const mode = document.getElementById('pl-mode').value;
+    const region = document.getElementById('pl-region').value;
+    const role = document.getElementById('pl-role').value;
+    const mic = document.getElementById('pl-mic').classList.contains('on');
+    const note = document.getElementById('pl-note').value.trim();
+
+    const btn = document.getElementById('pl-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      const expiresAt = Timestamp.fromMillis(Date.now() + LOBBY_EXPIRY_HOURS * 60 * 60 * 1000);
+      const jitsiLink = `https://meet.jit.si/CODMPanda-${State.user.uid.slice(0, 8)}-${Date.now()}`;
+
+      await addDoc(collection(db, 'lobbies'), {
+        uid: State.user.uid,
+        ign: State.profile.ign,
+        rank, mode, region, role, mic, note,
+        avatar: State.profile.avatar || '',
+        players: 1,
+        jitsiLink,
+        createdAt: serverTimestamp(),
+        expiresAt,
+        status: 'active'
+      });
+
+      toast('✅ Lobby posted — active for 24h', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Post Lobby';
+    }
+  };
+};
+
+// ============================================
+// PART 2: LOBBY RENDER with delete + closed state
+// ============================================
+
+renderLobbies = function() {
+  const feed = document.getElementById('lobbies-feed');
+  if (!feed) return;
+  let lobbies = State.cache.lobbies;
+
+  const f = State.filters.lobbies;
+  if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
+  if (f.mode && f.mode !== 'all') lobbies = lobbies.filter(l => l.mode === f.mode);
+  if (f.region && f.region !== 'all') lobbies = lobbies.filter(l => l.region === f.region);
+  if (f.mic) lobbies = lobbies.filter(l => l.mic === true);
+  if (f.search) {
+    lobbies = lobbies.filter(l =>
+      (l.ign || '').toLowerCase().includes(f.search) ||
+      (l.note || '').toLowerCase().includes(f.search)
+    );
+  }
+
+  if (lobbies.length === 0) {
+    feed.innerHTML = emptyState('users', 'No lobbies found', 'Try different filters or post your own', 'Post Lobby', openPostLobbySheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  const now = Date.now();
+
+  feed.innerHTML = lobbies.map(l => {
+    const expiresAt = l.expiresAt?.toMillis ? l.expiresAt.toMillis() : (l.expiresAt?.seconds ? l.expiresAt.seconds * 1000 : Infinity);
+    const isExpired = expiresAt < now;
+    const isMine = l.uid === State.user.uid;
+    const playersText = `${l.players || 1}/5`;
+
+    return `
+      <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : 'border-border'} rounded-2xl p-4 fade-in">
+        <div class="flex items-start gap-3 mb-3">
+          <div class="relative">
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
+              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            </div>
+            ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
+              ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
+            </div>
+            <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
+          </div>
+          <div class="text-right flex-shrink-0">
+            <div class="text-sm font-black text-primary">${playersText}</div>
+            <div class="text-[9px] text-gray-500">PLAYERS</div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-1.5 mb-3">
+          ${l.role ? `<span class="text-[10px] px-2 py-1 rounded-full bg-cardAlt border border-border font-semibold text-gray-300">${esc(l.role)}</span>` : ''}
+          ${l.mic ? `<span class="text-[10px] px-2 py-1 rounded-full bg-green-500/15 text-green-400 font-semibold">🎤 Mic</span>` : `<span class="text-[10px] px-2 py-1 rounded-full bg-cardAlt border border-border font-semibold text-gray-500">🔇 No Mic</span>`}
+        </div>
+
+        ${l.note ? `<p class="text-xs text-gray-400 mb-3 line-clamp-2">${esc(l.note)}</p>` : ''}
+
+        <div class="flex gap-2">
+          ${!isExpired ? `
+            <button class="join-btn btn-press flex-1 py-2.5 rounded-xl bg-primary text-sm font-bold flex items-center justify-center gap-1.5" data-id="${l.id}">
+              <i data-lucide="log-in" class="w-4 h-4"></i> Join
+            </button>
+          ` : `
+            <div class="flex-1 py-2.5 rounded-xl bg-gray-500/10 text-center text-xs font-bold text-gray-500">
+              Lobby Closed
+            </div>
+          `}
+          <button class="share-lobby btn-press w-10 h-10 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-id="${l.id}" data-ign="${esc(l.ign)}">
+            <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+          </button>
+          ${isMine ? `
+            <button class="delete-lobby btn-press w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center" data-id="${l.id}">
+              <i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i>
+            </button>
+          ` : `
+            <button class="report-lobby btn-press w-10 h-10 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-id="${l.id}" data-uid="${l.uid}">
+              <i data-lucide="flag" class="w-4 h-4 text-gray-500"></i>
+            </button>
+          `}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  feed.querySelectorAll('.join-btn').forEach(btn => {
+    btn.onclick = () => joinLobby(btn.dataset.id);
+  });
+  feed.querySelectorAll('.share-lobby').forEach(btn => {
+    btn.onclick = () => {
+      openShareSheet({
+        title: `${btn.dataset.ign}'s Lobby`,
+        text: `🎮 Join ${btn.dataset.ign}'s squad on CODMPanda!`,
+        url: getLobbyShareUrl(btn.dataset.id)
+      });
+    };
+  });
+  feed.querySelectorAll('.delete-lobby').forEach(btn => {
+    btn.onclick = () => deleteLobby(btn.dataset.id);
+  });
+  feed.querySelectorAll('.report-lobby').forEach(btn => {
+    btn.onclick = () => reportContent('lobby', btn.dataset.id, btn.dataset.uid);
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+async function deleteLobby(lobbyId) {
+  confirmDialog('Delete Lobby', 'This will remove your lobby permanently.', async () => {
+    try {
+      await deleteDoc(doc(db, 'lobbies', lobbyId));
+      State.cache.lobbies = State.cache.lobbies.filter(l => l.id !== lobbyId);
+      renderLobbies();
+      toast('🗑️ Lobby deleted', 'success');
+    } catch (e) {
+      console.error(e);
+      toast('Delete failed: ' + e.message, 'error');
+    }
+  }, 'Delete', true);
+}
+
+// ============================================
+// PART 3: SCRIM POST (12h active) + DELETE
+// ============================================
+
+openPostScrimSheet = function() {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Mode</label>
+        <select id="ps-mode" data-dropdown-title="Mode">${MODES.map(m => `<option>${m}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">What are you looking for?</label>
+        <textarea id="ps-text" rows="4" maxlength="500" placeholder="e.g. 5v5 SnD scrim tonight at 9pm WAT."></textarea>
+      </div>
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Contact (Discord/TG/IGN)</label>
+        <input id="ps-contact" type="text" placeholder="e.g. @panda#1234" maxlength="60" />
+      </div>
+      <button id="ps-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">Post Scrim</button>
+    </div>
+  `, 'Post Scrim');
+
+  document.getElementById('ps-submit').onclick = async () => {
+    const mode = document.getElementById('ps-mode').value;
+    const text = document.getElementById('ps-text').value.trim();
+    const contact = document.getElementById('ps-contact').value.trim();
+    if (text.length < 5) { toast('Add more details', 'error'); return; }
+
+    const btn = document.getElementById('ps-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      const expiresAt = Timestamp.fromMillis(Date.now() + SCRIM_EXPIRY_HOURS * 60 * 60 * 1000);
+      await addDoc(collection(db, 'scrims'), {
+        uid: State.user.uid,
+        ign: State.profile.ign,
+        text, mode, contact,
+        createdAt: serverTimestamp(),
+        expiresAt,
+        status: 'active'
+      });
+      toast('✅ Scrim posted — active for 12h', 'success');
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Post Scrim';
+    }
+  };
+};
+
+renderScrims = function() {
+  const feed = document.getElementById('scrims-feed');
+  if (!feed) return;
+  const now = Date.now();
+
+  if (State.cache.scrims.length === 0) {
+    feed.innerHTML = emptyState('swords', 'No scrims posted', 'Looking for a match? Post one', 'Post Scrim', openPostScrimSheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.innerHTML = State.cache.scrims.map(s => {
+    const expiresAt = s.expiresAt?.toMillis ? s.expiresAt.toMillis() : (s.expiresAt?.seconds ? s.expiresAt.seconds * 1000 : Infinity);
+    const isExpired = expiresAt < now;
+    const isMine = s.uid === State.user.uid;
+
+    return `
+      <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : 'border-border'} rounded-2xl p-4 fade-in">
+        <div class="flex items-center gap-2 mb-2 flex-wrap">
+          <span class="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-bold">${esc(s.mode || 'MP')}</span>
+          ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
+          <span class="text-[10px] text-gray-500">${timeAgo(s.createdAt)}</span>
+        </div>
+        <p class="text-sm text-gray-200 mb-3 whitespace-pre-wrap">${esc(s.text)}</p>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[11px] text-gray-500 truncate flex-1">📞 ${esc(s.contact || 'DM')}</span>
+          <button class="copy-text-btn text-[11px] text-primary font-bold" data-text="${esc(s.contact)}">Copy</button>
+          ${isMine ? `
+            <button class="delete-scrim w-8 h-8 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center" data-id="${s.id}">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5 text-red-400"></i>
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  feed.querySelectorAll('.copy-text-btn').forEach(btn => {
+    btn.onclick = () => copyText(btn.dataset.text, 'Contact copied!');
+  });
+  feed.querySelectorAll('.delete-scrim').forEach(btn => {
+    btn.onclick = () => deleteScrim(btn.dataset.id);
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+async function deleteScrim(scrimId) {
+  confirmDialog('Delete Scrim', 'Remove this scrim post?', async () => {
+    try {
+      await deleteDoc(doc(db, 'scrims', scrimId));
+      State.cache.scrims = State.cache.scrims.filter(s => s.id !== scrimId);
+      renderScrims();
+      toast('🗑️ Scrim deleted', 'success');
+    } catch (e) {
+      toast('Delete failed: ' + e.message, 'error');
+    }
+  }, 'Delete', true);
+}
+
+// ============================================
+// PART 4: VAULT DELETE
+// ============================================
+
+renderVaults = function() {
+  const feed = document.getElementById('vault-feed');
+  if (!feed) return;
+  let vaults = State.cache.vaults;
+  if (State.filters.vaults.search) {
+    const s = State.filters.vaults.search;
+    vaults = vaults.filter(v =>
+      (v.gunName || '').toLowerCase().includes(s) ||
+      (v.gunsmithCode || '').toLowerCase().includes(s)
+    );
+  }
+
+  if (vaults.length === 0) {
+    feed.className = '';
+    feed.innerHTML = emptyState('package-open', 'No vaults yet', 'Share your first build', 'Submit Build', openSubmitVaultSheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.className = 'grid grid-cols-2 gap-3';
+  feed.innerHTML = vaults.map(v => {
+    const isMine = v.uid === State.user.uid;
+    return `
+      <div class="bg-card border border-border rounded-2xl p-3 fade-in relative">
+        ${isMine ? `
+          <button class="delete-vault absolute top-2 right-2 w-7 h-7 rounded-lg bg-red-500/90 flex items-center justify-center z-10" data-id="${v.id}">
+            <i data-lucide="trash-2" class="w-3 h-3 text-white"></i>
+          </button>
+        ` : ''}
+        ${v.imageUrl ? `<img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" />` :
+          `<div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+            <i data-lucide="crosshair" class="w-8 h-8 text-primary/60"></i>
+          </div>`
+        }
+        <div class="text-xs font-bold text-gray-300 truncate">${esc(v.gunName || 'Unknown')}</div>
+        <div class="text-[10px] text-gray-500 mb-2">${esc(v.type || 'build')}</div>
+
+        ${v.gunsmithCode ? `
+          <button class="copy-code-btn w-full py-2 rounded-lg bg-primary/15 border border-primary/30 text-primary text-[11px] font-bold flex items-center justify-center gap-1 mb-2" data-code="${esc(v.gunsmithCode)}">
+            <i data-lucide="copy" class="w-3 h-3"></i> ${esc(v.gunsmithCode)}
+          </button>
+        ` : ''}
+
+        <div class="flex items-center justify-between">
+          <button class="like-btn flex items-center gap-1 text-[11px] text-gray-400" data-id="${v.id}">
+            <i data-lucide="heart" class="w-3.5 h-3.5"></i> ${v.likes || 0}
+          </button>
+          <button class="share-vault-btn text-primary" data-id="${v.id}" data-gun="${esc(v.gunName)}">
+            <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  feed.querySelectorAll('.copy-code-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); copyText(btn.dataset.code, 'Code copied!'); };
+  });
+  feed.querySelectorAll('.like-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'vaults', btn.dataset.id), { likes: increment(1) });
+        toast('❤️ Liked!', 'success', 1500);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-vault-btn').forEach(btn => {
+    btn.onclick = () => {
+      openShareSheet({
+        title: `${btn.dataset.gun} Build`,
+        text: `🔧 Check out this ${btn.dataset.gun} build on CODMPanda!`,
+        url: getVaultShareUrl(btn.dataset.id)
+      });
+    };
+  });
+  feed.querySelectorAll('.delete-vault').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      deleteVault(btn.dataset.id);
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+async function deleteVault(vaultId) {
+  confirmDialog('Delete Vault', 'Remove this build from your vault?', async () => {
+    try {
+      await deleteDoc(doc(db, 'vaults', vaultId));
+      State.cache.vaults = State.cache.vaults.filter(v => v.id !== vaultId);
+      renderVaults();
+      toast('🗑️ Vault build deleted', 'success');
+    } catch (e) {
+      toast('Delete failed: ' + e.message, 'error');
+    }
+  }, 'Delete', true);
+}
+
+// ============================================
+// PART 5: CLIP DELETE
+// ============================================
+
+renderClips = function() {
+  const feed = document.getElementById('clips-feed');
+  if (!feed) return;
+  let clips = [...State.cache.clips];
+  if (State.filters.clips.sort === 'trending') {
+    clips.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+  }
+
+  if (clips.length === 0) {
+    feed.innerHTML = emptyState('video', 'No clips yet', 'Be the first to submit!', 'Submit Clip', openSubmitClipSheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.innerHTML = clips.map(c => {
+    const embedUrl = getYouTubeEmbed(c.youtubeUrl);
+    const authorName = c.submittedByIgn || c.ign || 'CODMPanda';
+    const authorAvatar = c.submittedByAvatar || '';
+    const isApproved = !!c.approved;
+    const isMine = c.uid === State.user.uid || c.submittedByUid === State.user.uid;
+    return `
+      <div class="bg-card border border-border rounded-2xl overflow-hidden fade-in relative">
+        ${isMine ? `
+          <button class="delete-clip absolute top-2 right-2 w-8 h-8 rounded-lg bg-red-500/90 backdrop-blur-sm flex items-center justify-center z-10" data-id="${c.id}">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5 text-white"></i>
+          </button>
+        ` : ''}
+        ${embedUrl ? `
+          <div class="relative w-full aspect-video bg-black">
+            <iframe src="${embedUrl}" class="w-full h-full" frameborder="0" allowfullscreen loading="lazy"></iframe>
+          </div>
+        ` : `
+          <div class="w-full aspect-video bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+            <a href="${esc(c.youtubeUrl)}" target="_blank" class="text-center">
+              <i data-lucide="external-link" class="w-8 h-8 mx-auto text-primary mb-2"></i>
+              <div class="text-xs text-gray-400">Open link</div>
+            </a>
+          </div>
+        `}
+        <div class="p-3">
+          <div class="flex items-center gap-2 mb-2 flex-wrap">
+            <span class="text-xs font-bold text-gray-300">${esc(c.gunTag || 'CODM')}</span>
+            ${isApproved ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold flex items-center gap-0.5"><i data-lucide="check" class="w-2.5 h-2.5"></i> Approved</span>` : ''}
+            <span class="text-[10px] text-gray-500">· ${timeAgo(c.createdAt)}</span>
+          </div>
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
+              ${authorAvatar ? `<img src="${esc(authorAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName)}
+            </div>
+            <span class="text-[10px] text-gray-500">by <span class="text-gray-300 font-semibold">${esc(authorName)}</span></span>
+          </div>
+          <div class="flex items-center justify-between">
+            <button class="like-clip flex items-center gap-1 text-xs text-gray-400" data-id="${c.id}">
+              <i data-lucide="heart" class="w-4 h-4"></i> ${c.likes || 0}
+            </button>
+            <button class="share-clip text-primary" data-id="${c.id}" data-gun="${esc(c.gunTag || 'CODM')}">
+              <i data-lucide="share-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  feed.querySelectorAll('.like-clip').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'clips', btn.dataset.id), { likes: increment(1) });
+        toast('❤️', 'success', 1000);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-clip').forEach(btn => {
+    btn.onclick = () => {
+      openShareSheet({
+        title: `${btn.dataset.gun} Clip`,
+        text: `🎬 Watch this ${btn.dataset.gun} play on CODMPanda!`,
+        url: getClipShareUrl(btn.dataset.id)
+      });
+    };
+  });
+  feed.querySelectorAll('.delete-clip').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      deleteClip(btn.dataset.id);
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+async function deleteClip(clipId) {
+  confirmDialog('Delete Clip', 'Remove this clip?', async () => {
+    try {
+      await deleteDoc(doc(db, 'clips', clipId));
+      State.cache.clips = State.cache.clips.filter(c => c.id !== clipId);
+      renderClips();
+      toast('🗑️ Clip deleted', 'success');
+    } catch (e) {
+      toast('Delete failed: ' + e.message, 'error');
+    }
+  }, 'Delete', true);
+}
+
+// ============================================
+// PART 6: AUTO-CLEANUP (60 days after expiry)
+// ============================================
+
+async function cleanupExpiredContent() {
+  const now = Date.now();
+  const graceMs = SOFT_CLOSE_HOURS * 60 * 60 * 1000;
+
+  try {
+    const lobbiesSnap = await getDocs(query(collection(db, 'lobbies'), limit(100)));
+    const lobbiesToDelete = [];
+    lobbiesSnap.forEach(d => {
+      const data = d.data();
+      const exp = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
+      if (exp + graceMs < now) lobbiesToDelete.push(d.id);
+    });
+    if (lobbiesToDelete.length > 0) {
+      await Promise.all(lobbiesToDelete.map(id => deleteDoc(doc(db, 'lobbies', id))));
+      console.log(`🧹 Cleaned ${lobbiesToDelete.length} old lobbies`);
+    }
+
+    const scrimsSnap = await getDocs(query(collection(db, 'scrims'), limit(100)));
+    const scrimsToDelete = [];
+    scrimsSnap.forEach(d => {
+      const data = d.data();
+      const exp = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
+      if (exp + graceMs < now) scrimsToDelete.push(d.id);
+    });
+    if (scrimsToDelete.length > 0) {
+      await Promise.all(scrimsToDelete.map(id => deleteDoc(doc(db, 'scrims', id))));
+      console.log(`🧹 Cleaned ${scrimsToDelete.length} old scrims`);
+    }
+  } catch (e) {
+    console.warn('Cleanup error:', e);
+  }
+}
+
+setTimeout(() => {
+  if (State.user) {
+    const lastCleanup = localStorage.getItem('codmpanda_last_content_cleanup');
+    const dayMs = 24 * 60 * 60 * 1000;
+    if (!lastCleanup || Date.now() - parseInt(lastCleanup) > dayMs) {
+      cleanupExpiredContent();
+      localStorage.setItem('codmpanda_last_content_cleanup', Date.now().toString());
+    }
+  }
+}, 20000);
+
+// ============================================
+// PART 7: UPDATED TERMS (admin moderation clause)
+// ============================================
+
+const _origShowTermsChunk36 = showTerms;
+showTerms = function() {
+  openSheet(`
+    <div class="text-xs text-gray-400 space-y-3 leading-relaxed">
+      <p><strong class="text-white">Terms of Service</strong></p>
+      <p>CODMPanda is an unofficial companion app for Call of Duty Mobile. Not affiliated with Activision or Tencent.</p>
+      <p>Do not post illegal, harassing, or NSFW content. Reports will be reviewed and accounts banned. Administrators reserve the right to remove any content that violates these terms.</p>
+      <p>Pro purchases are final. Refunds only in case of technical failure.</p>
+      <p>We may update these terms. Continued use means acceptance.</p>
+    </div>
+  `, 'Terms');
+};
+
+window.deleteLobby = deleteLobby;
+window.deleteScrim = deleteScrim;
+window.deleteVault = deleteVault;
+window.deleteClip = deleteClip;
+window.cleanupExpiredContent = cleanupExpiredContent;
+window.showTerms = showTerms;
+
+/* END OF CHUNK 36 */
