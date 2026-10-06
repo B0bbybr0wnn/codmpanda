@@ -11,7 +11,9 @@
 <title>CODMPanda — The Ultimate CODM Companion</title>
 
 <link rel="manifest" href="/manifest.json" />
-<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgcng9IjM4IiBmaWxsPSIjMDUwNTA1Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjExMCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IiNGRjZCMDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJjZW50cmFsIj7wn5C8PC90ZXh0Pjwvc3ZnPg==" />
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+<link rel="apple-touch-icon" href="/icon-512.png" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -40,10 +42,7 @@
   };
 </script>
 
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-<script>eruda.init();</script>
 
 <style>
   :root {
@@ -345,6 +344,7 @@
 <div id="app">
 
   <div id="splash" class="fixed inset-0 z-[100] bg-amoled flex flex-col items-center justify-center">
+    <img src="/icon-512.png" alt="CODMPanda" class="w-24 h-24 rounded-3xl mb-4" style="box-shadow: 0 0 40px rgba(255, 107, 0, 0.5);" />
     <div class="text-4xl font-black tracking-tight">
       <span class="text-primary glow-text-primary">CODM</span><span class="text-white">Panda</span>
     </div>
@@ -357,7 +357,7 @@
   </div>
 
   <div id="auth-gate" class="fixed inset-0 z-[85] bg-amoled hidden flex-col items-center justify-center p-6">
-    <div class="text-6xl mb-6">🐼</div>
+    <img src="/icon-512.png" alt="CODMPanda" class="w-24 h-24 rounded-3xl mb-6" style="box-shadow: 0 0 40px rgba(255, 107, 0, 0.5);" />
     <h1 class="text-4xl font-black text-center mb-2">
       <span class="text-primary glow-text-primary">CODM</span><span class="text-white">Panda</span>
     </h1>
@@ -380,7 +380,7 @@
     <header id="top-bar" class="top-bar fixed top-0 left-0 right-0 z-40 bg-amoled/80 border-b border-border">
       <div class="flex items-center justify-between px-4 h-14">
         <div class="flex items-center gap-2">
-          <span class="text-2xl">🐼</span>
+          <img src="/icon-512.png" alt="CODMPanda" class="w-8 h-8 rounded-lg" />
           <div>
             <div class="text-base font-black leading-none">
               <span class="text-primary">CODM</span><span class="text-white">Panda</span>
@@ -443,6 +443,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script type="module" src="/app.js"></script>
 </body>
 </html>
