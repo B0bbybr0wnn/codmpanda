@@ -6880,41 +6880,39 @@ async function performFriendSearch(query) {
   results.innerHTML = '<div class="text-center py-6"><div class="spinner mx-auto"></div></div>';
 
   try {
-    // Fetch users and filter client-side (Firestore doesn't support LIKE queries)
-    const snap = await getDocs(query(collection(db, 'users'), limit(200)));
-    const q = query.toLowerCase();
-
-    const matches = [];
+    const allUsers = [];
+    const snap = await getDocs(collection(db, 'users'));
     snap.forEach(d => {
-      const u = d.data();
       if (d.id === State.user.uid) return;
-      if ((u.ign || '').toLowerCase().includes(q)) {
-        matches.push({ id: d.id, ...u });
-      }
+      allUsers.push({ id: d.id, ...d.data() });
     });
+
+    const q = query.toLowerCase();
+    const matches = allUsers.filter(u =>
+      (u.ign || '').toLowerCase().includes(q)
+    );
 
     if (matches.length === 0) {
       results.innerHTML = '<div class="text-center py-8 text-xs text-gray-500">No players found</div>';
       return;
     }
 
-    // Check relationship status
     const mySnap = await getDoc(doc(db, 'users', State.user.uid));
     const myData = mySnap.exists() ? mySnap.data() : {};
     const myFriends = myData.friends || [];
     const mySent = myData.friendRequestsSent || [];
     const myIncoming = myData.friendRequests || [];
 
-    results.innerHTML = matches.slice(0, 20).map(u => {
+    results.innerHTML = matches.slice(0, 30).map(u => {
       let actionHTML = '';
       if (myFriends.includes(u.id)) {
         actionHTML = '<span class="text-[10px] px-2 py-1 rounded-full bg-green-500/20 text-green-400 font-bold">✓ Friend</span>';
       } else if (mySent.includes(u.id)) {
         actionHTML = '<span class="text-[10px] px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-400 font-bold">Pending</span>';
       } else if (myIncoming.includes(u.id)) {
-        actionHTML = '<button class="send-req-btn text-[10px] px-2 py-1 rounded-full bg-primary text-white font-bold" data-uid="' + u.id + '" data-ign="' + esc(u.ign) + '">Accept</button>';
+        actionHTML = `<button class="send-req-btn text-[10px] px-2 py-1 rounded-full bg-primary text-white font-bold" data-uid="${u.id}" data-ign="${esc(u.ign)}">Accept</button>`;
       } else {
-        actionHTML = '<button class="send-req-btn text-[10px] px-2.5 py-1.5 rounded-lg bg-primary text-white font-bold flex items-center gap-1" data-uid="' + u.id + '" data-ign="' + esc(u.ign) + '">+ Add</button>';
+        actionHTML = `<button class="send-req-btn text-[10px] px-2.5 py-1.5 rounded-lg bg-primary text-white font-bold" data-uid="${u.id}" data-ign="${esc(u.ign)}">+ Add</button>`;
       }
 
       return `
@@ -6938,7 +6936,7 @@ async function performFriendSearch(query) {
     if (window.lucide) window.lucide.createIcons();
   } catch (e) {
     console.error('Search error:', e);
-    results.innerHTML = '<div class="text-center py-8 text-red-400 text-xs">Search failed</div>';
+    results.innerHTML = '<div class="text-center py-8 text-red-400 text-xs">' + esc(e.message) + '</div>';
   }
 }
 
