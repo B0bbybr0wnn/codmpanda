@@ -29,13 +29,9 @@ service cloud.firestore {
           request.resource.data.isPro == resource.data.isPro
           && request.resource.data.proExpiry == resource.data.proExpiry
         )) ||
-        // Rating fields updated by system
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAvg', 'ratingCount', 'ratingTags']) ||
-        // Friend-related updates from other users
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends', 'friendRequests', 'friendRequestsSent']) ||
-        // Party fields
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentParty']) ||
-        // Tournament wins
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tournamentWins'])
       );
       allow delete: if isOwner(uid) || isAdmin();
@@ -208,6 +204,16 @@ service cloud.firestore {
       allow create: if isSignedIn();
       allow update: if isSignedIn() && request.auth.uid == resource.data.userId;
       allow delete: if isSignedIn() && request.auth.uid == resource.data.userId;
+    }
+
+    // ---------- COMMENTS ----------
+    match /comments/{commentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() <= 300;
+      allow update, delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
     // ---------- DEFAULT DENY ----------
