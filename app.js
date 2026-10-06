@@ -13256,14 +13256,16 @@ console.log('%c32/32 chunks • Full featured • Ready to launch', 'color:#FFD7
 
 /* END OF CHUNK 32 — APP COMPLETE */
 // ============================================
-// Chunk 34: Custom Dropdowns + Performance + Back Button
+// Chunk 34: Dropdowns + Performance + Back Button (CLEAN)
 // ============================================
 
 // ============================================
-// PART 1: GLOBAL DROPDOWN INTERCEPTOR
+// PART 1: INLINE DROPDOWN SYSTEM
 // ============================================
 
-function openCustomDropdown(selectEl) {
+window.__openDropdownPicker = function(selectEl) {
+  document.querySelectorAll('.cdp-picker').forEach(el => el.remove());
+
   const options = Array.from(selectEl.options);
   const currentValue = selectEl.value;
 
@@ -13271,68 +13273,150 @@ function openCustomDropdown(selectEl) {
   let currentGroup = null;
 
   options.forEach(opt => {
-    if (opt.parentElement && opt.parentElement.tagName === 'OPTGROUP') {
-      const groupLabel = opt.parentElement.label;
-      let group = groups.find(g => g.label === groupLabel);
-      if (!group) {
-        group = { label: groupLabel, options: [] };
-        groups.push(group);
-      }
-      group.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
+    const inGroup = opt.parentElement && opt.parentElement.tagName === 'OPTGROUP';
+    if (inGroup) {
+      const label = opt.parentElement.label;
+      let g = groups.find(x => x.label === label);
+      if (!g) { g = { label, options: [] }; groups.push(g); }
+      g.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
     } else {
-      if (!currentGroup) {
-        currentGroup = { label: null, options: [] };
-        groups.push(currentGroup);
-      }
+      if (!currentGroup) { currentGroup = { label: null, options: [] }; groups.push(currentGroup); }
       currentGroup.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
     }
   });
 
-  const title = selectEl.getAttribute('data-dropdown-title') || selectEl.previousElementSibling?.textContent?.trim() || 'Select';
+  const title = selectEl.getAttribute('data-dropdown-title') || 'Select';
 
-  openSheet(`
-    <div class="space-y-3 max-h-[70vh] overflow-y-auto">
-      ${groups.map(g => `
-        ${g.label ? `<div class="text-[10px] font-bold text-gray-500 uppercase px-1 pt-2">${esc(g.label)}</div>` : ''}
-        <div class="space-y-1">
-          ${g.options.map(o => `
-            <button class="dropdown-opt btn-press w-full text-left px-4 py-3 rounded-xl ${o.selected ? 'bg-primary/15 border border-primary' : 'bg-card border border-border'} font-semibold text-sm flex items-center justify-between" data-value="${esc(o.value)}">
-              <span class="${o.selected ? 'text-primary' : 'text-white'}">${esc(o.label)}</span>
-              ${o.selected ? '<i data-lucide="check" class="w-4 h-4 text-primary"></i>' : ''}
-            </button>
-          `).join('')}
+  const el = document.createElement('div');
+  el.className = 'cdp-picker';
+  el.style.cssText = `
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 9999;
+    display: flex;
+    align-items: flex-end;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  `;
+
+  el.innerHTML = `
+    <div style="
+      width: 100%;
+      max-height: 78vh;
+      background: #0a0a0a;
+      border-top-left-radius: 24px;
+      border-top-right-radius: 24px;
+      border-top: 1px solid #222;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: cdpSlide 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    ">
+      <div style="padding: 12px 20px 16px; border-bottom: 1px solid #222; flex-shrink: 0;">
+        <div style="width: 40px; height: 4px; background: #333; border-radius: 2px; margin: 0 auto 12px;"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="font-size: 17px; font-weight: 800; color: #fff; font-family: Inter, sans-serif;">${esc(title)}</div>
+          <button class="cdp-close" style="
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #888;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: Inter, sans-serif;
+          ">✕</button>
         </div>
-      `).join('')}
+      </div>
+      <div style="flex: 1; overflow-y: auto; padding: 12px 16px 24px;">
+        ${groups.map(g => `
+          ${g.label ? `<div style="font-size: 10px; font-weight: 700; color: #666; text-transform: uppercase; letter-spacing: 0.5px; padding: 12px 8px 6px; font-family: Inter, sans-serif;">${esc(g.label)}</div>` : ''}
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            ${g.options.map(o => `
+              <button class="cdp-opt" data-value="${esc(o.value)}" style="
+                text-align: left;
+                padding: 14px 16px;
+                border-radius: 14px;
+                background: ${o.selected ? 'rgba(255, 107, 0, 0.12)' : 'transparent'};
+                border: 1px solid ${o.selected ? '#FF6B00' : 'transparent'};
+                color: ${o.selected ? '#FF6B00' : '#e0e0e0'};
+                font-weight: ${o.selected ? '700' : '500'};
+                font-size: 15px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                cursor: pointer;
+                font-family: Inter, sans-serif;
+              ">
+                <span>${esc(o.label)}</span>
+                ${o.selected ? '<span style="color: #FF6B00; font-weight: 900; font-size: 16px;">✓</span>' : ''}
+              </button>
+            `).join('')}
+          </div>
+        `).join('')}
+      </div>
     </div>
-  `, title);
+  `;
 
-  document.querySelectorAll('.dropdown-opt').forEach(btn => {
+  document.body.appendChild(el);
+
+  const closePicker = () => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.15s ease-out';
+    setTimeout(() => el.remove(), 150);
+  };
+
+  el.querySelector('.cdp-close').onclick = closePicker;
+  el.onclick = (e) => { if (e.target === el) closePicker(); };
+
+  el.querySelectorAll('.cdp-opt').forEach(btn => {
     btn.onclick = () => {
       selectEl.value = btn.dataset.value;
       selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-      closeSheet();
-      toast(`✓ ${btn.textContent.trim()}`, 'success', 1200);
+      selectEl.style.borderColor = '#FF6B00';
+      setTimeout(() => { selectEl.style.borderColor = ''; }, 500);
+      closePicker();
+      toast(`✓ ${btn.querySelector('span').textContent}`, 'success', 1200);
     };
   });
+};
 
-  if (window.lucide) window.lucide.createIcons();
+if (!window.__cdpInterceptorAdded) {
+  window.__cdpInterceptorAdded = true;
+
+  document.addEventListener('click', function(e) {
+    const select = e.target.closest('select');
+    if (!select) return;
+    if (select.id === 'set-theme') return;
+    e.preventDefault();
+    e.stopPropagation();
+    window.__openDropdownPicker(select);
+  }, true);
+
+  document.addEventListener('focus', function(e) {
+    if (e.target.tagName === 'SELECT' && e.target.id !== 'set-theme') {
+      e.target.blur();
+      window.__openDropdownPicker(e.target);
+    }
+  }, true);
 }
 
-document.addEventListener('click', (e) => {
-  const select = e.target.closest('select');
-  if (!select) return;
-  if (select.id === 'set-theme') return;
-  e.preventDefault();
-  e.stopPropagation();
-  openCustomDropdown(select);
-}, true);
-
-document.addEventListener('focus', (e) => {
-  if (e.target.tagName === 'SELECT' && e.target.id !== 'set-theme') {
-    e.target.blur();
-    openCustomDropdown(e.target);
-  }
-}, true);
+// Animations for the picker
+if (!document.getElementById('cdp-animations')) {
+  const style = document.createElement('style');
+  style.id = 'cdp-animations';
+  style.textContent = `
+    @keyframes cdpSlide {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 // ============================================
 // PART 2: PROFILE CARD INSTANT FEEDBACK
@@ -13384,40 +13468,38 @@ enableNotifications = async function() {
 // PART 4: SELECT STYLING
 // ============================================
 
-const selectEnhanceStyle = document.createElement('style');
-selectEnhanceStyle.textContent = `
-  select {
-    background: #181818 !important;
-    border: 1px solid #222 !important;
-    color: #fff !important;
-    border-radius: 12px !important;
-    padding: 12px 14px !important;
-    font-size: 15px !important;
-    width: 100% !important;
-    appearance: none !important;
-    -webkit-appearance: none !important;
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FF6B00' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") !important;
-    background-repeat: no-repeat !important;
-    background-position: right 12px center !important;
-    background-size: 18px !important;
-    padding-right: 42px !important;
-    cursor: pointer !important;
-    transition: border-color 0.2s, background-color 0.2s !important;
-  }
-  select:hover, select:active {
-    border-color: #FF6B00 !important;
-    background-color: #1f1f1f !important;
-  }
-  select:focus {
-    outline: none !important;
-    box-shadow: 0 0 0 3px rgba(255, 107, 0, 0.15) !important;
-  }
-  select option {
-    background: #111 !important;
-    color: #fff !important;
-  }
-`;
-document.head.appendChild(selectEnhanceStyle);
+if (!document.getElementById('select-enhance-style')) {
+  const style = document.createElement('style');
+  style.id = 'select-enhance-style';
+  style.textContent = `
+    select {
+      background: #181818 !important;
+      border: 1px solid #222 !important;
+      color: #fff !important;
+      border-radius: 12px !important;
+      padding: 12px 14px !important;
+      font-size: 15px !important;
+      width: 100% !important;
+      appearance: none !important;
+      -webkit-appearance: none !important;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FF6B00' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") !important;
+      background-repeat: no-repeat !important;
+      background-position: right 12px center !important;
+      background-size: 18px !important;
+      padding-right: 42px !important;
+      cursor: pointer !important;
+      transition: border-color 0.2s, background-color 0.2s !important;
+    }
+    select:hover, select:active {
+      border-color: #FF6B00 !important;
+    }
+    select:focus {
+      outline: none !important;
+      box-shadow: 0 0 0 3px rgba(255, 107, 0, 0.15) !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 // ============================================
 // PART 5: PROFILE CARD CACHE
@@ -13466,388 +13548,49 @@ updateNotifBadge = function() {
 };
 
 // ============================================
-// PART 7: SMART BACK BUTTON HANDLER
+// PART 7: SMART BACK BUTTON
 // ============================================
 
-// Track navigation state
-const NavState = {
-  history: ['play'], // Stack of screens visited
-  isInSheet: false
-};
+if (!window.__backBtnHandlerAdded) {
+  window.__backBtnHandlerAdded = true;
 
-// Override openSheet to push history
-const _origOpenSheet = openSheet;
-openSheet = function(contentHTML, title) {
-  // Check if a sheet is ALREADY open (nested sheets like dropdown-on-top-of-form)
-  const alreadyOpen = document.getElementById('sheet-container')?.classList.contains('hidden') === false;
+  // Push a base state so we have something to pop
+  try {
+    if (!history.state || !history.state.__codm) {
+      history.pushState({ __codm: true }, '');
+    }
+  } catch (e) { /* silent */ }
 
-  _origOpenSheet(contentHTML, title);
-  NavState.isInSheet = true;
+  window.addEventListener('popstate', (e) => {
+    // If a sheet is open — close it and re-push state
+    const sheet = document.getElementById('sheet-container');
+    if (sheet && !sheet.classList.contains('hidden')) {
+      closeSheet();
+      try { history.pushState({ __codm: true }, ''); } catch (err) { /* silent */ }
+      return;
+    }
 
-  // Only push a new history state if this is a FRESH sheet (not nested)
-  if (!alreadyOpen) {
-    try {
-      history.pushState({ sheet: true }, '');
-    } catch (e) { /* silent */ }
-  }
-};
+    // If a modal is open — close it
+    const modal = document.getElementById('modal-container');
+    if (modal && !modal.classList.contains('hidden')) {
+      closeModal();
+      try { history.pushState({ __codm: true }, ''); } catch (err) { /* silent */ }
+      return;
+    }
 
-// Override closeSheet — just close, don't touch history
-// The history entry stays until the user actually presses back,
-// which the popstate handler cleans up.
-const _origCloseSheet = closeSheet;
-closeSheet = function() {
-  _origCloseSheet();
-  NavState.isInSheet = false;
-};
+    // If on a non-PLAY tab — go to PLAY
+    if (State.currentTab && State.currentTab !== 'play') {
+      switchTab('play');
+      try { history.pushState({ __codm: true }, ''); } catch (err) { /* silent */ }
+      return;
+    }
 
-// Same for modal
-const _origCloseModal = closeModal;
-closeModal = function() {
-  _origCloseModal();
-};
+    // Otherwise let it exit
+  });
+}
 
-// Push initial state
-try {
-  history.pushState({ app: true }, '');
-} catch (e) { /* silent */ }
-
-// Back button handler
-window.addEventListener('popstate', (e) => {
-  // 1. Sheet open → close it and re-push state
-  const sheetContainer = document.getElementById('sheet-container');
-  if (sheetContainer && !sheetContainer.classList.contains('hidden')) {
-    _origCloseSheet();
-    NavState.isInSheet = false;
-    try { history.pushState({ app: true }, ''); } catch (err) { /* silent */ }
-    return;
-  }
-
-  // 2. Modal open → close it and re-push state
-  const modalContainer = document.getElementById('modal-container');
-  if (modalContainer && !modalContainer.classList.contains('hidden')) {
-    _origCloseModal();
-    try { history.pushState({ app: true }, ''); } catch (err) { /* silent */ }
-    return;
-  }
-
-  // 3. On a non-primary tab → go to PLAY
-  if (State.currentTab !== 'play') {
-    switchTab('play');
-    try { history.pushState({ app: true }, ''); } catch (err) { /* silent */ }
-    return;
-  }
-
-  // 4. Nothing open, on PLAY → let it exit naturally
-});
-// Re-push state after tab changes to keep history clean
-const _origSwitchTabBackBtn = switchTab;
-switchTab = function(tab) {
-  _origSwitchTabBackBtn(tab);
-  // Ensure we always have at least one state in history
-  if (!history.state || !history.state.app) {
-    try { history.pushState({ app: true }, ''); } catch (e) { /* silent */ }
-  }
-};
-
-window.openCustomDropdown = openCustomDropdown;
 window.primeProfileCardCache = primeProfileCardCache;
-window.NavState = NavState;
+
+console.log('✅ Chunk 34: Clean version loaded');
 
 /* END OF CHUNK 34 */
-// ============================================
-// Chunk 35: Sheet Stack Fix
-// ============================================
-
-// Maintain a stack of sheet contents so nested sheets can restore parent
-window.__sheetStack = [];
-
-const _origOpenSheetStack = openSheet;
-openSheet = function(contentHTML, title) {
-  const container = document.getElementById('sheet-container');
-  const isOpen = container && !container.classList.contains('hidden');
-
-  // If a sheet is already open, push its current state onto the stack
-  if (isOpen && container.innerHTML) {
-    window.__sheetStack.push({
-      html: container.innerHTML,
-      title: title
-    });
-  }
-
-  // Call the ORIGINAL openSheet (before history hooks)
-  const _realOpen = window.__origOpenSheetFn || _origOpenSheetStack;
-  _realOpen(contentHTML, title);
-};
-
-// Real closeSheet — restores parent from stack if there's one
-const _origCloseSheetStack = closeSheet;
-closeSheet = function() {
-  const container = document.getElementById('sheet-container');
-
-  // If stack has a parent sheet, restore it
-  if (window.__sheetStack.length > 0) {
-    const parent = window.__sheetStack.pop();
-
-    // Restore parent HTML
-    if (container && parent.html) {
-      container.classList.remove('hidden');
-      container.innerHTML = parent.html;
-
-      // Re-wire the parent sheet's buttons if they had handlers
-      // (this is handled by re-running whatever opened it, but we can't know that)
-      // At minimum, unlock the scroll and re-render icons
-      if (window.lucide) window.lucide.createIcons();
-    }
-    return;
-  }
-
-  // No parent — actually close
-  _origCloseSheetStack();
-};
-
-// ============================================
-// FIX: TRACK ORIGINALLY OPENED SHEETS
-// ============================================
-// Since our override loses the "re-wire" step, we need a different approach:
-// Instead of storing HTML strings, we store a RE-OPEN function.
-
-window.__sheetReopen = null;
-
-// Wrap openSheet to remember how to reopen the current sheet
-const _origOpenSheetV2 = openSheet;
-openSheet = function(contentHTML, title) {
-  const container = document.getElementById('sheet-container');
-  const isOpen = container && !container.classList.contains('hidden');
-
-  if (isOpen) {
-    // Save current sheet's re-open params
-    window.__sheetReopen = {
-      html: container.innerHTML,
-      title: document.querySelector('#sheet-container h3')?.textContent || ''
-    };
-  }
-
-  _origOpenSheetV2(contentHTML, title);
-};
-
-// Wrap closeSheet to restore parent from saved HTML
-const _origCloseSheetV2 = closeSheet;
-closeSheet = function() {
-  const container = document.getElementById('sheet-container');
-
-  if (window.__sheetReopen && window.__sheetReopen.html) {
-    const saved = window.__sheetReopen;
-    window.__sheetReopen = null;
-
-    // Restore the parent sheet
-    if (container) {
-      container.classList.remove('hidden');
-      container.innerHTML = saved.html;
-      if (window.lucide) window.lucide.createIcons();
-    }
-    return;
-  }
-
-  _origCloseSheetV2();
-};
-
-// ============================================
-// FIX: DROPDOWN OPTIONS HANDLER
-// ============================================
-// Override the dropdown picker to preserve parent sheet
-
-const _origOpenCustomDropdown = openCustomDropdown;
-openCustomDropdown = function(selectEl) {
-  const options = Array.from(selectEl.options);
-  const currentValue = selectEl.value;
-
-  const groups = [];
-  let currentGroup = null;
-
-  options.forEach(opt => {
-    if (opt.parentElement && opt.parentElement.tagName === 'OPTGROUP') {
-      const groupLabel = opt.parentElement.label;
-      let group = groups.find(g => g.label === groupLabel);
-      if (!group) {
-        group = { label: groupLabel, options: [] };
-        groups.push(group);
-      }
-      group.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
-    } else {
-      if (!currentGroup) {
-        currentGroup = { label: null, options: [] };
-        groups.push(currentGroup);
-      }
-      currentGroup.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
-    }
-  });
-
-  const title = selectEl.getAttribute('data-dropdown-title') || selectEl.previousElementSibling?.textContent?.trim() || 'Select';
-
-  // Save the parent sheet HTML BEFORE opening dropdown
-  const container = document.getElementById('sheet-container');
-  const parentHTML = container ? container.innerHTML : '';
-  const parentTitle = document.querySelector('#sheet-container h3')?.textContent || '';
-
-  // Show dropdown
-  const _realOpen = window.__origOpenSheetFn || openSheet;
-  _realOpen(`
-    <div class="space-y-3 max-h-[70vh] overflow-y-auto">
-      ${groups.map(g => `
-        ${g.label ? `<div class="text-[10px] font-bold text-gray-500 uppercase px-1 pt-2">${esc(g.label)}</div>` : ''}
-        <div class="space-y-1">
-          ${g.options.map(o => `
-            <button class="dropdown-opt btn-press w-full text-left px-4 py-3 rounded-xl ${o.selected ? 'bg-primary/15 border border-primary' : 'bg-card border border-border'} font-semibold text-sm flex items-center justify-between" data-value="${esc(o.value)}">
-              <span class="${o.selected ? 'text-primary' : 'text-white'}">${esc(o.label)}</span>
-              ${o.selected ? '<i data-lucide="check" class="w-4 h-4 text-primary"></i>' : ''}
-            </button>
-          `).join('')}
-        </div>
-      `).join('')}
-    </div>
-  `, title);
-
-  // Override option clicks
-  document.querySelectorAll('.dropdown-opt').forEach(btn => {
-    btn.onclick = () => {
-      selectEl.value = btn.dataset.value;
-      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-
-      // RESTORE PARENT SHEET instead of closing
-      const c = document.getElementById('sheet-container');
-      if (c && parentHTML) {
-        c.classList.remove('hidden');
-        c.innerHTML = parentHTML;
-
-        // Re-wire all buttons in the restored sheet by re-running their onclick handlers
-        // This is tricky — but the parent sheet was rendered by another openXSheet() function
-        // So we need to re-run that function. Since we can't, we let the user interact fresh.
-
-        if (window.lucide) window.lucide.createIcons();
-
-        // Notify user of selection
-        toast(`✓ ${btn.textContent.trim()}`, 'success', 1200);
-      } else {
-        closeSheet();
-        toast(`✓ ${btn.textContent.trim()}`, 'success', 1200);
-      }
-    };
-  });
-
-  if (window.lucide) window.lucide.createIcons();
-};
-
-console.log('✅ Chunk 35: Sheet stack protection loaded');
-
-/* END OF CHUNK 35 */
-// ============================================
-// Chunk 36: Inline Dropdown (No Sheets)
-// ============================================
-
-openCustomDropdown = function(selectEl) {
-  const options = Array.from(selectEl.options);
-  const currentValue = selectEl.value;
-
-  document.querySelectorAll('.inline-dropdown-picker').forEach(el => el.remove());
-
-  const groups = [];
-  let currentGroup = null;
-  options.forEach(opt => {
-    if (opt.parentElement && opt.parentElement.tagName === 'OPTGROUP') {
-      const label = opt.parentElement.label;
-      let g = groups.find(x => x.label === label);
-      if (!g) { g = { label, options: [] }; groups.push(g); }
-      g.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
-    } else {
-      if (!currentGroup) { currentGroup = { label: null, options: [] }; groups.push(currentGroup); }
-      currentGroup.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
-    }
-  });
-
-  const pickerHTML = `
-    <div class="inline-dropdown-picker" style="
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.75);
-      z-index: 300;
-      display: flex;
-      align-items: flex-end;
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-    ">
-      <div style="
-        width: 100%;
-        max-height: 75vh;
-        background: #0a0a0a;
-        border-top-left-radius: 24px;
-        border-top-right-radius: 24px;
-        border-top: 1px solid #222;
-        overflow-y: auto;
-      ">
-        <div style="
-          padding: 12px 20px;
-          border-bottom: 1px solid #222;
-          position: sticky; top: 0;
-          background: #0a0a0a;
-          z-index: 10;
-        ">
-          <div style="width: 40px; height: 4px; background: #333; border-radius: 2px; margin: 0 auto 12px;"></div>
-          <div style="font-size: 16px; font-weight: 800; color: #fff;">${esc(selectEl.getAttribute('data-dropdown-title') || 'Select')}</div>
-        </div>
-        <div style="padding: 16px 20px 24px;">
-          ${groups.map(g => `
-            ${g.label ? `<div style="font-size: 10px; font-weight: 700; color: #666; text-transform: uppercase; padding: 6px 4px;">${esc(g.label)}</div>` : ''}
-            <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;">
-              ${g.options.map(o => `
-                <button class="inline-dropdown-opt" data-value="${esc(o.value)}" style="
-                  text-align: left;
-                  padding: 12px 16px;
-                  border-radius: 12px;
-                  background: ${o.selected ? 'rgba(255, 107, 0, 0.15)' : '#111'};
-                  border: 1px solid ${o.selected ? '#FF6B00' : '#222'};
-                  color: ${o.selected ? '#FF6B00' : '#fff'};
-                  font-weight: 600;
-                  font-size: 14px;
-                  display: flex;
-                  justify-content: space-between;
-                  align-items: center;
-                  cursor: pointer;
-                  font-family: Inter, sans-serif;
-                ">
-                  <span>${esc(o.label)}</span>
-                  ${o.selected ? '<span style="color: #FF6B00; font-weight: 900;">✓</span>' : ''}
-                </button>
-              `).join('')}
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    </div>
-  `;
-
-  const wrapper = document.createElement('div');
-  wrapper.innerHTML = pickerHTML;
-  const pickerEl = wrapper.firstElementChild;
-  document.body.appendChild(pickerEl);
-
-  pickerEl.onclick = (e) => {
-    if (e.target === pickerEl) {
-      pickerEl.remove();
-    }
-  };
-
-  pickerEl.querySelectorAll('.inline-dropdown-opt').forEach(btn => {
-    btn.onclick = () => {
-      selectEl.value = btn.dataset.value;
-      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-      selectEl.setAttribute('data-selected', btn.dataset.value);
-      pickerEl.remove();
-      toast(`✓ ${btn.textContent.replace('✓', '').trim()}`, 'success', 1200);
-    };
-  });
-};
-
-console.log('✅ Chunk 36: Inline dropdown system loaded');
-
-/* END OF CHUNK 36 */
