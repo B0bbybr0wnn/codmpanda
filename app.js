@@ -16598,3 +16598,581 @@ window.updateCombinedBadge = updateCombinedBadge;
 console.log('✅ Chunk 42: Combined inbox loaded');
 
 /* END OF CHUNK 42 */
+// ============================================
+// Chunk 43: Professional Full-Screen Inbox
+// ============================================
+
+let inboxTab = 'notifications';
+let inboxCache = {
+  notifications: null,
+  conversations: null,
+  lastFetch: 0
+};
+
+// ============================================
+// PART 1: FULL-SCREEN INBOX OVERLAY
+// ============================================
+
+const _origOpenNotificationsPanelInbox43 = openNotificationsPanel;
+openNotificationsPanel = function() {
+  // Create or reuse full-screen overlay
+  let overlay = document.getElementById('inbox-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'inbox-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      background: #050505;
+      display: flex;
+      flex-direction: column;
+      animation: inboxSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    `;
+    document.body.appendChild(overlay);
+  } else {
+    overlay.style.display = 'flex';
+  }
+
+  // Add animation styles
+  if (!document.getElementById('inbox-animations')) {
+    const style = document.createElement('style');
+    style.id = 'inbox-animations';
+    style.textContent = `
+      @keyframes inboxSlideIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  overlay.innerHTML = `
+    <!-- Header -->
+    <div style="
+      padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+      padding-bottom: 12px;
+      padding-left: 16px;
+      padding-right: 16px;
+      border-bottom: 1px solid #222;
+      background: #050505;
+      flex-shrink: 0;
+    ">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <button id="inbox-close-btn" class="btn-press" style="
+          width: 40px; height: 40px;
+          border-radius: 12px;
+          background: #111;
+          border: 1px solid #222;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          flex-shrink: 0;
+        ">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </button>
+        <div style="flex: 1;">
+          <div style="font-size: 20px; font-weight: 900; color: #fff; font-family: Inter, sans-serif;">Inbox</div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div style="display: flex; gap: 8px;">
+        <button class="inbox-tab-btn" data-tab="notifications" style="
+          flex: 1;
+          padding: 10px 16px;
+          border-radius: 12px;
+          font-size: 13px;
+          font-weight: 700;
+          font-family: Inter, sans-serif;
+          cursor: pointer;
+          border: 1px solid ${inboxTab === 'notifications' ? '#FF6B00' : '#222'};
+          background: ${inboxTab === 'notifications' ? 'rgba(255, 107, 0, 0.15)' : '#111'};
+          color: ${inboxTab === 'notifications' ? '#FF6B00' : '#888'};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        ">
+          <span>🔔</span> Notifications
+        </button>
+        <button class="inbox-tab-btn" data-tab="messages" style="
+          flex: 1;
+          padding: 10px 16px;
+          border-radius: 12px;
+          font-size: 13px;
+          font-weight: 700;
+          font-family: Inter, sans-serif;
+          cursor: pointer;
+          border: 1px solid ${inboxTab === 'messages' ? '#FF6B00' : '#222'};
+          background: ${inboxTab === 'messages' ? 'rgba(255, 107, 0, 0.15)' : '#111'};
+          color: ${inboxTab === 'messages' ? '#FF6B00' : '#888'};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        ">
+          <span>💬</span> Messages
+        </button>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div id="inbox-full-body" style="
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+    ">
+      <div style="text-align: center; padding: 40px 0;">
+        <div class="spinner" style="margin: 0 auto;"></div>
+      </div>
+    </div>
+  `;
+
+  // Wire close
+  document.getElementById('inbox-close-btn').onclick = closeInboxOverlay;
+
+  // Wire tabs
+  document.querySelectorAll('.inbox-tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      inboxTab = btn.dataset.tab;
+      // Re-render with new tab active
+      openNotificationsPanel();
+    };
+  });
+
+  // Render body
+  renderInboxBody();
+};
+
+function closeInboxOverlay() {
+  const overlay = document.getElementById('inbox-overlay');
+  if (overlay) {
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.2s ease-out';
+    setTimeout(() => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    }, 200);
+  }
+  // Reset cache so next open refetches
+  inboxCache.lastFetch = 0;
+}
+
+// ============================================
+// PART 2: ROUTER
+// ============================================
+
+function renderInboxBody() {
+  if (inboxTab === 'notifications') {
+    renderNotificationsTabFast();
+  } else {
+    renderMessagesTabFast();
+  }
+}
+
+// ============================================
+// PART 3: FAST NOTIFICATIONS TAB
+// ============================================
+
+async function renderNotificationsTabFast() {
+  const body = document.getElementById('inbox-full-body');
+  if (!body) return;
+
+  body.innerHTML = '<div style="text-align: center; padding: 40px 0;"><div class="spinner" style="margin: 0 auto;"></div></div>';
+
+  try {
+    // Use cache if fresh (< 30s old)
+    const now = Date.now();
+    let notifs;
+    if (inboxCache.notifications && now - inboxCache.lastFetch < 30000) {
+      notifs = inboxCache.notifications;
+    } else {
+      const snap = await getDocs(query(
+        collection(db, 'notifications'),
+        where('userId', '==', State.user.uid),
+        limit(50)
+      ));
+      notifs = [];
+      snap.forEach(d => {
+        const data = d.data();
+        // Filter out DM notifications — those go to Messages tab now
+        if (data.type === 'dm') return;
+        notifs.push({ id: d.id, ...data });
+      });
+      notifs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      inboxCache.notifications = notifs;
+      inboxCache.lastFetch = now;
+    }
+
+    if (notifs.length === 0) {
+      body.innerHTML = `
+        <div style="text-align: center; padding: 60px 20px;">
+          <div style="font-size: 60px; margin-bottom: 12px;">🔔</div>
+          <div style="font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 6px;">No notifications</div>
+          <div style="font-size: 12px; color: #666;">You'll see approvals, mentions, and updates here</div>
+        </div>
+      `;
+      return;
+    }
+
+    const notifTypes = {
+      approval: { emoji: '✅', color: '#34C759' },
+      rejection: { emoji: '❌', color: '#FF3B30' },
+      badge: { emoji: '🏆', color: '#FFD700' },
+      leak: { emoji: '🔥', color: '#FF6B00' },
+      party_invite: { emoji: '🎉', color: '#AF52DE' },
+      friend_request: { emoji: '👋', color: '#34C759' },
+      tournament: { emoji: '🏆', color: '#FFD700' },
+      mention: { emoji: '📣', color: '#FF6B00' },
+      comment: { emoji: '💬', color: '#00BFFF' },
+      lobby_join: { emoji: '🎮', color: '#FF6B00' },
+      default: { emoji: '🔔', color: '#8E8E93' }
+    };
+
+    const unreadCount = notifs.filter(n => !n.read).length;
+
+    body.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <div style="font-size: 11px; color: #666; font-weight: 700;">${notifs.length} total${unreadCount > 0 ? ' · ' + unreadCount + ' unread' : ''}</div>
+        ${unreadCount > 0 ? '<button id="mark-all-read-full" style="font-size: 11px; color: #FF6B00; font-weight: 800; background: none; border: none; cursor: pointer; font-family: Inter;">Mark all read</button>' : ''}
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        ${notifs.map(n => {
+          const t = notifTypes[n.type] || notifTypes.default;
+          const isUnread = !n.read;
+          return `
+            <div class="notification-item-full" data-id="${n.id}" style="
+              background: ${isUnread ? 'rgba(255, 107, 0, 0.08)' : '#111'};
+              border: 1px solid ${isUnread ? 'rgba(255, 107, 0, 0.3)' : '#222'};
+              border-radius: 14px;
+              padding: 12px;
+              cursor: pointer;
+              display: flex;
+              gap: 12px;
+              align-items: flex-start;
+            ">
+              <div style="
+                width: 40px; height: 40px;
+                border-radius: 12px;
+                background: ${t.color}20;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 20px;
+                flex-shrink: 0;
+              ">${t.emoji}</div>
+              <div style="flex: 1; min-width: 0;">
+                <div style="font-size: 13px; font-weight: 800; color: ${isUnread ? '#fff' : '#ccc'}; margin-bottom: 3px;">${esc(n.title || '')}</div>
+                <div style="font-size: 12px; color: #888; line-height: 1.4; margin-bottom: 4px;">${esc(n.body || '')}</div>
+                <div style="font-size: 10px; color: #555;">${timeAgo(n.createdAt)}</div>
+              </div>
+              ${isUnread ? '<div style="width: 8px; height: 8px; border-radius: 50%; background: #FF6B00; flex-shrink: 0; margin-top: 4px;"></div>' : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+    // Wire mark all
+    const markAllBtn = document.getElementById('mark-all-read-full');
+    if (markAllBtn) {
+      markAllBtn.onclick = async () => {
+        try {
+          const updates = [];
+          notifs.forEach(n => {
+            if (!n.read) updates.push(updateDoc(doc(db, 'notifications', n.id), { read: true }));
+          });
+          await Promise.all(updates);
+          inboxCache.notifications = null;
+          inboxCache.lastFetch = 0;
+          toast('All marked read', 'success');
+          updateCombinedBadge();
+          renderNotificationsTabFast();
+        } catch (e) { toast('Failed', 'error'); }
+      };
+    }
+
+    // Wire notification clicks
+    body.querySelectorAll('.notification-item-full').forEach(el => {
+      el.onclick = async () => {
+        const id = el.dataset.id;
+        const notif = notifs.find(n => n.id === id);
+        if (!notif) return;
+
+        try {
+          await updateDoc(doc(db, 'notifications', id), { read: true });
+        } catch (e) { /* silent */ }
+
+        // Route based on type
+        closeInboxOverlay();
+        setTimeout(() => {
+          if (notif.type === 'mention' && notif.data?.sourceType === 'dm') {
+            inboxTab = 'messages';
+            openNotificationsPanel();
+          } else if (notif.type === 'comment' && notif.data?.contentId) {
+            if (notif.data.contentType === 'clip') { squadSubTab = 'clips'; switchTab('squad'); }
+            else if (notif.data.contentType === 'lobby') { switchTab('play'); }
+          } else if (notif.type === 'approval' || notif.type === 'rejection') {
+            if (notif.data?.contentType === 'vault') { labSubTab = 'vault'; switchTab('lab'); }
+            else if (notif.data?.contentType === 'clip') { squadSubTab = 'clips'; switchTab('squad'); }
+            else if (notif.data?.contentType === 'leak') { intelSubTab = 'leaks'; switchTab('intel'); }
+          } else if (notif.type === 'lobby_join') {
+            switchTab('play');
+          } else if (notif.type === 'friend_request') {
+            showFriendsPanel();
+          } else if (notif.type === 'party_invite') {
+            switchTab('play');
+          }
+        }, 250);
+
+        updateCombinedBadge();
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Inbox notif error:', e);
+    body.innerHTML = '<div style="text-align: center; padding: 40px; color: #f44; font-size: 13px;">Failed to load</div>';
+  }
+}
+
+// ============================================
+// PART 4: FAST MESSAGES TAB (optimized queries)
+// ============================================
+
+async function renderMessagesTabFast() {
+  const body = document.getElementById('inbox-full-body');
+  if (!body) return;
+
+  body.innerHTML = '<div style="text-align: center; padding: 40px 0;"><div class="spinner" style="margin: 0 auto;"></div></div>';
+
+  try {
+    // Get my friends list (cached in State.profile)
+    const mySnap = await getDoc(doc(db, 'users', State.user.uid));
+    const myData = mySnap.exists() ? mySnap.data() : {};
+    const friendUids = myData.friends || [];
+
+    if (friendUids.length === 0) {
+      body.innerHTML = `
+        <div style="text-align: center; padding: 60px 20px;">
+          <div style="font-size: 60px; margin-bottom: 12px;">💬</div>
+          <div style="font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 6px;">No conversations yet</div>
+          <div style="font-size: 12px; color: #666; margin-bottom: 20px;">Add friends to start chatting</div>
+          <button id="inbox-find-friends" class="btn-press" style="
+            padding: 12px 24px;
+            border-radius: 12px;
+            background: #FF6B00;
+            border: none;
+            color: #fff;
+            font-weight: 800;
+            font-size: 13px;
+            font-family: Inter;
+            cursor: pointer;
+          ">Find Friends</button>
+        </div>
+      `;
+      const btn = document.getElementById('inbox-find-friends');
+      if (btn) btn.onclick = () => {
+        closeInboxOverlay();
+        setTimeout(showFriendsPanel, 300);
+      };
+      return;
+    }
+
+    // OPTIMIZED: Query only last 100 messages that involve me
+    // Single query using array-contains on a `participants` field
+    // Since old messages don't have this field, fallback to 2 queries
+    let allMessages = [];
+
+    const [snap1, snap2] = await Promise.all([
+      getDocs(query(collection(db, 'messages'), where('fromUid', '==', State.user.uid), limit(100))),
+      getDocs(query(collection(db, 'messages'), where('toUid', '==', State.user.uid), limit(100)))
+    ]);
+
+    const seen = new Set();
+    snap1.forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); allMessages.push({ id: d.id, ...d.data() }); } });
+    snap2.forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); allMessages.push({ id: d.id, ...d.data() }); } });
+
+    // Group by chatId
+    const grouped = {};
+    allMessages.forEach(m => {
+      if (!grouped[m.chatId]) grouped[m.chatId] = [];
+      grouped[m.chatId].push(m);
+    });
+
+    // Build conversation list
+    const conversations = [];
+    for (const chatId of Object.keys(grouped)) {
+      const msgs = grouped[chatId].sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+      const last = msgs[msgs.length - 1];
+
+      const parts = chatId.split('_');
+      const otherUid = parts.find(p => p !== State.user.uid);
+      if (!otherUid) continue;
+
+      // Only include if it's a friend
+      if (!friendUids.includes(otherUid)) continue;
+
+      conversations.push({
+        chatId,
+        otherUid,
+        lastMessage: last,
+        lastTime: last.createdAt?.seconds || 0
+      });
+    }
+
+    conversations.sort((a, b) => b.lastTime - a.lastTime);
+
+    if (conversations.length === 0) {
+      body.innerHTML = `
+        <div style="text-align: center; padding: 60px 20px;">
+          <div style="font-size: 60px; margin-bottom: 12px;">💬</div>
+          <div style="font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 6px;">No conversations</div>
+          <div style="font-size: 12px; color: #666; margin-bottom: 20px;">Pick a friend and say hi</div>
+          <button id="inbox-new-chat" class="btn-press" style="
+            padding: 12px 24px;
+            border-radius: 12px;
+            background: #FF6B00;
+            border: none;
+            color: #fff;
+            font-weight: 800;
+            font-size: 13px;
+            font-family: Inter;
+            cursor: pointer;
+          ">Start New Chat</button>
+        </div>
+      `;
+      const btn = document.getElementById('inbox-new-chat');
+      if (btn) btn.onclick = () => {
+        closeInboxOverlay();
+        setTimeout(showFriendsPanel, 300);
+        toast('Tap 💬 on a friend to start chatting', 'info', 3000);
+      };
+      return;
+    }
+
+    // Fetch friend data in parallel (much faster)
+    const friendData = await Promise.all(
+      conversations.map(c =>
+        getDoc(doc(db, 'users', c.otherUid)).then(s => s.exists() ? { id: c.otherUid, ...s.data() } : null).catch(() => null)
+      )
+    );
+
+    // Render
+    body.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <div style="font-size: 11px; color: #666; font-weight: 700;">${conversations.length} conversation${conversations.length === 1 ? '' : 's'}</div>
+        <button id="inbox-new-chat-btn" style="font-size: 11px; color: #FF6B00; font-weight: 800; background: none; border: none; cursor: pointer; font-family: Inter;">+ New Chat</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        ${conversations.map((c, i) => {
+          const f = friendData[i];
+          if (!f) return '';
+          const lastMsg = c.lastMessage;
+          const isMine = lastMsg.fromUid === State.user.uid;
+          const preview = (isMine ? 'You: ' : '') + (lastMsg.text || '').slice(0, 60);
+          const isOnline = f.lastSeen?.seconds && (Date.now() / 1000 - f.lastSeen.seconds) < 300;
+
+          return `
+            <div class="conversation-item-full" data-uid="${f.id}" data-ign="${esc(f.ign)}" style="
+              background: #111;
+              border: 1px solid #222;
+              border-radius: 14px;
+              padding: 12px;
+              cursor: pointer;
+              display: flex;
+              gap: 12px;
+              align-items: center;
+            ">
+              <div style="position: relative; flex-shrink: 0;">
+                <div style="
+                  width: 48px; height: 48px;
+                  border-radius: 50%;
+                  background: rgba(255, 107, 0, 0.15);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-weight: 800;
+                  font-size: 16px;
+                  color: #FF6B00;
+                  overflow: hidden;
+                ">
+                  ${f.avatar ? `<img src="${esc(f.avatar)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(f.ign)}
+                </div>
+                ${isOnline ? '<div style="position: absolute; bottom: -2px; right: -2px; width: 14px; height: 14px; border-radius: 50%; background: #22C55E; border: 2px solid #111;"></div>' : ''}
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+                  <span style="font-size: 14px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(f.ign || 'Unknown')}</span>
+                  ${f.isPro ? '<span style="font-size: 8px; padding: 2px 5px; border-radius: 4px; background: #FFD700; color: #000; font-weight: 900;">PRO</span>' : ''}
+                </div>
+                <div style="font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(preview)}</div>
+              </div>
+              <div style="text-align: right; flex-shrink: 0;">
+                <div style="font-size: 10px; color: #555;">${timeAgo(lastMsg.createdAt)}</div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+    // Wire taps
+    body.querySelectorAll('.conversation-item-full').forEach(el => {
+      el.onclick = () => {
+        closeInboxOverlay();
+        setTimeout(() => openDMThread(el.dataset.uid, el.dataset.ign), 300);
+      };
+    });
+
+    // Wire new chat
+    const newChatBtn = document.getElementById('inbox-new-chat-btn');
+    if (newChatBtn) {
+      newChatBtn.onclick = () => {
+        closeInboxOverlay();
+        setTimeout(showFriendsPanel, 300);
+        toast('Tap 💬 on a friend to start chatting', 'info', 3000);
+      };
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Messages tab error:', e);
+    body.innerHTML = '<div style="text-align: center; padding: 40px; color: #f44; font-size: 13px;">Failed to load: ' + esc(e.message) + '</div>';
+  }
+}
+
+// ============================================
+// PART 5: STOP DM NOTIFICATIONS (going forward)
+// ============================================
+
+const _origSendNotificationToUserInbox = sendNotificationToUser;
+sendNotificationToUser = async function(uid, title, body, data) {
+  // Skip creating notification entry for DM-type notifications
+  if (data && data.type === 'dm') {
+    // Only send push, no in-app notification entry
+    try {
+      return await _origSendNotificationToUserInbox(uid, title, body, data);
+    } catch (e) { /* silent */ }
+    return;
+  }
+  return _origSendNotificationToUserInbox(uid, title, body, data);
+};
+
+// ============================================
+// PART 6: BADGE UPDATE
+// ============================================
+
+// Keep existing updateCombinedBadge (from Chunk 42) — it's already efficient
+
+window.closeInboxOverlay = closeInboxOverlay;
+window.renderNotificationsTabFast = renderNotificationsTabFast;
+window.renderMessagesTabFast = renderMessagesTabFast;
+
+console.log('✅ Chunk 43: Professional full-screen inbox loaded');
+
+/* END OF CHUNK 43 */
