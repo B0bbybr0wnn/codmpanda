@@ -13594,35 +13594,3 @@ window.primeProfileCardCache = primeProfileCardCache;
 console.log('✅ Chunk 34: Clean version loaded');
 
 /* END OF CHUNK 34 */
-// ============================================
-// Chunk 35: Kill All Select Handlers (Nuclear)
-// ============================================
-
-// Remove ALL click handlers from selects by cloning them
-function sanitizeSelects() {
-  document.querySelectorAll('select').forEach(sel => {
-    // Clone removes all event listeners
-    const clone = sel.cloneNode(true);
-    // Preserve current value
-    clone.value = sel.value;
-    sel.parentNode.replaceChild(clone, sel);
-  });
-}
-
-// Watch for new selects and sanitize them
-const selectObserver = new MutationObserver(() => {
-  sanitizeSelects();
-});
-selectObserver.observe(document.body, { childList: true, subtree: true });
-
-// The one true handler
-document.addEventListener('click', (e) => {
-  const sel = e.target.closest('select');
-  if (!sel) return;
-  if (sel.id === 'set-theme') return;
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  window.__openDropdownPicker(sel);
-}, true);
-
-console.log('✅ Nuclear select handler installed');
