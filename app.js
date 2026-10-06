@@ -13594,3 +13594,117 @@ window.primeProfileCardCache = primeProfileCardCache;
 console.log('✅ Chunk 34: Clean version loaded');
 
 /* END OF CHUNK 34 */
+// ============================================
+// Chunk 35: Kill Native Select Dropdowns
+// ============================================
+
+(function() {
+  if (window.__selectReplacerInstalled) return;
+  window.__selectReplacerInstalled = true;
+
+  // Style to hide native selects visually but keep them functional in DOM
+  const style = document.createElement('style');
+  style.id = 'kill-native-select';
+  style.textContent = `
+    /* Native selects are replaced — hide the real ones */
+    select.__codm_replaced {
+      position: absolute !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      width: 1px !important;
+      height: 1px !important;
+      z-index: -1 !important;
+    }
+    /* The proxy button looks identical to a select */
+    .__codm_select_proxy {
+      background: #181818;
+      border: 1px solid #222;
+      color: #fff;
+      border-radius: 12px;
+      padding: 12px 42px 12px 14px;
+      font-size: 15px;
+      width: 100%;
+      cursor: pointer;
+      font-family: Inter, sans-serif;
+      text-align: left;
+      position: relative;
+      transition: border-color 0.2s;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      display: block;
+    }
+    .__codm_select_proxy:active {
+      border-color: #FF6B00;
+    }
+    .__codm_select_proxy::after {
+      content: '';
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 14px;
+      height: 14px;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FF6B00' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+      background-size: contain;
+      background-repeat: no-repeat;
+    }
+  `;
+  document.head.appendChild(style);
+
+  function replaceSelects() {
+    document.querySelectorAll('select:not(.__codm_replaced)').forEach(sel => {
+      if (sel.id === 'set-theme') return;
+      if (sel.closest('.__codm_select_wrapper')) return;
+
+      // Wrap the select
+      const wrapper = document.createElement('div');
+      wrapper.className = '__codm_select_wrapper';
+      wrapper.style.position = 'relative';
+      sel.parentNode.insertBefore(wrapper, sel);
+      wrapper.appendChild(sel);
+
+      // Mark the native select as replaced
+      sel.classList.add('__codm_replaced');
+
+      // Create proxy button
+      const proxy = document.createElement('button');
+      proxy.type = 'button';
+      proxy.className = '__codm_select_proxy';
+      proxy.textContent = sel.options[sel.selectedIndex]?.text || 'Select';
+      wrapper.appendChild(proxy);
+
+      // Sync proxy label with select value
+      const syncLabel = () => {
+        const opt = sel.options[sel.selectedIndex];
+        if (opt) proxy.textContent = opt.text;
+      };
+
+      // Tap proxy → open our picker
+      proxy.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        window.__openDropdownPicker(sel);
+        // After picker closes, sync the label
+        setTimeout(syncLabel, 400);
+      };
+
+      // Also listen for change events (in case picker sets value)
+      sel.addEventListener('change', syncLabel);
+    });
+  }
+
+  // Run once + watch for new selects
+  replaceSelects();
+
+  const obs = new MutationObserver(() => {
+    // Debounce to avoid infinite loops
+    if (window.__selectReplaceTimer) clearTimeout(window.__selectReplaceTimer);
+    window.__selectReplaceTimer = setTimeout(replaceSelects, 50);
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+
+  console.log('✅ Native selects replaced with proxies');
+})();
+
+/* END OF CHUNK 35 */
