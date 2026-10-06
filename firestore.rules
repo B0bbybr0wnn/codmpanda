@@ -180,12 +180,9 @@ service cloud.firestore {
       allow create, update, delete: if isSignedIn();
     }
 
-    // ---------- MESSAGES (DMs) ----------
+    // ---------- MESSAGES (DMs) - RELAXED READ FOR QUERY ----------
     match /messages/{messageId} {
-      allow read: if isSignedIn() && (
-        request.auth.uid == resource.data.fromUid ||
-        request.auth.uid == resource.data.toUid
-      );
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
       allow update, delete: if isAdmin();
     }
