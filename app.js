@@ -14322,3 +14322,736 @@ window.cleanupExpiredContent = cleanupExpiredContent;
 window.showTerms = showTerms;
 
 /* END OF CHUNK 36 */
+// ============================================
+// Chunk 37: Enhanced Empty States with CTAs
+// ============================================
+
+// Upgrade the emptyState function with better design
+const _origEmptyState = emptyState;
+window.emptyState = function(icon, title, subtitle, ctaLabel, ctaFn) {
+  const ctaHTML = (ctaLabel && ctaFn) ? `
+    <button id="empty-cta-btn-${Date.now()}" class="empty-cta-btn btn-press mt-5 px-6 py-3.5 rounded-2xl bg-primary font-black text-sm glow-primary flex items-center justify-center gap-2 mx-auto">
+      ${esc(ctaLabel)}
+    </button>
+  ` : '';
+
+  setTimeout(() => {
+    document.querySelectorAll('.empty-cta-btn').forEach(b => {
+      if (!b.dataset.bound) {
+        b.dataset.bound = '1';
+        if (ctaFn) b.onclick = ctaFn;
+      }
+    });
+  }, 0);
+
+  return `
+    <div class="flex flex-col items-center justify-center py-16 px-6 text-center fade-in">
+      <div class="relative mb-5">
+        <div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-gold/10 rounded-full blur-2xl"></div>
+        <div class="relative w-24 h-24 rounded-full bg-card border border-border flex items-center justify-center">
+          <i data-lucide="${icon}" class="w-10 h-10 text-primary/70"></i>
+        </div>
+      </div>
+      <div class="text-lg font-black mb-2">${esc(title)}</div>
+      <div class="text-xs text-gray-500 max-w-[260px] leading-relaxed">${esc(subtitle || '')}</div>
+      ${ctaHTML}
+    </div>
+  `;
+};
+
+// ============================================
+// SPECIFIC EMPTY STATE UPGRADES PER SCREEN
+// ============================================
+
+// PLAY tab — Lobbies empty
+const _origRenderLobbiesEmpty = renderLobbies;
+renderLobbies = function() {
+  const feed = document.getElementById('lobbies-feed');
+  if (!feed) return;
+  let lobbies = State.cache.lobbies;
+
+  const f = State.filters.lobbies;
+  if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
+  if (f.mode && f.mode !== 'all') lobbies = lobbies.filter(l => l.mode === f.mode);
+  if (f.region && f.region !== 'all') lobbies = lobbies.filter(l => l.region === f.region);
+  if (f.mic) lobbies = lobbies.filter(l => l.mic === true);
+  if (f.search) {
+    lobbies = lobbies.filter(l =>
+      (l.ign || '').toLowerCase().includes(f.search) ||
+      (l.note || '').toLowerCase().includes(f.search)
+    );
+  }
+
+  if (lobbies.length === 0) {
+    // Only show empty state if there are NO lobbies at all (not just filtered)
+    if (State.cache.lobbies.length === 0) {
+      feed.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+          <div class="relative mb-6">
+            <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+            <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-primary/30 flex items-center justify-center">
+              <span class="text-5xl">🎮</span>
+            </div>
+          </div>
+          <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">⚡ Be the first</div>
+          <div class="text-xl font-black mb-3">No lobbies yet</div>
+          <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+            Post a lobby in under 30 seconds. Squad up with players who match your rank, mode, and region.
+          </div>
+          <button id="empty-post-lobby" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark font-black text-sm text-white glow-primary flex items-center justify-center gap-2">
+            <i data-lucide="plus" class="w-4 h-4"></i> Post First Lobby
+          </button>
+          <div class="text-[10px] text-gray-600 mt-4">Takes 10 seconds — no signup required</div>
+        </div>
+      `;
+      const btn = document.getElementById('empty-post-lobby');
+      if (btn) btn.onclick = openPostLobbySheet;
+      if (window.lucide) window.lucide.createIcons();
+      return;
+    }
+    // Filtered empty
+    feed.innerHTML = emptyState('search', 'No lobbies match', 'Try different filters or clear them', 'Post Lobby', openPostLobbySheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  // Continue with normal render
+  _origRenderLobbiesEmpty();
+};
+
+// LAB Vault — Empty state
+const _origRenderVaultsEmpty = renderVaults;
+renderVaults = function() {
+  const feed = document.getElementById('vault-feed');
+  if (!feed) return;
+
+  if (State.cache.vaults.length === 0 && !State.filters.vaults.search) {
+    feed.className = '';
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-gold/30 to-primary/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-gold/30 flex items-center justify-center">
+            <span class="text-5xl">🔧</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-gold uppercase tracking-widest mb-2">⭐ Featured builds</div>
+        <div class="text-xl font-black mb-3">Your Vault is empty</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Build your first gunsmith with our visual tool. 90+ guns, 9 attachment slots, live stat calculator.
+        </div>
+        <button id="empty-build-gun" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold flex items-center justify-center gap-2">
+          <i data-lucide="wrench" class="w-4 h-4"></i> Build Gunsmith
+        </button>
+        <div class="text-[10px] text-gray-600 mt-4">Or browse community builds below</div>
+      </div>
+    `;
+    const btn = document.getElementById('empty-build-gun');
+    if (btn) btn.onclick = () => openGunsmithBuilder();
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderVaultsEmpty();
+};
+
+// SQUAD Clans — Empty state
+const _origRenderClansEmpty = renderClans;
+renderClans = function() {
+  const feed = document.getElementById('clans-feed');
+  if (!feed) return;
+
+  if (State.cache.clans.length === 0) {
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-primary/30 flex items-center justify-center">
+            <span class="text-5xl">🛡️</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">👑 Pro feature</div>
+        <div class="text-xl font-black mb-3">No clans yet</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Create your own clan, recruit members, compete in Clan Wars, and earn badges.
+        </div>
+        <button id="empty-create-clan" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark font-black text-sm text-white glow-primary flex items-center justify-center gap-2">
+          <i data-lucide="plus" class="w-4 h-4"></i> Create First Clan
+        </button>
+        <div class="text-[10px] text-gray-600 mt-4">Free to try — Pro required to keep</div>
+      </div>
+    `;
+    const btn = document.getElementById('empty-create-clan');
+    if (btn) btn.onclick = openCreateClanSheet;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderClansEmpty();
+};
+
+// SQUAD Scrims — Empty state
+const _origRenderScrimsEmpty = renderScrims;
+renderScrims = function() {
+  const feed = document.getElementById('scrims-feed');
+  if (!feed) return;
+
+  if (State.cache.scrims.length === 0) {
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-primary/30 flex items-center justify-center">
+            <span class="text-5xl">⚔️</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">🏆 Competitive play</div>
+        <div class="text-xl font-black mb-3">No scrims posted</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Looking for a 5v5 SnD practice match? Post a scrim and find an opponent team.
+        </div>
+        <button id="empty-post-scrim" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark font-black text-sm text-white glow-primary flex items-center justify-center gap-2">
+          <i data-lucide="plus" class="w-4 h-4"></i> Post First Scrim
+        </button>
+        <div class="text-[10px] text-gray-600 mt-4">Active for 12 hours</div>
+      </div>
+    `;
+    const btn = document.getElementById('empty-post-scrim');
+    if (btn) btn.onclick = openPostScrimSheet;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderScrimsEmpty();
+};
+
+// SQUAD Clips — Empty state
+const _origRenderClipsEmpty = renderClips;
+renderClips = function() {
+  const feed = document.getElementById('clips-feed');
+  if (!feed) return;
+
+  if (State.cache.clips.length === 0) {
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-primary/30 flex items-center justify-center">
+            <span class="text-5xl">🎬</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">🔥 Get featured</div>
+        <div class="text-xl font-black mb-3">No clips yet</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Share your best plays. Clips get approved by moderators and featured on the feed.
+        </div>
+        <button id="empty-post-clip" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark font-black text-sm text-white glow-primary flex items-center justify-center gap-2">
+          <i data-lucide="video" class="w-4 h-4"></i> Submit First Clip
+        </button>
+        <div class="text-[10px] text-gray-600 mt-4">YouTube or TikTok links supported</div>
+      </div>
+    `;
+    const btn = document.getElementById('empty-post-clip');
+    if (btn) btn.onclick = openSubmitClipSheet;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderClipsEmpty();
+};
+
+// INTEL Leaks — Empty state
+const _origRenderLeaksEmpty = renderLeaks;
+renderLeaks = function() {
+  const feed = document.getElementById('leaks-feed');
+  if (!feed) return;
+
+  if (State.cache.leaks.length === 0) {
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-gold/30 to-primary/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-gold/30 flex items-center justify-center">
+            <span class="text-5xl">🔥</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-gold uppercase tracking-widest mb-2">📡 Intel incoming</div>
+        <div class="text-xl font-black mb-3">No leaks yet</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Got intel? Submit a leak — screenshots, rumors, unreleased content. Approved ones get published here.
+        </div>
+        <button id="empty-submit-leak" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold flex items-center justify-center gap-2">
+          <i data-lucide="zap" class="w-4 h-4"></i> Submit First Leak
+        </button>
+        <div class="text-[10px] text-gray-600 mt-4">Anonymous submission — admin review</div>
+      </div>
+    `;
+    const btn = document.getElementById('empty-submit-leak');
+    if (btn) btn.onclick = openSubmitLeakSheet;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderLeaksEmpty();
+};
+
+// SQUAD Tournaments — Empty state
+const _origRenderTournamentsEmpty = renderTournamentsSub;
+renderTournamentsSub = async function() {
+  const body = document.getElementById('squad-body');
+  if (!body) return;
+
+  // Let original do its thing first
+  try {
+    const snap = await getDocs(query(collection(db, 'tournaments'), orderBy('createdAt', 'desc'), limit(30)));
+    const allTournaments = [];
+    snap.forEach(d => allTournaments.push({ id: d.id, ...d.data() }));
+
+    const active = allTournaments.filter(t => t.status === 'open' || t.status === 'in-progress');
+    const completed = allTournaments.filter(t => t.status === 'completed');
+
+    const list = tournamentsSubTab === 'active' ? active : completed;
+
+    if (list.length === 0 && tournamentsSubTab === 'active') {
+      body.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs text-gray-500">0 active</div>
+          <button id="create-tournament-btn" class="btn-press px-3 py-2 rounded-xl bg-primary text-xs font-bold flex items-center gap-1">
+            <i data-lucide="plus" class="w-3 h-3"></i> Create
+          </button>
+        </div>
+
+        <div class="flex gap-2 mb-4">
+          <button class="chip tour-tab active" data-tab="active">Active</button>
+          <button class="chip tour-tab" data-tab="completed">History</button>
+        </div>
+
+        <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+          <div class="relative mb-6">
+            <div class="absolute inset-0 bg-gradient-to-br from-gold/30 to-primary/20 rounded-full blur-3xl"></div>
+            <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-gold/30 flex items-center justify-center">
+              <span class="text-5xl">🏆</span>
+            </div>
+          </div>
+          <div class="text-[10px] font-black text-gold uppercase tracking-widest mb-2">👑 Host your own</div>
+          <div class="text-xl font-black mb-3">No tournaments yet</div>
+          <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+            Create a bracket in 60 seconds. Auto-registration, auto-brackets, auto-resolve. Zero admin needed.
+          </div>
+          <button id="empty-create-tournament" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold flex items-center justify-center gap-2">
+            <i data-lucide="trophy" class="w-4 h-4"></i> Host First Tournament
+          </button>
+          <div class="text-[10px] text-gray-600 mt-4">Pro feature — free for admins</div>
+        </div>
+      `;
+
+      document.getElementById('create-tournament-btn').onclick = openCreateTournament;
+      document.getElementById('empty-create-tournament').onclick = openCreateTournament;
+      document.querySelectorAll('.tour-tab').forEach(btn => {
+        btn.onclick = () => { tournamentsSubTab = btn.dataset.tab; renderTournamentsSub(); };
+      });
+
+      if (window.lucide) window.lucide.createIcons();
+      return;
+    }
+  } catch (e) {
+    console.warn('Empty tournaments check failed:', e);
+  }
+
+  // Fall back to original
+  return _origRenderTournamentsEmpty();
+};
+
+// Clans render empty state — enhance the original
+const _origRenderClans2 = renderClans;
+renderClans = function() {
+  const feed = document.getElementById('clans-feed');
+  if (!feed) return;
+
+  if (State.cache.clans.length === 0) {
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-primary/30 flex items-center justify-center">
+            <span class="text-5xl">🛡️</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">👑 Pro feature</div>
+        <div class="text-xl font-black mb-3">No clans yet</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Create your own clan, recruit members, compete in Clan Wars, and earn badges.
+        </div>
+        <button id="empty-create-clan-2" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark font-black text-sm text-white glow-primary flex items-center justify-center gap-2">
+          <i data-lucide="plus" class="w-4 h-4"></i> Create First Clan
+        </button>
+      </div>
+    `;
+    const btn = document.getElementById('empty-create-clan-2');
+    if (btn) btn.onclick = openCreateClanSheet;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderClans2();
+};
+
+console.log('✅ Chunk 37: Enhanced empty states loaded');
+
+/* END OF CHUNK 37 */
+// ============================================
+// Chunk 38: Onboarding Tour for First-Time Users
+// ============================================
+
+const TOUR_STEPS = [
+  {
+    id: 'welcome',
+    emoji: '🐼',
+    title: 'Welcome to CODMPanda',
+    body: 'The Ultimate CODM Companion. Let me show you around in 30 seconds.',
+    tab: null,
+    highlight: null
+  },
+  {
+    id: 'play',
+    emoji: '🎮',
+    title: 'Find Your Squad',
+    body: 'Post a lobby or join one. Filter by rank, mode, region. One tap opens voice chat.',
+    tab: 'play',
+    highlight: 'play'
+  },
+  {
+    id: 'lab',
+    emoji: '🔧',
+    title: 'Build & Share Gunsmiths',
+    body: 'Create weapons with our visual builder. 90+ guns, live stats, one-tap copy codes.',
+    tab: 'lab',
+    highlight: 'lab'
+  },
+  {
+    id: 'camo',
+    emoji: '🎨',
+    title: 'Track Every Camo',
+    body: 'Log your grind from Sand to Damascus. Export progress as a shareable image.',
+    tab: 'lab',
+    highlight: 'lab'
+  },
+  {
+    id: 'squad',
+    emoji: '🏆',
+    title: 'Compete & Connect',
+    body: 'Clans, tournaments, scrims, clips. Team up with players worldwide.',
+    tab: 'squad',
+    highlight: 'squad'
+  },
+  {
+    id: 'intel',
+    emoji: '📊',
+    title: 'Master the Meta',
+    body: 'Community tier lists, leaks, CP calculator, map callouts. Everything you need.',
+    tab: 'intel',
+    highlight: 'intel'
+  },
+  {
+    id: 'you',
+    emoji: '👑',
+    title: 'Your Profile',
+    body: 'Track your stats, earn badges, unlock Pro features. Everything personalized.',
+    tab: 'you',
+    highlight: 'you'
+  },
+  {
+    id: 'ready',
+    emoji: '🚀',
+    title: 'You\'re all set!',
+    body: 'Jump in and start dominating. Need help? Tap the question mark anytime.',
+    tab: 'play',
+    highlight: null
+  }
+];
+
+let tourStep = 0;
+let tourActive = false;
+
+async function startOnboardingTour() {
+  if (tourActive) return;
+  tourActive = true;
+  tourStep = 0;
+
+  // Create tour overlay container
+  let overlay = document.getElementById('tour-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tour-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    `;
+    document.body.appendChild(overlay);
+  }
+
+  // Add spotlight mask styles
+  if (!document.getElementById('tour-styles')) {
+    const style = document.createElement('style');
+    style.id = 'tour-styles';
+    style.textContent = `
+      #tour-overlay.active { opacity: 1; pointer-events: auto; }
+      .tour-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.88);
+        z-index: 10000;
+      }
+      .tour-spotlight {
+        position: fixed;
+        border-radius: 20px;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.85), 0 0 40px rgba(255, 107, 0, 0.6);
+        border: 2px solid #FF6B00;
+        z-index: 10001;
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        pointer-events: none;
+      }
+      .tour-card {
+        position: fixed;
+        left: 16px;
+        right: 16px;
+        max-width: 420px;
+        margin: 0 auto;
+        background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);
+        border: 1px solid #FF6B00;
+        border-radius: 24px;
+        padding: 24px;
+        z-index: 10002;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(255, 107, 0, 0.3);
+        animation: tourSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      @keyframes tourSlideUp {
+        from { opacity: 0; transform: translateY(40px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .tour-pulse {
+        animation: tourPulse 1.5s ease-in-out infinite;
+      }
+      @keyframes tourPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  renderTourStep();
+}
+
+function renderTourStep() {
+  const overlay = document.getElementById('tour-overlay');
+  if (!overlay) return;
+
+  const step = TOUR_STEPS[tourStep];
+  if (!step) { endOnboardingTour(); return; }
+
+  // Switch to the target tab
+  if (step.tab && step.tab !== State.currentTab) {
+    switchTab(step.tab);
+  }
+
+  // Find target element
+  let targetRect = null;
+  if (step.highlight) {
+    const target = document.querySelector(`.tab-btn[data-tab="${step.highlight}"]`);
+    if (target) {
+      targetRect = target.getBoundingClientRect();
+    }
+  }
+
+  const isFirst = tourStep === 0;
+  const isLast = tourStep === TOUR_STEPS.length - 1;
+  const isSecondToLast = tourStep === TOUR_STEPS.length - 2;
+
+  overlay.innerHTML = `
+    <div class="tour-backdrop"></div>
+    ${targetRect ? `
+      <div class="tour-spotlight tour-pulse" style="
+        top: ${targetRect.top - 8}px;
+        left: ${targetRect.left - 8}px;
+        width: ${targetRect.width + 16}px;
+        height: ${targetRect.height + 16}px;
+      "></div>
+    ` : ''}
+    <div class="tour-card" style="
+      ${targetRect && targetRect.top > window.innerHeight / 2
+        ? 'top: 80px;'
+        : 'bottom: 140px;'}
+    ">
+      <!-- Progress dots -->
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex gap-1.5">
+          ${TOUR_STEPS.map((_, i) => `
+            <div class="h-1.5 rounded-full transition-all ${i === tourStep ? 'w-6 bg-primary' : i < tourStep ? 'w-1.5 bg-primary/50' : 'w-1.5 bg-gray-700'}"></div>
+          `).join('')}
+        </div>
+        <button id="tour-skip" class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Skip</button>
+      </div>
+
+      <!-- Emoji -->
+      <div class="text-5xl mb-3 text-center">${step.emoji}</div>
+
+      <!-- Content -->
+      <div class="text-center mb-6">
+        <div class="text-lg font-black mb-2">${esc(step.title)}</div>
+        <div class="text-xs text-gray-400 leading-relaxed max-w-[300px] mx-auto">${esc(step.body)}</div>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex gap-2">
+        ${!isFirst ? `
+          <button id="tour-prev" class="btn-press flex-1 py-3 rounded-xl bg-cardAlt border border-border font-bold text-xs text-gray-300">
+            ← Back
+          </button>
+        ` : ''}
+        <button id="tour-next" class="btn-press flex-1 py-3 rounded-xl bg-gradient-to-r from-primary to-primaryDark font-black text-xs text-white ${isLast ? 'glow-primary' : ''}">
+          ${isLast ? '🚀 Start Dominating' : isSecondToLast ? 'Almost there →' : 'Next →'}
+        </button>
+      </div>
+
+      ${isLast ? `
+        <div class="text-[9px] text-gray-600 text-center mt-4">
+          You can restart the tour anytime from Settings
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  if (window.lucide) window.lucide.createIcons();
+
+  // Wire buttons
+  document.getElementById('tour-next').onclick = () => {
+    if (isLast) {
+      endOnboardingTour();
+    } else {
+      tourStep++;
+      renderTourStep();
+    }
+  };
+
+  const prevBtn = document.getElementById('tour-prev');
+  if (prevBtn) prevBtn.onclick = () => {
+    if (tourStep > 0) {
+      tourStep--;
+      renderTourStep();
+    }
+  };
+
+  document.getElementById('tour-skip').onclick = () => {
+    confirmDialog('Skip Tour?', 'You can restart it anytime from Settings.', endOnboardingTour, 'Skip', false);
+  };
+}
+
+async function endOnboardingTour() {
+  tourActive = false;
+  const overlay = document.getElementById('tour-overlay');
+  if (overlay) {
+    overlay.style.opacity = '0';
+    setTimeout(() => overlay.remove(), 300);
+  }
+
+  // Save to Firestore that user completed the tour
+  try {
+    await updateDoc(doc(db, 'users', State.user.uid), {
+      tourCompleted: true,
+      tourCompletedAt: serverTimestamp()
+    });
+    State.profile = { ...State.profile, tourCompleted: true };
+  } catch (e) { /* silent */ }
+
+  toast('🎉 Welcome to CODMPanda!', 'success', 3000);
+}
+
+// ============================================
+// TRIGGER TOUR FOR FIRST-TIME USERS
+// ============================================
+
+// Hook into showMainApp — after main app loads, check if tour needed
+const _origShowMainAppTour = showMainApp;
+showMainApp = function() {
+  _origShowMainAppTour();
+
+  setTimeout(async () => {
+    // Check if user has completed tour
+    if (!State.profile) return;
+
+    // Only show for users who haven't completed it
+    if (State.profile.tourCompleted) return;
+
+    // Check if it's a "new" user (created within last 10 minutes) OR just never did it
+    const createdAt = State.profile.createdAt?.seconds ? State.profile.createdAt.seconds * 1000 : 0;
+    const isNew = Date.now() - createdAt < 10 * 60 * 1000;
+
+    if (isNew || !State.profile.tourCompleted) {
+      // Wait a moment for the app to fully render
+      setTimeout(() => startOnboardingTour(), 800);
+    }
+  }, 1500);
+};
+
+// ============================================
+// ADD "RESTART TOUR" BUTTON TO SETTINGS
+// ============================================
+
+const _origHandleSettingActionTour = handleSettingAction;
+handleSettingAction = function(action) {
+  if (action === 'restart-tour') {
+    startOnboardingTour();
+    return;
+  }
+  return _origHandleSettingActionTour(action);
+};
+
+// Inject button into YOU tab settings
+const _origRenderYouTabTour = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabTour();
+  setTimeout(() => {
+    const content = document.getElementById('content');
+    if (!content) return;
+
+    const settingsCards = content.querySelectorAll('.bg-card.border.border-border.rounded-2xl');
+    let settingsList = null;
+    settingsCards.forEach(card => {
+      const header = card.querySelector('.text-xs.font-bold.text-gray-400.uppercase');
+      if (header && header.textContent.trim() === 'Support') {
+        settingsList = card.querySelector('.divide-y');
+      }
+    });
+
+    if (settingsList && !settingsList.querySelector('[data-action="restart-tour"]')) {
+      const btn = document.createElement('button');
+      btn.className = 'settings-row w-full flex items-center justify-between px-4 py-3 text-left';
+      btn.dataset.action = 'restart-tour';
+      btn.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0">
+          <i data-lucide="compass" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+          <div class="min-w-0">
+            <div class="text-sm font-semibold">Replay App Tour</div>
+            <div class="text-[10px] text-gray-500 truncate">See the walkthrough again</div>
+          </div>
+        </div>
+        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+      `;
+      btn.onclick = () => handleSettingAction('restart-tour');
+      settingsList.insertBefore(btn, settingsList.firstChild);
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }, 130);
+};
+
+window.startOnboardingTour = startOnboardingTour;
+window.endOnboardingTour = endOnboardingTour;
+
+console.log('✅ Chunk 38: Onboarding tour loaded');
+
+/* END OF CHUNK 38 */
