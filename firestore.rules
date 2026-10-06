@@ -184,7 +184,8 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update: if isSignedIn() && resource.data.fromUid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.fromUid == request.auth.uid || isAdmin();
     }
 
     // ---------- PARTIES ----------
@@ -210,7 +211,12 @@ service cloud.firestore {
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.text is string
                     && request.resource.data.text.size() <= 300;
-      allow update, delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']))
+        || (resource.data.uid == request.auth.uid)
+        || isAdmin()
+      );
+      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
     // ---------- DEFAULT DENY ----------
