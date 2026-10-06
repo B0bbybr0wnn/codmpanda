@@ -15616,3 +15616,549 @@ window.updateCommentCounts = updateCommentCounts;
 console.log('✅ Chunk 40: Comments + Join notifications loaded');
 
 /* END OF CHUNK 40 */
+// ============================================
+// Chunk 41: Edit + Reply + Like + @Mention (Friends Only)
+// ============================================
+
+// ============================================
+// PART 1: EDIT + DELETE MESSAGES
+// ============================================
+
+async function openMessageOptions(messageId, currentText) {
+  openSheet(`
+    <div class="space-y-3">
+      <div class="bg-card border border-border rounded-xl p-3 mb-2">
+        <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Message</div>
+        <div class="text-xs text-gray-300 break-words">${esc(currentText)}</div>
+      </div>
+
+      <button id="msg-edit-btn" class="btn-press w-full py-3.5 rounded-xl bg-primary font-bold text-sm text-white flex items-center justify-center gap-2">
+        <i data-lucide="pencil" class="w-4 h-4"></i> Edit Message
+      </button>
+
+      <button id="msg-delete-btn" class="btn-press w-full py-3.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-sm flex items-center justify-center gap-2">
+        <i data-lucide="trash-2" class="w-4 h-4"></i> Delete Message
+      </button>
+
+      <button onclick="closeSheet()" class="text-xs text-gray-500 w-full pt-2">Cancel</button>
+    </div>
+  `, 'Message Options');
+
+  document.getElementById('msg-edit-btn').onclick = () => {
+    closeSheet();
+    setTimeout(() => openEditMessageModal(messageId, currentText), 300);
+  };
+
+  document.getElementById('msg-delete-btn').onclick = () => {
+    closeSheet();
+    setTimeout(() => {
+      confirmDialog('Delete Message', 'This message will be removed permanently.', async () => {
+        try {
+          await deleteDoc(doc(db, 'messages', messageId));
+          toast('🗑️ Message deleted', 'success');
+          // Reopen thread
+          const friendName = document.querySelector('#sheet-container h3')?.textContent?.replace('💬', '').trim();
+          if (friendName) {
+            setTimeout(() => {
+              const thread = document.querySelector('#dm-messages');
+              if (thread) {
+                // Just close and let user reopen
+                closeSheet();
+              }
+            }, 300);
+          }
+        } catch (e) {
+          toast('Failed: ' + e.message, 'error');
+        }
+      }, 'Delete', true);
+    }, 300);
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function openEditMessageModal(messageId, currentText) {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Edit Message</label>
+        <textarea id="edit-msg-input" rows="4" maxlength="500" placeholder="Edit your message...">${esc(currentText)}</textarea>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="closeSheet()" class="btn-press flex-1 py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">Cancel</button>
+        <button id="edit-msg-save" class="btn-press flex-1 py-3 rounded-xl bg-primary font-bold text-sm text-white">Save</button>
+      </div>
+    </div>
+  `, 'Edit Message');
+
+  setTimeout(() => {
+    const input = document.getElementById('edit-msg-input');
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }, 200);
+
+  document.getElementById('edit-msg-save').onclick = async () => {
+    const newText = document.getElementById('edit-msg-input').value.trim();
+    if (!newText) { toast('Message cannot be empty', 'error'); return; }
+
+    try {
+      await updateDoc(doc(db, 'messages', messageId), {
+        text: newText,
+        edited: true,
+        editedAt: serverTimestamp()
+      });
+      toast('✏️ Message edited', 'success');
+      closeSheet();
+    } catch (e) {
+      toast('Failed: ' + e.message, 'error');
+    }
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 2: ENHANCED DM RENDER (with edit/reply)
+// ============================================
+
+const _origOpenDMThreadFull = openDMThread;
+openDMThread = async function(friendUid, friendIgn) {
+  await _origOpenDMThreadFull(friendUid, friendIgn);
+
+  // After render, make own bubbles clickable
+  setTimeout(() => {
+    const container = document.getElementById('dm-messages');
+    if (!container) return;
+
+    // Find all message bubbles (chat-style rounded divs)
+    container.querySelectorAll('.flex').forEach(row => {
+      const bubble = row.querySelector('.rounded-2xl');
+      if (!bubble) return;
+      if (bubble.dataset.enhanced) return;
+
+      const isMine = bubble.classList.contains('bg-primary');
+      if (!isMine) return;
+
+      bubble.dataset.enhanced = '1';
+      bubble.style.cursor = 'pointer';
+
+      bubble.onclick = (e) => {
+        e.stopPropagation();
+        const textEl = bubble.querySelector('.text-xs');
+        if (!textEl) return;
+        const text = textEl.textContent.trim();
+        findMessageByText(text, friendUid);
+      };
+    });
+  }, 500);
+};
+
+async function findMessageByText(messageText, friendUid) {
+  try {
+    const chatId = [State.user.uid, friendUid].sort().join('_');
+
+    const snap = await getDocs(query(
+      collection(db, 'messages'),
+      where('chatId', '==', chatId),
+      where('fromUid', '==', State.user.uid),
+      limit(100)
+    ));
+
+    const matching = [];
+    snap.forEach(d => {
+      const data = d.data();
+      if (data.text === messageText) {
+        matching.push({ id: d.id, ...data });
+      }
+    });
+
+    if (matching.length === 0) {
+      toast('Message not found', 'error');
+      return;
+    }
+
+    matching.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    const msg = matching[0];
+    openMessageOptions(msg.id, msg.text);
+  } catch (e) {
+    console.error('Find msg error:', e);
+  }
+}
+
+// ============================================
+// PART 3: REPLY TO COMMENTS + LIKE + EDIT
+// ============================================
+
+let commentReplyTo = null;
+
+const _origOpenCommentsSheetFull = openCommentsSheet;
+openCommentsSheet = async function(contentType, contentId, contentTitle) {
+  commentReplyTo = null;
+  await _origOpenCommentsSheetFull(contentType, contentId, contentTitle);
+
+  // After render, enhance with reply/like/edit
+  setTimeout(() => {
+    enhanceComments(contentType, contentId);
+  }, 500);
+};
+
+function enhanceComments(contentType, contentId) {
+  const container = document.getElementById('comments-list');
+  if (!container) return;
+
+  // Add reply + like buttons to each comment
+  container.querySelectorAll('.flex.items-start').forEach(row => {
+    if (row.dataset.enhanced) return;
+    row.dataset.enhanced = '1';
+
+    const bubble = row.querySelector('.rounded-2xl');
+    if (!bubble) return;
+
+    const textEl = bubble.querySelector('.text-xs');
+    if (!textEl) return;
+
+    const commentText = textEl.textContent.trim();
+    const isMine = bubble.classList.contains('bg-primary');
+
+    // Find the comment ID — look for the delete button on your own, or query by text
+    const deleteBtn = row.querySelector('.delete-comment');
+    const commentId = deleteBtn?.dataset.id || null;
+
+    // Build action row
+    const actionRow = document.createElement('div');
+    actionRow.className = 'flex items-center gap-3 mt-1 ' + (isMine ? 'justify-end' : '');
+    actionRow.innerHTML = `
+      ${!isMine ? `<button class="reply-btn text-[9px] text-gray-500 font-bold">Reply</button>` : ''}
+      <button class="like-comment-btn text-[9px] text-gray-500 font-bold flex items-center gap-1">❤️ <span class="like-count">0</span></button>
+      ${isMine ? `<button class="edit-comment-btn text-[9px] text-primary font-bold">Edit</button>` : ''}
+    `;
+
+    // Insert after existing meta row
+    const metaRow = row.querySelector('.flex.items-center.gap-2.mt-1') || bubble.nextElementSibling;
+    if (metaRow && metaRow.parentNode) {
+      metaRow.parentNode.insertBefore(actionRow, metaRow.nextSibling);
+    } else {
+      row.querySelector('.flex-1').appendChild(actionRow);
+    }
+
+    // Wire reply button
+    const replyBtn = actionRow.querySelector('.reply-btn');
+    if (replyBtn) {
+      replyBtn.onclick = () => {
+        commentReplyTo = { text: commentText, id: commentId };
+        const input = document.getElementById('comment-input');
+        if (input) {
+          input.placeholder = `Replying to comment...`;
+          input.focus();
+          input.parentNode.style.borderTop = '2px solid #FF6B00';
+        }
+      };
+    }
+
+    // Wire like button
+    const likeBtn = actionRow.querySelector('.like-comment-btn');
+    if (likeBtn) {
+      likeBtn.onclick = async () => {
+        if (!commentId) { toast('Cannot like', 'error'); return; }
+        try {
+          await updateDoc(doc(db, 'comments', commentId), { likes: increment(1) });
+          const countEl = likeBtn.querySelector('.like-count');
+          countEl.textContent = (parseInt(countEl.textContent) || 0) + 1;
+          toast('❤️', 'success', 800);
+        } catch (e) { toast('Failed', 'error'); }
+      };
+    }
+
+    // Wire edit button
+    const editBtn = actionRow.querySelector('.edit-comment-btn');
+    if (editBtn && commentId) {
+      editBtn.onclick = () => openEditCommentModal(commentId, commentText);
+    }
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 4: @MENTION AUTOCOMPLETE (Friends Only)
+// ============================================
+
+let mentionFriends = [];
+let mentionDropdownEl = null;
+let mentionTarget = null;
+
+async function loadMentionFriends() {
+  if (mentionFriends.length > 0) return mentionFriends;
+  try {
+    const snap = await getDoc(doc(db, 'users', State.user.uid));
+    const data = snap.exists() ? snap.data() : {};
+    const friendUids = data.friends || [];
+
+    const friends = [];
+    for (const uid of friendUids.slice(0, 30)) {
+      try {
+        const s = await getDoc(doc(db, 'users', uid));
+        if (s.exists()) friends.push({ uid, ign: s.data().ign, avatar: s.data().avatar });
+      } catch (e) { /* skip */ }
+    }
+    mentionFriends = friends;
+    return friends;
+  } catch (e) {
+    return [];
+  }
+}
+
+function closeMentionDropdown() {
+  if (mentionDropdownEl) {
+    mentionDropdownEl.remove();
+    mentionDropdownEl = null;
+  }
+  mentionTarget = null;
+}
+
+function showMentionDropdown(inputEl, filter = '') {
+  closeMentionDropdown();
+  mentionTarget = inputEl;
+
+  const matches = mentionFriends.filter(f =>
+    f.ign.toLowerCase().includes(filter.toLowerCase())
+  ).slice(0, 6);
+
+  if (matches.length === 0) return;
+
+  const rect = inputEl.getBoundingClientRect();
+  const dropdown = document.createElement('div');
+  dropdown.className = 'mention-dropdown';
+  dropdown.style.cssText = `
+    position: fixed;
+    bottom: ${window.innerHeight - rect.top + 8}px;
+    left: 16px;
+    right: 16px;
+    max-width: 400px;
+    margin: 0 auto;
+    background: #0a0a0a;
+    border: 1px solid #FF6B00;
+    border-radius: 16px;
+    padding: 8px;
+    z-index: 10000;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
+    max-height: 240px;
+    overflow-y: auto;
+  `;
+
+  dropdown.innerHTML = matches.map(f => `
+    <button class="mention-opt w-full flex items-center gap-2 p-2 rounded-lg hover:bg-primary/10 text-left" data-ign="${esc(f.ign)}">
+      <div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
+        ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
+      </div>
+      <span class="text-xs font-bold text-white flex-1">@${esc(f.ign)}</span>
+    </button>
+  `).join('');
+
+  document.body.appendChild(dropdown);
+  mentionDropdownEl = dropdown;
+
+  dropdown.querySelectorAll('.mention-opt').forEach(btn => {
+    btn.onclick = () => {
+      insertMention(inputEl, btn.dataset.ign);
+      closeMentionDropdown();
+    };
+  });
+}
+
+function insertMention(inputEl, ign) {
+  const value = inputEl.value;
+  const cursorPos = inputEl.selectionStart || value.length;
+
+  // Find the @ symbol before cursor
+  const beforeCursor = value.slice(0, cursorPos);
+  const atIndex = beforeCursor.lastIndexOf('@');
+
+  if (atIndex === -1) return;
+
+  const before = value.slice(0, atIndex);
+  const after = value.slice(cursorPos);
+  const newValue = before + '@' + ign + ' ' + after;
+
+  inputEl.value = newValue;
+  inputEl.focus();
+
+  const newCursor = atIndex + ign.length + 2;
+  inputEl.setSelectionRange(newCursor, newCursor);
+}
+
+function setupMentionListener(inputEl) {
+  if (!inputEl || inputEl.dataset.mentionSetup) return;
+  inputEl.dataset.mentionSetup = '1';
+
+  inputEl.addEventListener('input', async (e) => {
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart || value.length;
+    const beforeCursor = value.slice(0, cursorPos);
+    const atIndex = beforeCursor.lastIndexOf('@');
+
+    if (atIndex === -1) {
+      closeMentionDropdown();
+      return;
+    }
+
+    // Check if there's a space after @ (user typed @ + something)
+    const afterAt = beforeCursor.slice(atIndex + 1);
+    if (afterAt.includes(' ') || afterAt.includes('\n')) {
+      closeMentionDropdown();
+      return;
+    }
+
+    await loadMentionFriends();
+    showMentionDropdown(inputEl, afterAt);
+  });
+
+  // Close dropdown on blur
+  inputEl.addEventListener('blur', () => {
+    setTimeout(closeMentionDropdown, 200);
+  });
+}
+
+// Hook into DM input to add mention
+const _origOpenDMThreadMention = openDMThread;
+openDMThread = async function(friendUid, friendIgn) {
+  await _origOpenDMThreadMention(friendUid, friendIgn);
+  setTimeout(() => {
+    const dmInput = document.getElementById('dm-input');
+    if (dmInput) setupMentionListener(dmInput);
+  }, 300);
+};
+
+// Hook into comment input to add mention
+const _origOpenCommentsSheetMention = openCommentsSheet;
+openCommentsSheet = async function(contentType, contentId, contentTitle) {
+  await _origOpenCommentsSheetMention(contentType, contentId, contentTitle);
+  setTimeout(() => {
+    const commentInput = document.getElementById('comment-input');
+    if (commentInput) setupMentionListener(commentInput);
+  }, 300);
+};
+
+// ============================================
+// PART 5: MENTION NOTIFICATIONS
+// ============================================
+
+// Detect @mentions on save and notify mentioned users
+async function notifyMentions(text, sourceType, sourceId) {
+  try {
+    const mentionRegex = /@([A-Za-z0-9_]{2,24})/g;
+    const mentions = new Set();
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+      mentions.add(match[1]);
+    }
+    if (mentions.size === 0) return;
+
+    await loadMentionFriends();
+
+    for (const ign of mentions) {
+      const friend = mentionFriends.find(f => f.ign.toLowerCase() === ign.toLowerCase());
+      if (!friend) continue;
+      if (friend.uid === State.user.uid) continue;
+
+      try {
+        await sendNotificationToUser(
+          friend.uid,
+          `💬 ${State.profile.ign} mentioned you`,
+          text.length > 80 ? text.slice(0, 80) + '...' : text,
+          { type: 'mention', sourceType, sourceId }
+        );
+      } catch (e) { /* silent */ }
+    }
+  } catch (e) {
+    console.warn('Mention notify error:', e);
+  }
+}
+
+// Hook into comment send
+const _origSendCommentMention = window.sendComment;
+// Since sendComment is inside openCommentsSheet, we hook via override
+const _origOpenCommentsNotify = openCommentsSheet;
+openCommentsSheet = async function(contentType, contentId, contentTitle) {
+  await _origOpenCommentsNotify(contentType, contentId, contentTitle);
+
+  // Find the send button and wrap it
+  setTimeout(() => {
+    const sendBtn = document.getElementById('comment-send');
+    const input = document.getElementById('comment-input');
+    if (!sendBtn || !input || sendBtn.dataset.mentionWrapped) return;
+
+    sendBtn.dataset.mentionWrapped = '1';
+    const originalOnclick = sendBtn.onclick;
+
+    sendBtn.onclick = async () => {
+      const text = input.value.trim();
+      if (text) {
+        // Fire mention notification (async, doesn't block)
+        notifyMentions(text, contentType, contentId).catch(() => {});
+      }
+      // Call original
+      if (originalOnclick) await originalOnclick.call(sendBtn);
+    };
+  }, 500);
+};
+
+// Hook into DM send
+const _origOpenDMSend = openDMThread;
+openDMThread = async function(friendUid, friendIgn) {
+  await _origOpenDMSend(friendUid, friendIgn);
+
+  setTimeout(() => {
+    const sendBtn = document.getElementById('dm-send');
+    const input = document.getElementById('dm-input');
+    if (!sendBtn || !input || sendBtn.dataset.mentionWrapped) return;
+
+    sendBtn.dataset.mentionWrapped = '1';
+    const originalOnclick = sendBtn.onclick;
+
+    sendBtn.onclick = async () => {
+      const text = input.value.trim();
+      if (text) {
+        notifyMentions(text, 'dm', null).catch(() => {});
+      }
+      if (originalOnclick) await originalOnclick.call(sendBtn);
+    };
+  }, 500);
+};
+
+// ============================================
+// PART 6: HIGHLIGHT MENTIONS IN RENDERED TEXT
+// ============================================
+
+function highlightMentions(text) {
+  if (!text) return '';
+  const escaped = esc(text);
+  return escaped.replace(/@([A-Za-z0-9_]{2,24})/g, '<span class="mention-text text-primary font-bold">@$1</span>');
+}
+
+// Make mentions tappable
+document.addEventListener('click', async (e) => {
+  const mention = e.target.closest('.mention-text');
+  if (!mention) return;
+  e.stopPropagation();
+
+  const ign = mention.textContent.replace('@', '').trim();
+  await loadMentionFriends();
+  const friend = mentionFriends.find(f => f.ign.toLowerCase() === ign.toLowerCase());
+  if (friend) {
+    openUserProfile(friend.uid);
+  } else {
+    toast('User not found', 'info');
+  }
+});
+
+window.openMessageOptions = openMessageOptions;
+window.openEditMessageModal = openEditMessageModal;
+window.notifyMentions = notifyMentions;
+window.highlightMentions = highlightMentions;
+
+console.log('✅ Chunk 41: Edit + Reply + Like + @Mention loaded');
+
+/* END OF CHUNK 41 */
