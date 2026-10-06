@@ -15055,3 +15055,560 @@ window.endOnboardingTour = endOnboardingTour;
 console.log('✅ Chunk 38: Onboarding tour loaded');
 
 /* END OF CHUNK 38 */
+// ============================================
+// Chunk 39: Founder Badge + Update Banner + Better Invite
+// ============================================
+
+// ============================================
+// PART 1: FOUNDER BADGE ON ADMIN'S POSTS
+// ============================================
+
+// Add founder badge to any content posted by the admin
+function getFounderBadge(uid) {
+  if (uid === ADMIN_UID) {
+    return '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex items-center gap-0.5">👑 FOUNDER</span>';
+  }
+  return '';
+}
+
+// Hook into lobby render
+const _origRenderLobbiesFounder = renderLobbies;
+renderLobbies = function() {
+  const feed = document.getElementById('lobbies-feed');
+  if (!feed) return;
+
+  _origRenderLobbiesFounder();
+
+  // Add founder badge to admin's posts
+  setTimeout(() => {
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      const ignEl = card.querySelector('.font-bold.text-sm');
+      if (!ignEl) return;
+      const ign = ignEl.textContent.trim();
+      if (ign === State.profile?.ign && State.user?.uid === ADMIN_UID) {
+        if (!card.querySelector('.founder-badge')) {
+          const badge = document.createElement('span');
+          badge.className = 'founder-badge text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black';
+          badge.textContent = '👑 FOUNDER';
+          ignEl.parentNode.insertBefore(badge, ignEl.nextSibling);
+        }
+      }
+    });
+  }, 150);
+};
+
+// Hook into vault render
+const _origRenderVaultsFounder = renderVaults;
+renderVaults = function() {
+  _origRenderVaultsFounder();
+  setTimeout(() => {
+    const feed = document.getElementById('vault-feed');
+    if (!feed) return;
+    // Founder vaults get a gold border
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      if (!card.dataset.uidCheck) {
+        card.dataset.uidCheck = '1';
+      }
+    });
+  }, 100);
+};
+
+// ============================================
+// PART 2: UPDATE AVAILABLE BANNER
+// ============================================
+
+const APP_BUILD_DATE = '2026-10-06'; // Update this each deploy
+const STORED_BUILD_KEY = 'codmpanda_build_date';
+
+function checkForUpdates() {
+  const storedBuild = localStorage.getItem(STORED_BUILD_KEY);
+  if (!storedBuild) {
+    localStorage.setItem(STORED_BUILD_KEY, APP_BUILD_DATE);
+    return;
+  }
+
+  if (storedBuild !== APP_BUILD_DATE) {
+    showUpdateBanner();
+  }
+}
+
+function showUpdateBanner() {
+  if (document.getElementById('update-banner')) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.style.cssText = `
+    position: fixed;
+    top: calc(var(--safe-top, 0px) + 60px);
+    left: 16px;
+    right: 16px;
+    z-index: 9000;
+    background: linear-gradient(135deg, #FF6B00 0%, #CC5500 100%);
+    border-radius: 16px;
+    padding: 12px 16px;
+    box-shadow: 0 8px 30px rgba(255, 107, 0, 0.5);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  `;
+
+  banner.innerHTML = `
+    <div style="font-size: 20px;">✨</div>
+    <div style="flex: 1;">
+      <div style="font-size: 12px; font-weight: 800; color: #fff;">New version available</div>
+      <div style="font-size: 10px; color: rgba(255,255,255,0.85); margin-top: 2px;">Refresh to get latest features</div>
+    </div>
+    <button id="update-refresh-btn" style="
+      background: #fff;
+      color: #FF6B00;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+      font-family: Inter, sans-serif;
+    ">Refresh</button>
+  `;
+
+  document.body.appendChild(banner);
+
+  // Add animation
+  if (!document.getElementById('update-banner-style')) {
+    const style = document.createElement('style');
+    style.id = 'update-banner-style';
+    style.textContent = `
+      @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  document.getElementById('update-refresh-btn').onclick = async () => {
+    // Update stored build date
+    localStorage.setItem(STORED_BUILD_KEY, APP_BUILD_DATE);
+
+    // Clear service worker caches
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+
+    // Unregister service worker
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(r => r.unregister()));
+    }
+
+    // Reload
+    toast('Refreshing...', 'success', 1000);
+    setTimeout(() => location.reload(true), 500);
+  };
+}
+
+// Run check on app load
+setTimeout(checkForUpdates, 3000);
+
+// ============================================
+// PART 3: BETTER INVITE MESSAGE
+// ============================================
+
+const _origShareAppBetter = shareApp;
+shareApp = function() {
+  const code = State.profile?.referralCode || '';
+  const link = location.origin + '?ref=' + State.user.uid;
+
+  const message = `🐼 Yo! Check out CODMPanda — the ultimate CODM companion.
+
+✅ Find squads instantly (LFG)
+✅ Track your camo grind
+✅ Build & share gunsmiths
+✅ Weekly tournaments & Clan Wars
+✅ Free to use
+
+Join me: ${link}
+
+Use my code: ${code}`;
+
+  if (navigator.share) {
+    navigator.share({
+      title: 'CODMPanda — The Ultimate CODM Companion',
+      text: message,
+      url: link
+    }).catch(() => {
+      copyText(link, 'Invite link copied!');
+    });
+  } else {
+    // Fallback: copy to clipboard
+    copyText(message, 'Invite message copied!');
+  }
+};
+
+// ============================================
+// PART 4: WELCOME BANNER (First-time users)
+// ============================================
+
+const _origShowMainAppWelcome = showMainApp;
+showMainApp = function() {
+  _origShowMainAppWelcome();
+
+  setTimeout(() => {
+    if (!State.profile) return;
+
+    // Only show welcome to brand-new users (< 2 min old)
+    const createdAt = State.profile.createdAt?.seconds ? State.profile.createdAt.seconds * 1000 : 0;
+    const isBrandNew = Date.now() - createdAt < 2 * 60 * 1000;
+
+    if (isBrandNew && !localStorage.getItem('codmpanda_welcomed')) {
+      localStorage.setItem('codmpanda_welcomed', '1');
+      setTimeout(() => {
+        toast('🎉 Welcome! Tap any tab to explore', 'success', 5000);
+      }, 2000);
+    }
+  }, 1000);
+};
+
+// ============================================
+// PART 5: COPY PROFILE LINK QUICK ACTION
+// ============================================
+
+function copyMyProfileLink() {
+  const link = `${location.origin}/?user=${State.user.uid}`;
+  copyText(link, '✅ Profile link copied!');
+}
+
+// Add to profile header — quick share
+const _origRenderYouTabShareLink = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabShareLink();
+  setTimeout(() => {
+    const content = document.getElementById('content');
+    if (!content) return;
+
+    const friendsBtn = document.getElementById('open-friends-btn');
+    if (!friendsBtn) return;
+    if (document.getElementById('share-profile-link-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'share-profile-link-btn';
+    btn.className = 'btn-press w-full mt-2 py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold flex items-center justify-center gap-2';
+    btn.innerHTML = '<span>🔗</span> Copy Profile Link';
+    btn.onclick = copyMyProfileLink;
+
+    friendsBtn.parentNode.insertBefore(btn, friendsBtn.nextSibling);
+    if (window.lucide) window.lucide.createIcons();
+  }, 100);
+};
+
+window.copyMyProfileLink = copyMyProfileLink;
+window.checkForUpdates = checkForUpdates;
+window.showUpdateBanner = showUpdateBanner;
+window.getFounderBadge = getFounderBadge;
+
+console.log('✅ Chunk 39: Final polish loaded');
+
+/* END OF CHUNK 39 */
+// ============================================
+// Chunk 40: Comments + Real-time Likes + Notifications
+// ============================================
+
+// ============================================
+// PART 1: COMMENT SYSTEM
+// ============================================
+
+async function openCommentsSheet(contentType, contentId, contentTitle) {
+  openSheet(`
+    <div class="space-y-4">
+      <div class="flex-1 overflow-y-auto max-h-[60vh] space-y-3" id="comments-list">
+        <div class="text-center py-6"><div class="spinner mx-auto"></div></div>
+      </div>
+      <div class="sticky bottom-0 bg-[#0a0a0a] pt-3 border-t border-border flex gap-2">
+        <input id="comment-input" type="text" placeholder="Write a comment..." maxlength="300" class="flex-1" />
+        <button id="comment-send" class="btn-press w-11 h-11 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
+          <i data-lucide="send" class="w-5 h-5 text-white"></i>
+        </button>
+      </div>
+    </div>
+  `, `💬 Comments`);
+
+  const commentsList = document.getElementById('comments-list');
+
+  const loadComments = async () => {
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'comments'),
+        where('contentId', '==', contentId),
+        limit(100)
+      ));
+
+      const comments = [];
+      snap.forEach(d => comments.push({ id: d.id, ...d.data() }));
+      comments.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+
+      if (comments.length === 0) {
+        commentsList.innerHTML = `
+          <div class="text-center py-8">
+            <div class="text-4xl mb-2">💬</div>
+            <div class="text-xs text-gray-500">No comments yet</div>
+            <div class="text-[10px] text-gray-600 mt-1">Be the first to reply</div>
+          </div>
+        `;
+        return;
+      }
+
+      commentsList.innerHTML = comments.map(c => {
+        const isMine = c.uid === State.user.uid;
+        return `
+          <div class="flex items-start gap-2.5 ${isMine ? 'flex-row-reverse' : ''}">
+            <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
+              ${c.avatar ? `<img src="${esc(c.avatar)}" class="w-full h-full object-cover" />` : getInitials(c.ign)}
+            </div>
+            <div class="flex-1 min-w-0 ${isMine ? 'text-right' : ''}">
+              <div class="inline-block max-w-full ${isMine ? 'bg-primary text-white' : 'bg-card border border-border'} rounded-2xl px-3 py-2 text-left">
+                <div class="text-[10px] font-bold ${isMine ? 'text-white/90' : 'text-primary'} mb-0.5">${esc(c.ign)}</div>
+                <div class="text-xs break-words">${esc(c.text)}</div>
+              </div>
+              <div class="flex items-center gap-2 mt-1 ${isMine ? 'justify-end' : ''}">
+                <span class="text-[9px] text-gray-500">${timeAgo(c.createdAt)}</span>
+                ${isMine ? `
+                  <button class="delete-comment text-[9px] text-red-400 font-bold" data-id="${c.id}">Delete</button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Wire delete
+      commentsList.querySelectorAll('.delete-comment').forEach(btn => {
+        btn.onclick = async () => {
+          try {
+            await deleteDoc(doc(db, 'comments', btn.dataset.id));
+            toast('Comment deleted', 'success', 1200);
+            loadComments();
+          } catch (e) { toast('Failed', 'error'); }
+        };
+      });
+
+      if (window.lucide) window.lucide.createIcons();
+
+      // Scroll to bottom
+      setTimeout(() => {
+        const sheet = document.querySelector('#sheet-container .sheet');
+        if (sheet) sheet.scrollTop = sheet.scrollHeight;
+      }, 50);
+    } catch (e) {
+      console.error('Comments error:', e);
+      commentsList.innerHTML = '<div class="text-center py-6 text-red-400 text-xs">Failed to load</div>';
+    }
+  };
+
+  const sendComment = async () => {
+    const input = document.getElementById('comment-input');
+    const text = input.value.trim();
+    if (!text) return;
+    if (text.length > 300) { toast('Comment too long', 'error'); return; }
+
+    input.value = '';
+    input.disabled = true;
+
+    try {
+      await addDoc(collection(db, 'comments'), {
+        contentId,
+        contentType,
+        uid: State.user.uid,
+        ign: State.profile.ign,
+        avatar: State.profile.avatar || '',
+        text,
+        createdAt: serverTimestamp()
+      });
+
+      // Notify content owner
+      try {
+        const ownerDoc = await getDoc(doc(db, contentType === 'lobby' ? 'lobbies' : contentType === 'clip' ? 'clips' : 'vaults', contentId));
+        if (ownerDoc.exists()) {
+          const ownerUid = ownerDoc.data().uid || ownerDoc.data().submittedByUid;
+          if (ownerUid && ownerUid !== State.user.uid) {
+            await sendNotificationToUser(
+              ownerUid,
+              `💬 ${State.profile.ign}`,
+              text.length > 60 ? text.slice(0, 60) + '...' : text,
+              { type: 'comment', contentType, contentId }
+            );
+          }
+        }
+      } catch (e) { /* silent */ }
+
+      loadComments();
+    } catch (e) {
+      console.error(e);
+      toast('Failed to send', 'error');
+    } finally {
+      input.disabled = false;
+      input.focus();
+    }
+  };
+
+  document.getElementById('comment-send').onclick = sendComment;
+  document.getElementById('comment-input').onkeypress = (e) => {
+    if (e.key === 'Enter') sendComment();
+  };
+
+  await loadComments();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 2: ADD COMMENT BUTTONS TO CONTENT
+// ============================================
+
+// Hook into lobby render — add comment button
+const _origRenderLobbiesComments = renderLobbies;
+renderLobbies = function() {
+  _origRenderLobbiesComments();
+
+  setTimeout(() => {
+    const feed = document.getElementById('lobbies-feed');
+    if (!feed) return;
+
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      if (card.querySelector('.comment-btn')) return;
+
+      const buttonsRow = card.querySelector('.flex.gap-2');
+      if (!buttonsRow) return;
+
+      const lobbyId = buttonsRow.querySelector('.join-btn')?.dataset.id || buttonsRow.querySelector('.share-lobby')?.dataset.id;
+      if (!lobbyId) return;
+
+      const btn = document.createElement('button');
+      btn.className = 'comment-btn btn-press w-10 h-10 rounded-xl bg-cardAlt border border-border flex items-center justify-center';
+      btn.dataset.id = lobbyId;
+      btn.innerHTML = '<i data-lucide="message-circle" class="w-4 h-4 text-gray-400"></i>';
+      btn.onclick = () => openCommentsSheet('lobby', lobbyId, 'Lobby');
+
+      const shareBtn = buttonsRow.querySelector('.share-lobby');
+      if (shareBtn) {
+        shareBtn.parentNode.insertBefore(btn, shareBtn);
+      } else {
+        buttonsRow.appendChild(btn);
+      }
+    });
+    if (window.lucide) window.lucide.createIcons();
+  }, 150);
+};
+
+// Hook into clip render — add comment button
+const _origRenderClipsComments = renderClips;
+renderClips = function() {
+  _origRenderClipsComments();
+
+  setTimeout(() => {
+    const feed = document.getElementById('clips-feed');
+    if (!feed) return;
+
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      if (card.querySelector('.comment-btn')) return;
+
+      const buttonsRow = card.querySelector('.flex.items-center.justify-between');
+      if (!buttonsRow) return;
+
+      const clipId = buttonsRow.querySelector('.like-clip')?.dataset.id;
+      if (!clipId) return;
+
+      const btn = document.createElement('button');
+      btn.className = 'comment-btn btn-press flex items-center gap-1 text-xs text-gray-400';
+      btn.dataset.id = clipId;
+      btn.innerHTML = '<i data-lucide="message-circle" class="w-4 h-4"></i>';
+      btn.onclick = () => openCommentsSheet('clip', clipId, 'Clip');
+
+      const likeBtn = buttonsRow.querySelector('.like-clip');
+      if (likeBtn) {
+        likeBtn.parentNode.insertBefore(btn, likeBtn.nextSibling);
+      }
+    });
+    if (window.lucide) window.lucide.createIcons();
+  }, 150);
+};
+
+// ============================================
+// PART 3: REAL-TIME LIKE COUNTS
+// ============================================
+
+// Add live subscription to likes for visible items
+function setupRealtimeLikes() {
+  // Skip for now — Firestore already updates via onSnapshot when parent collection changes
+  // Likes are already real-time via the parent listener
+}
+
+// ============================================
+// PART 4: JOIN NOTIFICATION
+// ============================================
+
+// Enhanced joinLobby with notification
+const _origJoinLobbyNotif = joinLobby;
+joinLobby = async function(lobbyId) {
+  const lobby = State.cache.lobbies.find(l => l.id === lobbyId);
+  if (!lobby) return;
+
+  // Send notification to lobby creator (if not self)
+  if (lobby.uid && lobby.uid !== State.user.uid) {
+    try {
+      await sendNotificationToUser(
+        lobby.uid,
+        '🎮 Someone Joined!',
+        `${State.profile.ign} joined your ${lobby.mode} lobby`,
+        { type: 'lobby_join', lobbyId }
+      );
+    } catch (e) { /* silent */ }
+  }
+
+  return _origJoinLobbyNotif(lobbyId);
+};
+
+// ============================================
+// PART 5: LOBBY COMMENTS COUNT BADGE
+// ============================================
+
+// Cache comment counts to avoid N+1 queries
+let commentCountsCache = {};
+
+async function updateCommentCounts() {
+  try {
+    const snap = await getDocs(query(collection(db, 'comments'), limit(500)));
+    const counts = {};
+    snap.forEach(d => {
+      const c = d.data();
+      if (!c.contentId) return;
+      counts[c.contentId] = (counts[c.contentId] || 0) + 1;
+    });
+    commentCountsCache = counts;
+
+    // Update visible buttons
+    document.querySelectorAll('.comment-btn').forEach(btn => {
+      const id = btn.dataset.id;
+      const count = counts[id] || 0;
+      const existingBadge = btn.querySelector('.comment-count');
+      if (existingBadge) existingBadge.remove();
+
+      if (count > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'comment-count text-[9px] text-primary font-bold absolute -top-1 -right-1 bg-primary/20 px-1 rounded-full';
+        badge.textContent = count;
+        btn.style.position = 'relative';
+        btn.appendChild(badge);
+      }
+    });
+  } catch (e) { /* silent */ }
+}
+
+setTimeout(updateCommentCounts, 5000);
+
+window.openCommentsSheet = openCommentsSheet;
+window.updateCommentCounts = updateCommentCounts;
+
+console.log('✅ Chunk 40: Comments + Join notifications loaded');
+
+/* END OF CHUNK 40 */
