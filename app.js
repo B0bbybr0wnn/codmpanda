@@ -13741,3 +13741,113 @@ openCustomDropdown = function(selectEl) {
 console.log('✅ Chunk 35: Sheet stack protection loaded');
 
 /* END OF CHUNK 35 */
+// ============================================
+// Chunk 36: Inline Dropdown (No Sheets)
+// ============================================
+
+openCustomDropdown = function(selectEl) {
+  const options = Array.from(selectEl.options);
+  const currentValue = selectEl.value;
+
+  document.querySelectorAll('.inline-dropdown-picker').forEach(el => el.remove());
+
+  const groups = [];
+  let currentGroup = null;
+  options.forEach(opt => {
+    if (opt.parentElement && opt.parentElement.tagName === 'OPTGROUP') {
+      const label = opt.parentElement.label;
+      let g = groups.find(x => x.label === label);
+      if (!g) { g = { label, options: [] }; groups.push(g); }
+      g.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
+    } else {
+      if (!currentGroup) { currentGroup = { label: null, options: [] }; groups.push(currentGroup); }
+      currentGroup.options.push({ value: opt.value, label: opt.textContent, selected: opt.value === currentValue });
+    }
+  });
+
+  const pickerHTML = `
+    <div class="inline-dropdown-picker" style="
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 300;
+      display: flex;
+      align-items: flex-end;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    ">
+      <div style="
+        width: 100%;
+        max-height: 75vh;
+        background: #0a0a0a;
+        border-top-left-radius: 24px;
+        border-top-right-radius: 24px;
+        border-top: 1px solid #222;
+        overflow-y: auto;
+      ">
+        <div style="
+          padding: 12px 20px;
+          border-bottom: 1px solid #222;
+          position: sticky; top: 0;
+          background: #0a0a0a;
+          z-index: 10;
+        ">
+          <div style="width: 40px; height: 4px; background: #333; border-radius: 2px; margin: 0 auto 12px;"></div>
+          <div style="font-size: 16px; font-weight: 800; color: #fff;">${esc(selectEl.getAttribute('data-dropdown-title') || 'Select')}</div>
+        </div>
+        <div style="padding: 16px 20px 24px;">
+          ${groups.map(g => `
+            ${g.label ? `<div style="font-size: 10px; font-weight: 700; color: #666; text-transform: uppercase; padding: 6px 4px;">${esc(g.label)}</div>` : ''}
+            <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;">
+              ${g.options.map(o => `
+                <button class="inline-dropdown-opt" data-value="${esc(o.value)}" style="
+                  text-align: left;
+                  padding: 12px 16px;
+                  border-radius: 12px;
+                  background: ${o.selected ? 'rgba(255, 107, 0, 0.15)' : '#111'};
+                  border: 1px solid ${o.selected ? '#FF6B00' : '#222'};
+                  color: ${o.selected ? '#FF6B00' : '#fff'};
+                  font-weight: 600;
+                  font-size: 14px;
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  cursor: pointer;
+                  font-family: Inter, sans-serif;
+                ">
+                  <span>${esc(o.label)}</span>
+                  ${o.selected ? '<span style="color: #FF6B00; font-weight: 900;">✓</span>' : ''}
+                </button>
+              `).join('')}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = pickerHTML;
+  const pickerEl = wrapper.firstElementChild;
+  document.body.appendChild(pickerEl);
+
+  pickerEl.onclick = (e) => {
+    if (e.target === pickerEl) {
+      pickerEl.remove();
+    }
+  };
+
+  pickerEl.querySelectorAll('.inline-dropdown-opt').forEach(btn => {
+    btn.onclick = () => {
+      selectEl.value = btn.dataset.value;
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+      selectEl.setAttribute('data-selected', btn.dataset.value);
+      pickerEl.remove();
+      toast(`✓ ${btn.textContent.replace('✓', '').trim()}`, 'success', 1200);
+    };
+  });
+};
+
+console.log('✅ Chunk 36: Inline dropdown system loaded');
+
+/* END OF CHUNK 36 */
