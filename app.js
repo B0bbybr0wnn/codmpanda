@@ -17344,3 +17344,1964 @@ window.openEditVaultModal = openEditVaultModal;
 console.log('✅ Chunk 45: Corrected map + 3-dot menu + perf loaded');
 
 /* END OF CHUNK 45 */
+// ============================================
+// Chunk 46: Vault Detail View + Edit Fix + Like Fix
+// ============================================
+
+// ============================================
+// PART 1: LIKE HELPERS (one per user)
+// ============================================
+
+async function hasUserLiked(itemType, itemId) {
+  try {
+    const ref = doc(db, 'likes', `${itemType}_${itemId}_${State.user.uid}`);
+    const snap = await getDoc(ref);
+    return snap.exists();
+  } catch (e) {
+    return false;
+  }
+}
+
+async function likeItem(itemType, itemId, countField) {
+  try {
+    if (!State.user) return false;
+    const likeRef = doc(db, 'likes', `${itemType}_${itemId}_${State.user.uid}`);
+    const likeSnap = await getDoc(likeRef);
+    if (likeSnap.exists()) return false;
+
+    await setDoc(likeRef, {
+      itemType, itemId,
+      userId: State.user.uid,
+      createdAt: serverTimestamp()
+    });
+
+    const collectionName = itemType === 'vault' ? 'vaults'
+      : itemType === 'clip' ? 'clips'
+      : itemType === 'comment' ? 'comments'
+      : itemType === 'leak' ? 'leaks'
+      : 'vaults';
+
+    await updateDoc(doc(db, collectionName, itemId), {
+      [countField || 'likes']: increment(1)
+    });
+
+    return true;
+  } catch (e) {
+    console.error('Like error:', e);
+    return false;
+  }
+}
+
+async function unlikeItem(itemType, itemId, countField) {
+  try {
+    if (!State.user) return false;
+    const likeRef = doc(db, 'likes', `${itemType}_${itemId}_${State.user.uid}`);
+    const likeSnap = await getDoc(likeRef);
+    if (!likeSnap.exists()) return false;
+
+    await deleteDoc(likeRef);
+
+    const collectionName = itemType === 'vault' ? 'vaults'
+      : itemType === 'clip' ? 'clips'
+      : itemType === 'comment' ? 'comments'
+      : itemType === 'leak' ? 'leaks'
+      : 'vaults';
+
+    await updateDoc(doc(db, collectionName, itemId), {
+      [countField || 'likes']: increment(-1)
+    });
+
+    return true;
+  } catch (e) {
+    console.error('Unlike error:', e);
+    return false;
+  }
+}
+
+async function toggleLike(itemType, itemId, countField) {
+  const liked = await hasUserLiked(itemType, itemId);
+  if (liked) {
+    await unlikeItem(itemType, itemId, countField);
+    return false;
+  } else {
+    await likeItem(itemType, itemId, countField);
+    return true;
+  }
+}
+
+// ============================================
+// PART 2: VAULT DETAIL VIEW
+// ============================================
+
+function openVaultDetail(vaultId) {
+  const vault = State.cache.vaults.find(v => v.id === vaultId);
+  if (!vault) { toast('Item not found', 'error'); return; }
+
+  const isMine = vault.uid === State.user.uid;
+  const isSens = vault.type === 'sens';
+  const isHud = vault.type === 'hud';
+  const isLiked = State.likedItems?.vault?.[vault.id] || false;
+
+  // Build content based on type
+  let contentHTML = '';
+
+  if (isSens) {
+    const fields = vault.attachments || {};
+    contentHTML = `
+      <div class="space-y-2">
+        ${Object.entries(fields).length > 0 ? Object.entries(fields).map(([k, v]) => {
+          const fieldName = SENS_FIELDS.find(f => f.key === k)?.label || k;
+          return `
+            <div class="flex items-center justify-between bg-card border border-border rounded-lg p-3">
+              <span class="text-xs text-gray-400">${esc(fieldName)}</span>
+              <span class="text-sm font-black text-primary">${esc(v)}</span>
+            </div>
+          `;
+        }).join('') : '<div class="text-center py-4 text-xs text-gray-500">No values saved</div>'}
+      </div>
+      ${vault.device ? `
+        <div class="bg-card border border-border rounded-lg p-3 mt-3">
+          <span class="text-xs text-gray-400">Device: </span>
+          <span class="text-xs font-bold text-white">${esc(vault.device)}</span>
+        </div>
+      ` : ''}
+      ${vault.notes ? `
+        <div class="bg-card border border-border rounded-lg p-3 mt-3">
+          <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Notes</div>
+          <p class="text-xs text-gray-300">${esc(vault.notes)}</p>
+        </div>
+      ` : ''}
+    `;
+  } else if (isHud) {
+    contentHTML = `
+      ${vault.imageUrl ? `
+        <img src="${esc(vault.imageUrl)}" class="w-full rounded-xl mb-3" />
+      ` : ''}
+      <div class="space-y-2">
+        ${vault.attachments?.style ? `
+          <div class="flex items-center justify-between bg-card border border-border rounded-lg p-3">
+            <span class="text-xs text-gray-400">Control Style</span>
+            <span class="text-sm font-black text-gold">${esc(vault.attachments.style)}</span>
+          </div>
+        ` : ''}
+        ${vault.attachments?.device ? `
+          <div class="flex items-center justify-between bg-card border border-border rounded-lg p-3">
+            <span class="text-xs text-gray-400">Device</span>
+            <span class="text-sm font-black text-white">${esc(vault.attachments.device)}</span>
+          </div>
+        ` : ''}
+      </div>
+      ${vault.notes ? `
+        <div class="bg-card border border-border rounded-lg p-3 mt-3">
+          <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Notes</div>
+          <p class="text-xs text-gray-300">${esc(vault.notes)}</p>
+        </div>
+      ` : ''}
+    `;
+  } else {
+    // Gunsmith
+    contentHTML = `
+      ${vault.imageUrl ? `
+        <img src="${esc(vault.imageUrl)}" class="w-full rounded-xl mb-3" />
+      ` : ''}
+
+      ${vault.gunsmithCode ? `
+        <div class="bg-card border border-primary/30 rounded-xl p-3 mb-3">
+          <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Gunsmith Code</div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-mono text-sm font-bold text-primary break-all">${esc(vault.gunsmithCode)}</span>
+            <button id="detail-copy-code" class="btn-press w-9 h-9 rounded-lg bg-primary flex items-center justify-center flex-shrink-0" data-code="${esc(vault.gunsmithCode)}">
+              <i data-lucide="copy" class="w-4 h-4 text-white"></i>
+            </button>
+          </div>
+        </div>
+      ` : ''}
+
+      ${vault.attachments && Object.keys(vault.attachments).length > 0 ? `
+        <div class="bg-card border border-border rounded-xl p-3">
+          <div class="text-[10px] text-gray-500 uppercase font-bold mb-2">Attachments</div>
+          <div class="space-y-2">
+            ${Object.entries(vault.attachments).map(([slot, att]) => `
+              <div class="flex items-start justify-between gap-2">
+                <span class="text-[10px] text-gray-500 uppercase font-bold flex-shrink-0">${esc(slot)}</span>
+                <span class="text-xs font-semibold text-white text-right">${esc(typeof att === 'string' ? att : att.name || 'N/A')}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  openSheet(`
+    <div class="space-y-4">
+      <!-- Header -->
+      <div class="text-center">
+        <div class="text-2xl font-black mb-1">${esc(vault.gunName || 'Unknown')}</div>
+        <div class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">${isSens ? 'SENSITIVITY' : isHud ? 'HUD LAYOUT' : 'GUNSMITH BUILD'}</div>
+      </div>
+
+      <!-- Author -->
+      <div class="flex items-center justify-center gap-2 text-xs">
+        <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
+          ${vault.avatar ? `<img src="${esc(vault.avatar)}" class="w-full h-full object-cover" />` : getInitials(vault.ign || '?')}
+        </div>
+        <span class="text-gray-400">by <span class="text-white font-bold">${esc(vault.ign || 'Unknown')}</span> · ${timeAgo(vault.createdAt)}</span>
+      </div>
+
+      <!-- Content -->
+      ${contentHTML}
+
+      <!-- Actions -->
+      <div class="flex items-center gap-2 pt-3 border-t border-border">
+        <button id="detail-like" class="btn-press flex-1 py-3 rounded-xl ${isLiked ? 'bg-primary text-white' : 'bg-cardAlt border border-border text-gray-300'} font-bold text-sm flex items-center justify-center gap-2" data-id="${vault.id}">
+          <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i>
+          <span id="detail-like-count">${vault.likes || 0}</span>
+        </button>
+        <button id="detail-share" class="btn-press flex-1 py-3 rounded-xl bg-cardAlt border border-border text-gray-300 font-bold text-sm flex items-center justify-center gap-2">
+          <i data-lucide="share-2" class="w-4 h-4"></i> Share
+        </button>
+        ${isMine ? `
+          <button id="detail-edit" class="btn-press w-12 h-12 rounded-xl bg-primary/15 border border-primary/40 flex items-center justify-center" title="Edit">
+            <i data-lucide="pencil" class="w-4 h-4 text-primary"></i>
+          </button>
+        ` : ''}
+      </div>
+    </div>
+  `, '');
+
+  // Wire actions
+  const copyBtn = document.getElementById('detail-copy-code');
+  if (copyBtn) {
+    copyBtn.onclick = () => copyText(copyBtn.dataset.code, 'Code copied!');
+  }
+
+  const likeBtn = document.getElementById('detail-like');
+  if (likeBtn) {
+    likeBtn.onclick = async () => {
+      const nowLiked = await toggleLike('vault', vault.id, 'likes');
+      vault.likes = nowLiked ? (vault.likes || 0) + 1 : Math.max(0, (vault.likes || 0) - 1);
+      State.likedItems = State.likedItems || {};
+      State.likedItems.vault = State.likedItems.vault || {};
+      State.likedItems.vault[vault.id] = nowLiked;
+
+      likeBtn.classList.toggle('bg-primary', nowLiked);
+      likeBtn.classList.toggle('text-white', nowLiked);
+      likeBtn.classList.toggle('bg-cardAlt', !nowLiked);
+      likeBtn.classList.toggle('border', !nowLiked);
+      likeBtn.classList.toggle('border-border', !nowLiked);
+      likeBtn.classList.toggle('text-gray-300', !nowLiked);
+
+      const icon = likeBtn.querySelector('i');
+      if (nowLiked) icon.classList.add('fill-current');
+      else icon.classList.remove('fill-current');
+
+      document.getElementById('detail-like-count').textContent = vault.likes;
+
+      toast(nowLiked ? '❤️ Liked!' : 'Unliked', 'success', 1000);
+    };
+  }
+
+  document.getElementById('detail-share').onclick = () => {
+    openShareSheet({
+      title: vault.gunName,
+      text: `Check out this ${vault.gunName} on CODMPanda!`,
+      url: getVaultShareUrl(vault.id)
+    });
+  };
+
+  const editBtn = document.getElementById('detail-edit');
+  if (editBtn) {
+    editBtn.onclick = () => {
+      closeSheet();
+      setTimeout(() => openEditVaultModal(vault), 300);
+    };
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 3: FIXED EDIT VAULT MODAL (all types)
+// ============================================
+
+function openEditVaultModal(vault) {
+  if (!vault) { toast('Item not found', 'error'); return; }
+
+  const type = vault.type || 'gunsmith';
+
+  if (type === 'sens') {
+    openSheet(`
+      <div class="space-y-4">
+        <div class="bg-primary/10 border border-primary/30 rounded-xl p-3 text-xs text-primary">
+          Edit your sensitivity values
+        </div>
+
+        ${SENS_FIELDS.map(f => `
+          <div>
+            <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">${f.label}</label>
+            <input id="edit-sens-${f.key}" type="number" min="0" max="300" value="${vault.attachments?.[f.key] || ''}" placeholder="${f.placeholder}" />
+          </div>
+        `).join('')}
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Device</label>
+          <select id="edit-sens-device" data-dropdown-title="Device">
+            <option value="">Select...</option>
+            <option ${vault.device === 'Phone' ? 'selected' : ''}>Phone</option>
+            <option ${vault.device === 'Tablet' ? 'selected' : ''}>Tablet</option>
+            <option ${vault.device === 'Controller' ? 'selected' : ''}>Controller</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Notes</label>
+          <textarea id="edit-sens-notes" rows="3" maxlength="200">${esc(vault.notes || '')}</textarea>
+        </div>
+
+        <button id="edit-sens-save" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+          Save Changes
+        </button>
+      </div>
+    `, 'Edit Sensitivity');
+
+    document.getElementById('edit-sens-save').onclick = async () => {
+      const values = {};
+      SENS_FIELDS.forEach(f => {
+        const val = document.getElementById('edit-sens-' + f.key).value.trim();
+        if (val) values[f.key] = parseInt(val);
+      });
+      const device = document.getElementById('edit-sens-device').value;
+      const notes = document.getElementById('edit-sens-notes').value.trim();
+
+      const summary = SENS_FIELDS
+        .filter(f => values[f.key] !== undefined)
+        .map(f => `${f.label.split(' ')[0]}: ${values[f.key]}`)
+        .join(' | ');
+
+      try {
+        await updateDoc(doc(db, 'vaults', vault.id), {
+          attachments: values,
+          gunsmithCode: summary.slice(0, 50),
+          device,
+          notes
+        });
+        toast('✏️ Updated', 'success');
+        closeSheet();
+        State.cache.vaults = State.cache.vaults.map(v => v.id === vault.id ? { ...v, attachments: values, gunsmithCode: summary.slice(0, 50), device, notes } : v);
+        renderVaults();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    };
+
+  } else if (type === 'hud') {
+    openSheet(`
+      <div class="space-y-4">
+        <div class="bg-gold/10 border border-gold/30 rounded-xl p-3 text-xs text-gold">
+          Edit HUD info
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Control Style</label>
+          <select id="edit-hud-style" data-dropdown-title="Control Style">
+            ${HUD_STYLES.map(s => `<option ${vault.attachments?.style === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Device</label>
+          <select id="edit-hud-device" data-dropdown-title="Device">
+            <option ${vault.attachments?.device === 'Phone' ? 'selected' : ''}>Phone</option>
+            <option ${vault.attachments?.device === 'Tablet' ? 'selected' : ''}>Tablet</option>
+            <option ${vault.attachments?.device === 'Controller' ? 'selected' : ''}>Controller</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">New Screenshot (optional)</label>
+          <input id="edit-hud-image" type="file" accept="image/*" class="text-xs" />
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Notes</label>
+          <textarea id="edit-hud-notes" rows="3" maxlength="200">${esc(vault.notes || '')}</textarea>
+        </div>
+
+        <button id="edit-hud-save" class="btn-press w-full py-4 rounded-2xl bg-gold text-black font-bold">
+          Save Changes
+        </button>
+      </div>
+    `, 'Edit HUD');
+
+    document.getElementById('edit-hud-save').onclick = async () => {
+      const style = document.getElementById('edit-hud-style').value;
+      const device = document.getElementById('edit-hud-device').value;
+      const notes = document.getElementById('edit-hud-notes').value.trim();
+      const fileInput = document.getElementById('edit-hud-image');
+
+      try {
+        const updates = {
+          gunName: `HUD · ${style}`,
+          gunsmithCode: device,
+          attachments: { style, device },
+          notes
+        };
+
+        if (fileInput.files && fileInput.files[0]) {
+          updates.imageUrl = await compressImage(fileInput.files[0], 800, 0.7);
+        }
+
+        await updateDoc(doc(db, 'vaults', vault.id), updates);
+        toast('✏️ Updated', 'success');
+        closeSheet();
+        State.cache.vaults = State.cache.vaults.map(v => v.id === vault.id ? { ...v, ...updates } : v);
+        renderVaults();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    };
+
+  } else {
+    // Gunsmith edit
+    openSheet(`
+      <div class="space-y-4">
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gun Name</label>
+          <input id="edit-v-gun" type="text" value="${esc(vault.gunName || '')}" maxlength="40" />
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gunsmith Code</label>
+          <input id="edit-v-code" type="text" value="${esc(vault.gunsmithCode || '')}" maxlength="20" />
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Attachments (one per line: "Slot: Name")</label>
+          <textarea id="edit-v-attach" rows="5" maxlength="500">${esc(Object.entries(vault.attachments || {}).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : v.name || ''}`).join('\n'))}</textarea>
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">New Screenshot (optional)</label>
+          <input id="edit-v-image" type="file" accept="image/*" class="text-xs" />
+        </div>
+
+        <button id="edit-v-save" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+          Save Changes
+        </button>
+      </div>
+    `, 'Edit Build');
+
+    document.getElementById('edit-v-save').onclick = async () => {
+      const gunName = document.getElementById('edit-v-gun').value.trim();
+      const gunsmithCode = document.getElementById('edit-v-code').value.trim();
+      const attachRaw = document.getElementById('edit-v-attach').value.trim();
+      const fileInput = document.getElementById('edit-v-image');
+
+      if (!gunName) { toast('Gun name required', 'error'); return; }
+
+      const attachments = {};
+      attachRaw.split('\n').forEach(line => {
+        const [k, ...v] = line.split(':');
+        if (k && v.length) attachments[k.trim()] = v.join(':').trim();
+      });
+
+      try {
+        const updates = { gunName, gunsmithCode, attachments };
+        if (fileInput.files && fileInput.files[0]) {
+          updates.imageUrl = await compressImage(fileInput.files[0], 700, 0.6);
+        }
+
+        await updateDoc(doc(db, 'vaults', vault.id), updates);
+        toast('✏️ Updated', 'success');
+        closeSheet();
+        State.cache.vaults = State.cache.vaults.map(v => v.id === vault.id ? { ...v, ...updates } : v);
+        renderVaults();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    };
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 4: REWRITTEN VAULT RENDER (with detail view + likes)
+// ============================================
+
+const _origRenderVaultsDetail = renderVaults;
+renderVaults = function() {
+  const feed = document.getElementById('vault-feed');
+  if (!feed) return;
+  let vaults = State.cache.vaults;
+  if (State.filters.vaults.search) {
+    const s = State.filters.vaults.search;
+    vaults = vaults.filter(v =>
+      (v.gunName || '').toLowerCase().includes(s) ||
+      (v.gunsmithCode || '').toLowerCase().includes(s)
+    );
+  }
+
+  if (vaults.length === 0) {
+    feed.className = '';
+    let emptyText = 'Share your first build';
+    let emptyCta = 'Submit Build';
+    let emptyFn = openSubmitVaultSheet;
+    if (vaultTypeFilter === 'sens') { emptyText = 'Share your best sensitivity'; emptyCta = 'Share Sensitivity'; emptyFn = openSubmitSensSheet; }
+    if (vaultTypeFilter === 'hud') { emptyText = 'Share your HUD layout'; emptyCta = 'Share HUD'; emptyFn = openSubmitHudSheet; }
+    feed.innerHTML = emptyState('package-open', 'Nothing here yet', emptyText, emptyCta, emptyFn);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.className = 'grid grid-cols-2 gap-3';
+  feed.innerHTML = vaults.map(v => {
+    const isMine = v.uid === State.user.uid;
+    const isSens = v.type === 'sens';
+    const isHud = v.type === 'hud';
+    const isLiked = State.likedItems?.vault?.[v.id] || false;
+
+    return `
+      <div class="bg-card border border-border rounded-2xl p-3 fade-in relative vault-card" data-id="${v.id}" style="cursor: pointer;">
+        ${isMine ? `
+          <button class="vault-menu-btn absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center z-10" data-id="${v.id}">
+            <i data-lucide="more-vertical" class="w-3.5 h-3.5 text-white/70"></i>
+          </button>
+        ` : ''}
+
+        ${isHud && v.imageUrl ? `
+          <img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" loading="lazy" />
+        ` : isSens ? `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-primaryDark/20 flex items-center justify-center flex-col gap-1">
+            <span class="text-2xl">🎯</span>
+            <span class="text-[10px] text-primary font-bold">SENSITIVITY</span>
+          </div>
+        ` : isHud ? `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-gold/20 to-yellow-500/20 flex items-center justify-center flex-col gap-1">
+            <span class="text-2xl">🎮</span>
+            <span class="text-[10px] text-gold font-bold">HUD LAYOUT</span>
+          </div>
+        ` : v.imageUrl ? `
+          <img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" loading="lazy" />
+        ` : `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+            <i data-lucide="crosshair" class="w-8 h-8 text-primary/60"></i>
+          </div>
+        `}
+
+        <div class="text-xs font-bold text-gray-300 truncate">${esc(v.gunName || 'Unknown')}</div>
+        <div class="text-[10px] text-gray-500 mb-2 truncate">${esc(v.gunsmithCode || v.type || 'build')}</div>
+
+        ${!isSens && !isHud && v.gunsmithCode ? `
+          <button class="copy-code-btn w-full py-2 rounded-lg bg-primary/15 border border-primary/30 text-primary text-[11px] font-bold flex items-center justify-center gap-1 mb-2" data-code="${esc(v.gunsmithCode)}">
+            <i data-lucide="copy" class="w-3 h-3"></i> Copy Code
+          </button>
+        ` : ''}
+
+        <div class="flex items-center justify-between">
+          <button class="like-btn flex items-center gap-1 text-[11px] ${isLiked ? 'text-primary' : 'text-gray-400'}" data-id="${v.id}">
+            <i data-lucide="heart" class="w-3.5 h-3.5 ${isLiked ? 'fill-current' : ''}"></i> ${v.likes || 0}
+          </button>
+          <button class="share-vault-btn text-primary" data-id="${v.id}" data-gun="${esc(v.gunName)}">
+            <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Wire copy
+  feed.querySelectorAll('.copy-code-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); copyText(btn.dataset.code, 'Code copied!'); };
+  });
+
+  // Wire like
+  feed.querySelectorAll('.like-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const vault = vaults.find(v => v.id === btn.dataset.id);
+      if (!vault) return;
+
+      const nowLiked = await toggleLike('vault', vault.id, 'likes');
+      const newCount = nowLiked ? (vault.likes || 0) + 1 : Math.max(0, (vault.likes || 0) - 1);
+
+      btn.innerHTML = `<i data-lucide="heart" class="w-3.5 h-3.5 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+      btn.classList.toggle('text-primary', nowLiked);
+      btn.classList.toggle('text-gray-400', !nowLiked);
+
+      State.likedItems = State.likedItems || {};
+      State.likedItems.vault = State.likedItems.vault || {};
+      State.likedItems.vault[vault.id] = nowLiked;
+      vault.likes = newCount;
+
+      if (window.lucide) window.lucide.createIcons();
+      toast(nowLiked ? '❤️ Liked!' : 'Unliked', 'success', 1000);
+    };
+  });
+
+  // Wire share
+  feed.querySelectorAll('.share-vault-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openShareSheet({
+        title: btn.dataset.gun,
+        text: `Check out this ${btn.dataset.gun} on CODMPanda!`,
+        url: getVaultShareUrl(btn.dataset.id)
+      });
+    };
+  });
+
+  // Wire 3-dot menu
+  feed.querySelectorAll('.vault-menu-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openVaultMenu(btn.dataset.id);
+    };
+  });
+
+  // Wire card tap → detail view
+  feed.querySelectorAll('.vault-card').forEach(card => {
+    card.onclick = (e) => {
+      // Ignore if tapped a button
+      if (e.target.closest('button')) return;
+      openVaultDetail(card.dataset.id);
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 5: REWRITTEN 3-DOT MENU
+// ============================================
+
+function openVaultMenu(vaultId) {
+  const vault = State.cache.vaults.find(v => v.id === vaultId);
+  if (!vault) return;
+
+  openSheet(`
+    <div class="space-y-2">
+      <div class="text-[10px] text-gray-500 uppercase font-bold mb-2">${esc(vault.gunName || 'Build')}</div>
+
+      <button id="vault-menu-view" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+        <i data-lucide="eye" class="w-4 h-4 text-gray-400"></i>
+        <span class="text-sm font-bold">View Details</span>
+      </button>
+
+      <button id="vault-menu-edit" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+        <i data-lucide="pencil" class="w-4 h-4 text-primary"></i>
+        <span class="text-sm font-bold">Edit</span>
+      </button>
+
+      <button id="vault-menu-share" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+        <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+        <span class="text-sm font-bold">Share</span>
+      </button>
+
+      ${vault.gunsmithCode && vault.type === 'gunsmith' ? `
+        <button id="vault-menu-copy" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+          <i data-lucide="copy" class="w-4 h-4 text-primary"></i>
+          <span class="text-sm font-bold">Copy Code</span>
+        </button>
+      ` : ''}
+
+      <button id="vault-menu-delete" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-left">
+        <i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i>
+        <span class="text-sm font-bold text-red-400">Delete</span>
+      </button>
+
+      <button onclick="closeSheet()" class="text-xs text-gray-500 w-full pt-3">Cancel</button>
+    </div>
+  `, '');
+
+  document.getElementById('vault-menu-view').onclick = () => {
+    closeSheet();
+    setTimeout(() => openVaultDetail(vault.id), 300);
+  };
+
+  document.getElementById('vault-menu-edit').onclick = () => {
+    closeSheet();
+    setTimeout(() => openEditVaultModal(vault), 300);
+  };
+
+  document.getElementById('vault-menu-share').onclick = () => {
+    closeSheet();
+    setTimeout(() => {
+      openShareSheet({
+        title: vault.gunName,
+        text: `Check out this ${vault.gunName} on CODMPanda!`,
+        url: getVaultShareUrl(vault.id)
+      });
+    }, 300);
+  };
+
+  const copyBtn = document.getElementById('vault-menu-copy');
+  if (copyBtn) {
+    copyBtn.onclick = () => {
+      closeSheet();
+      copyText(vault.gunsmithCode, 'Code copied!');
+    };
+  }
+
+  document.getElementById('vault-menu-delete').onclick = () => {
+    closeSheet();
+    setTimeout(() => {
+      confirmDialog('Delete Build', 'This will remove it permanently.', async () => {
+        try {
+          await deleteDoc(doc(db, 'vaults', vault.id));
+          State.cache.vaults = State.cache.vaults.filter(v => v.id !== vault.id);
+          renderVaults();
+          toast('🗑️ Deleted', 'success');
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Delete', true);
+    }, 300);
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 6: LOAD USER LIKES
+// ============================================
+
+async function loadUserLikes() {
+  if (!State.user) return;
+  try {
+    State.likedItems = { vault: {}, clip: {}, leak: {}, comment: {} };
+
+    const snap = await getDocs(query(
+      collection(db, 'likes'),
+      where('userId', '==', State.user.uid),
+      limit(500)
+    ));
+
+    snap.forEach(d => {
+      const data = d.data();
+      if (!State.likedItems[data.itemType]) State.likedItems[data.itemType] = {};
+      State.likedItems[data.itemType][data.itemId] = true;
+    });
+
+    console.log('✅ Loaded', snap.size, 'user likes');
+  } catch (e) {
+    console.warn('Load likes error:', e);
+  }
+}
+
+setTimeout(() => {
+  if (State.user) loadUserLikes();
+}, 4000);
+
+window.openVaultDetail = openVaultDetail;
+window.openEditVaultModal = openEditVaultModal;
+window.openVaultMenu = openVaultMenu;
+window.toggleLike = toggleLike;
+window.loadUserLikes = loadUserLikes;
+
+console.log('✅ Chunk 46: Vault detail + edit fix + like fix loaded');
+
+/* END OF CHUNK 46 */
+// ============================================
+// Chunk 47: Professional Gun Icons + Attachment Preview
+// ============================================
+
+// ============================================
+// PART 1: GUN CATEGORY ICONS + COLORS
+// ============================================
+
+const GUN_CATEGORY_META = {
+  'Assault Rifle': { icon: 'crosshair', color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)', emoji: '🔫' },
+  'SMG':           { icon: 'zap', color: '#22C55E', bg: 'rgba(34, 197, 94, 0.15)', emoji: '💨' },
+  'Sniper':        { icon: 'target', color: '#A855F7', bg: 'rgba(168, 85, 247, 0.15)', emoji: '🎯' },
+  'LMG':           { icon: 'box', color: '#F97316', bg: 'rgba(249, 115, 22, 0.15)', emoji: '📦' },
+  'Shotgun':       { icon: 'shield', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.15)', emoji: '💥' },
+  'Marksman':      { icon: 'crosshair', color: '#06B6D4', bg: 'rgba(6, 182, 212, 0.15)', emoji: '🎯' },
+  'Pistol':        { icon: 'target', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.15)', emoji: '🔫' },
+  'Melee':         { icon: 'sword', color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.15)', emoji: '⚔️' },
+  'Launcher':      { icon: 'rocket', color: '#F43F5E', bg: 'rgba(244, 63, 94, 0.15)', emoji: '🚀' }
+};
+
+function getGunMeta(gunName) {
+  for (const [cat, guns] of Object.entries(CODM_GUNS)) {
+    if (guns.includes(gunName)) {
+      return { category: cat, ...GUN_CATEGORY_META[cat] };
+    }
+  }
+  return { category: 'Assault Rifle', ...GUN_CATEGORY_META['Assault Rifle'] };
+}
+
+// ============================================
+// PART 2: ATTACHMENT SLOT ICONS (Lucide)
+// ============================================
+
+const SLOT_ICON_MAP = {
+  muzzle: 'shield',
+  barrel: 'align-vertical-space-around',
+  optic: 'eye',
+  stock: 'minus',
+  laser: 'zap',
+  underbarrel: 'grip',
+  ammunition: 'package',
+  rearGrip: 'hand',
+  perk: 'star'
+};
+
+// ============================================
+// PART 3: PATCH GUN PICKER with icons
+// ============================================
+
+const _origRenderGunPickerIcons = renderGunPicker;
+renderGunPicker = function(body) {
+  const categories = ['Assault Rifle', 'SMG', 'Sniper', 'LMG', 'Shotgun', 'Marksman', 'Pistol'];
+  let activeCategory = 'Assault Rifle';
+
+  body.innerHTML = `
+    <div class="text-center mb-4">
+      <div class="text-xs text-gray-500 mb-2">Step 1 — Pick your weapon</div>
+    </div>
+
+    <div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1" id="gun-cat-filters">
+      ${categories.map((c, i) => `
+        <button class="chip gun-cat-btn ${i === 0 ? 'active' : ''}" data-cat="${c}">${c}</button>
+      `).join('')}
+    </div>
+
+    <div class="relative mb-4">
+      <i data-lucide="search" class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+      <input id="gun-search" type="text" placeholder="Search guns..." class="pl-10" />
+    </div>
+
+    <div id="gun-grid" class="grid grid-cols-2 gap-3"></div>
+  `;
+
+  const renderGuns = (category, search) => {
+    const grid = document.getElementById('gun-grid');
+    if (!grid) return;
+
+    const gunsInCat = CODM_GUNS[category] || [];
+    const filtered = search
+      ? gunsInCat.filter(g => g.toLowerCase().includes(search.toLowerCase()))
+      : gunsInCat;
+
+    if (filtered.length === 0) {
+      grid.innerHTML = '<div class="col-span-2 text-center py-8 text-xs text-gray-500">No guns found</div>';
+      return;
+    }
+
+    const meta = GUN_CATEGORY_META[category] || GUN_CATEGORY_META['Assault Rifle'];
+
+    grid.innerHTML = filtered.map(gun => `
+      <button class="gun-pick-btn bg-card border border-border rounded-2xl p-3 text-left hover:border-primary transition-colors" data-gun="${esc(gun)}">
+        <div class="w-full h-16 rounded-xl mb-2 flex items-center justify-center" style="background: ${meta.bg};">
+          <i data-lucide="${meta.icon}" class="w-7 h-7" style="color: ${meta.color};"></i>
+        </div>
+        <div class="text-xs font-bold truncate">${esc(gun)}</div>
+        <div class="text-[9px] text-gray-500" style="color: ${meta.color};">${category}</div>
+      </button>
+    `).join('');
+
+    grid.querySelectorAll('.gun-pick-btn').forEach(btn => {
+      btn.onclick = () => {
+        BuilderState.selectedGun = btn.dataset.gun;
+        BuilderState.selectedAttachments = {};
+        renderBuilderBody();
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  };
+
+  body.querySelectorAll('.gun-cat-btn').forEach(btn => {
+    btn.onclick = () => {
+      body.querySelectorAll('.gun-cat-btn').forEach(b => b.classList.toggle('active', b === btn));
+      activeCategory = btn.dataset.cat;
+      const search = document.getElementById('gun-search')?.value || '';
+      renderGuns(activeCategory, search);
+    };
+  });
+
+  document.getElementById('gun-search').oninput = (e) => {
+    renderGuns(activeCategory, e.target.value);
+  };
+
+  renderGuns(activeCategory, '');
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 4: PATCH LOADOUT CANVAS with better visuals
+// ============================================
+
+const _origRenderLoadoutCanvasIcons = renderLoadoutCanvas;
+renderLoadoutCanvas = function(body) {
+  const gun = BuilderState.selectedGun;
+  const { final, base, modifiers } = calculateFinalStats(gun, BuilderState.selectedAttachments);
+  const attachedCount = Object.keys(BuilderState.selectedAttachments).length;
+  const presets = PRESET_BUILDS[gun] || [];
+  const score = scoreBuild(final);
+  const gunMeta = getGunMeta(gun);
+
+  body.innerHTML = `
+    <!-- Gun Header -->
+    <div class="bg-card border border-primary/40 rounded-2xl p-4 mb-4 relative overflow-hidden">
+      <div class="absolute top-3 right-3 text-2xl opacity-20"></div>
+      <div class="flex items-center gap-3">
+        <div class="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0" style="background: ${gunMeta.bg};">
+          <i data-lucide="${gunMeta.icon}" class="w-7 h-7" style="color: ${gunMeta.color};"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-lg font-black truncate">${esc(gun)}</div>
+          <div class="text-[10px] text-gray-500">${gunMeta.category} · ${attachedCount}/9 attachments · ${score.emoji} ${score.tier}</div>
+        </div>
+        <button id="change-gun-btn" class="btn-press px-3 py-2 rounded-lg bg-cardAlt border border-border text-[10px] font-bold">
+          Change
+        </button>
+      </div>
+    </div>
+
+    <!-- Presets -->
+    ${presets.length > 0 && attachedCount === 0 ? `
+      <div class="mb-4">
+        <div class="text-xs font-bold text-gray-400 uppercase mb-2">✨ Quick Presets</div>
+        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+          ${presets.map((p, i) => `
+            <button class="preset-btn chip" data-preset-index="${i}">${p.name}</button>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- Enhanced Stats Preview -->
+    <div id="stat-preview">
+      ${renderEnhancedStats(base, final, modifiers)}
+    </div>
+
+    <!-- Attachments Grid -->
+    <div class="text-xs font-bold text-gray-400 uppercase mb-2 mt-4">Attachments</div>
+    <div class="grid grid-cols-3 gap-2 mb-4" id="slot-grid">
+      ${GUNSMITH_SLOTS.map(slot => {
+        const picked = BuilderState.selectedAttachments[slot.key];
+        const iconName = SLOT_ICON_MAP[slot.key] || 'circle';
+        return `
+          <button class="slot-btn bg-card border ${picked ? 'border-primary/60 bg-primary/5' : 'border-border'} rounded-xl p-3 flex flex-col items-center gap-1.5" data-slot="${slot.key}">
+            <i data-lucide="${iconName}" class="w-5 h-5 ${picked ? 'text-primary' : 'text-gray-500'}"></i>
+            <div class="text-[9px] font-bold ${picked ? 'text-primary' : 'text-gray-400'} text-center leading-tight">${slot.label}</div>
+            ${picked ? `<div class="text-[8px] text-primary truncate w-full text-center">${esc(picked.name)}</div>` : `<div class="text-[8px] text-gray-600">Empty</div>`}
+          </button>
+        `;
+      }).join('')}
+    </div>
+
+    <!-- Attachment Preview Pills -->
+    ${attachedCount > 0 ? `
+      <div class="bg-card border border-border rounded-2xl p-3 mb-4">
+        <div class="text-[10px] font-bold text-gray-400 uppercase mb-2">Attached</div>
+        <div class="flex flex-wrap gap-1.5">
+          ${GUNSMITH_SLOTS.map(slot => {
+            const picked = BuilderState.selectedAttachments[slot.key];
+            if (!picked) return '';
+            return `
+              <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary/15 border border-primary/30">
+                <i data-lucide="${SLOT_ICON_MAP[slot.key] || 'circle'}" class="w-3 h-3 text-primary"></i>
+                <span class="text-[10px] font-bold text-primary">${esc(picked.name)}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- Actions -->
+    <div class="space-y-2">
+      <button id="builder-save-btn" class="btn-press w-full py-3.5 rounded-xl bg-primary font-black text-sm glow-primary flex items-center justify-center gap-2">
+        <i data-lucide="save" class="w-4 h-4"></i> Save to Vault
+      </button>
+      <button id="builder-share-btn" class="btn-press w-full py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm flex items-center justify-center gap-2">
+        <i data-lucide="share-2" class="w-4 h-4"></i> Share Build
+      </button>
+    </div>
+
+    <div class="text-[10px] text-gray-600 text-center mt-4">
+      Stats are approximate — based on community-sourced data
+    </div>
+  `;
+
+  document.getElementById('change-gun-btn').onclick = () => {
+    BuilderState.selectedGun = null;
+    BuilderState.selectedAttachments = {};
+    renderBuilderBody();
+  };
+
+  body.querySelectorAll('.slot-btn').forEach(btn => {
+    btn.onclick = () => openAttachmentPicker(btn.dataset.slot);
+  });
+
+  body.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.presetIndex);
+      applyPreset(presets[idx]);
+    };
+  });
+
+  document.getElementById('builder-save-btn').onclick = saveBuildToVault;
+  document.getElementById('builder-share-btn').onclick = shareBuild;
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 5: PATCH ATTACHMENT PICKER with icons
+// ============================================
+
+const _origOpenAttachmentPickerIcons = openAttachmentPicker;
+openAttachmentPicker = function(slotKey) {
+  const slot = GUNSMITH_SLOTS.find(s => s.key === slotKey);
+  if (!slot) return;
+
+  const gun = BuilderState.selectedGun;
+  const attachments = getAttachmentsForSlot(gun, slotKey);
+  const current = BuilderState.selectedAttachments[slotKey];
+  const slotIcon = SLOT_ICON_MAP[slotKey] || 'circle';
+
+  if (attachments.length === 0) {
+    toast('No attachments available for this slot', 'info');
+    return;
+  }
+
+  openSheet(`
+    <div class="space-y-2 max-h-[70vh] overflow-y-auto">
+      <div class="flex items-center gap-2 mb-3">
+        <i data-lucide="${slotIcon}" class="w-5 h-5 text-primary"></i>
+        <div class="text-xs text-gray-400 font-bold uppercase">${slot.label}</div>
+      </div>
+
+      ${current ? `
+        <button class="pick-attach-remove w-full text-left px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/40 text-red-400 font-bold text-sm mb-2">
+          ✕ Remove current: ${esc(current.name)}
+        </button>
+      ` : ''}
+
+      ${attachments.map((att, i) => {
+        const isSelected = current && current.name === att.name;
+        const effects = Object.entries(att.effects || {});
+        return `
+          <button class="pick-attach-btn w-full text-left px-4 py-3 rounded-xl ${isSelected ? 'bg-primary/15 border border-primary' : 'bg-card border border-border'} font-semibold text-sm" data-index="${i}">
+            <div class="flex items-center justify-between mb-1">
+              <span class="${isSelected ? 'text-primary' : 'text-white'}">${esc(att.name)}</span>
+              ${isSelected ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-primary text-white font-black">EQUIPPED</span>' : ''}
+            </div>
+            ${effects.length > 0 ? `
+              <div class="flex flex-wrap gap-1.5 mt-1">
+                ${effects.map(([stat, val]) => `
+                  <span class="text-[9px] px-1.5 py-0.5 rounded ${val > 0 ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'} font-bold">
+                    ${stat} ${val > 0 ? '+' + val : val}
+                  </span>
+                `).join('')}
+              </div>
+            ` : '<div class="text-[10px] text-gray-500">No stat changes</div>'}
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `, slot.label);
+
+  document.querySelectorAll('.pick-attach-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.index);
+      BuilderState.selectedAttachments[slotKey] = attachments[idx];
+      closeSheet();
+      renderBuilderBody();
+      toast(`${slot.label}: ${attachments[idx].name}`, 'success', 1500);
+    };
+  });
+
+  const removeBtn = document.querySelector('.pick-attach-remove');
+  if (removeBtn) {
+    removeBtn.onclick = () => {
+      delete BuilderState.selectedAttachments[slotKey];
+      closeSheet();
+      renderBuilderBody();
+      toast(`${slot.label} removed`, 'success', 1500);
+    };
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 6: PATCH GUNSMITH BUILDER HEADER
+// ============================================
+
+const _origOpenGunsmithBuilderIcons = openGunsmithBuilder;
+openGunsmithBuilder = function(gunName) {
+  BuilderState.selectedGun = gunName || null;
+  BuilderState.selectedAttachments = {};
+  BuilderState.activeSlot = null;
+
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <div class="flex items-center justify-between mb-4">
+        <button id="builder-back-btn" class="btn-press w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
+          <i data-lucide="arrow-left" class="w-5 h-5"></i>
+        </button>
+        <div class="text-center flex-1">
+          <div class="text-lg font-black">Gunsmith Builder</div>
+          <div class="text-[10px] text-gray-500">Build & share your perfect loadout</div>
+        </div>
+        <button id="builder-reset-btn" class="btn-press w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
+          <i data-lucide="rotate-ccw" class="w-5 h-5 text-gray-400"></i>
+        </button>
+      </div>
+
+      <div id="builder-body"></div>
+    </div>
+  `;
+
+  document.getElementById('builder-back-btn').onclick = () => {
+    labSubTab = 'vault';
+    renderLabTab();
+  };
+  document.getElementById('builder-reset-btn').onclick = () => {
+    confirmDialog('Reset Build', 'Clear all attachments?', () => {
+      BuilderState.selectedAttachments = {};
+      renderBuilderBody();
+    }, 'Reset', true);
+  };
+
+  renderBuilderBody();
+  if (window.lucide) window.lucide.createIcons();
+};
+
+window.getGunMeta = getGunMeta;
+window.GUN_CATEGORY_META = GUN_CATEGORY_META;
+window.SLOT_ICON_MAP = SLOT_ICON_MAP;
+
+console.log('✅ Chunk 47: Professional gun icons + attachment preview loaded');
+
+/* END OF CHUNK 47 */
+// ============================================
+// Chunk 48a: HOME Feed — Core Render
+// ============================================
+
+// ============================================
+// PART 1: HOME STATE
+// ============================================
+
+let homeFilter = 'all';
+let homeCache = {
+  feed: [],
+  lastFetch: 0,
+  isLoading: false
+};
+
+const HOME_FILTERS = [
+  { key: 'all', label: 'All', emoji: '✨' },
+  { key: 'lfg', label: 'LFG', emoji: '🎮' },
+  { key: 'builds', label: 'Builds', emoji: '🔧' },
+  { key: 'clips', label: 'Clips', emoji: '🎬' },
+  { key: 'leaks', label: 'Leaks', emoji: '🔥' }
+];
+
+// ============================================
+// PART 2: FETCH UNIFIED FEED
+// ============================================
+
+async function fetchHomeFeed() {
+  if (homeCache.isLoading) return homeCache.feed;
+  homeCache.isLoading = true;
+
+  try {
+    const now = Date.now();
+
+    // Parallel fetch all 4 sources
+    const [lobbiesSnap, vaultsSnap, clipsSnap, leaksSnap] = await Promise.all([
+      getDocs(query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'clips'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'leaks'), limit(20))).catch(() => ({ forEach: () => {} }))
+    ]);
+
+    const feed = [];
+
+    // Lobbies → feed
+    lobbiesSnap.forEach(d => {
+      const data = d.data();
+      const expiresAt = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
+      if (expiresAt < now) return; // Skip expired
+      feed.push({
+        id: d.id,
+        type: 'lobby',
+        ...data,
+        _sortTime: data.createdAt?.seconds || 0
+      });
+    });
+
+    // Vaults → feed
+    vaultsSnap.forEach(d => {
+      const data = d.data();
+      feed.push({
+        id: d.id,
+        type: 'vault',
+        ...data,
+        _sortTime: data.createdAt?.seconds || 0
+      });
+    });
+
+    // Clips → feed
+    clipsSnap.forEach(d => {
+      const data = d.data();
+      feed.push({
+        id: d.id,
+        type: 'clip',
+        ...data,
+        _sortTime: data.createdAt?.seconds || 0
+      });
+    });
+
+    // Leaks → feed
+    leaksSnap.forEach(d => {
+      const data = d.data();
+      feed.push({
+        id: d.id,
+        type: 'leak',
+        ...data,
+        _sortTime: (data.createdAt || data.publishedAt)?.seconds || 0
+      });
+    });
+
+    // Sort newest first
+    feed.sort((a, b) => b._sortTime - a._sortTime);
+
+    homeCache.feed = feed;
+    homeCache.lastFetch = now;
+    homeCache.isLoading = false;
+
+    return feed;
+  } catch (e) {
+    console.error('Home feed fetch error:', e);
+    homeCache.isLoading = false;
+    return homeCache.feed;
+  }
+}
+
+// ============================================
+// PART 3: MAIN HOME RENDER
+// ============================================
+
+async function renderHomeTab() {
+  const content = document.getElementById('content');
+  if (!content) return;
+
+  // Set up shell with header + filters + feed
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <!-- Header -->
+      <div class="mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h1 class="text-2xl font-black">Home</h1>
+            <p class="text-xs text-gray-500">What's happening in CODM</p>
+          </div>
+          <button id="home-refresh-btn" class="btn-press w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center">
+            <i data-lucide="refresh-cw" class="w-4 h-4 text-gray-400"></i>
+          </button>
+        </div>
+
+        <!-- Filters -->
+        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+          ${HOME_FILTERS.map(f => `
+            <button class="chip home-filter-btn ${homeFilter === f.key ? 'active' : ''}" data-filter="${f.key}">
+              ${f.emoji} ${f.label}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Feed -->
+      <div id="home-feed">
+        ${renderHomeSkeleton()}
+      </div>
+    </div>
+  `;
+
+  // Wire filters
+  document.querySelectorAll('.home-filter-btn').forEach(btn => {
+    btn.onclick = () => {
+      homeFilter = btn.dataset.filter;
+      document.querySelectorAll('.home-filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderHomeFeed();
+    };
+  });
+
+  // Wire refresh
+  document.getElementById('home-refresh-btn').onclick = async () => {
+    homeCache.lastFetch = 0;
+    toast('Refreshing...', 'info', 1000);
+    await fetchHomeFeed();
+    renderHomeFeed();
+  };
+
+  // Fetch and render
+  await fetchHomeFeed();
+  renderHomeFeed();
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function renderHomeSkeleton() {
+  return Array(3).fill(0).map(() => `
+    <div class="bg-card border border-border rounded-2xl p-4 mb-3">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="skeleton w-10 h-10 rounded-full"></div>
+        <div class="flex-1">
+          <div class="skeleton h-3 w-24 rounded mb-1.5"></div>
+          <div class="skeleton h-2.5 w-16 rounded"></div>
+        </div>
+      </div>
+      <div class="skeleton h-3 w-full rounded mb-2"></div>
+      <div class="skeleton h-3 w-2/3 rounded"></div>
+    </div>
+  `).join('');
+}
+
+function renderHomeFeed() {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  let items = homeCache.feed;
+
+  // Apply filter
+  if (homeFilter !== 'all') {
+    const typeMap = {
+      lfg: 'lobby',
+      builds: 'vault',
+      clips: 'clip',
+      leaks: 'leak'
+    };
+    items = items.filter(i => i.type === typeMap[homeFilter]);
+  }
+
+  if (items.length === 0) {
+    feedEl.innerHTML = renderHomeEmpty();
+    wireHomeEmpty();
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feedEl.innerHTML = items.map(item => renderHomeCard(item)).join('');
+
+  wireHomeCards(items);
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function renderHomeEmpty() {
+  return `
+    <div class="flex flex-col items-center justify-center py-16 px-6 text-center fade-in">
+      <div class="relative mb-5">
+        <div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-gold/10 rounded-full blur-2xl"></div>
+        <div class="relative w-24 h-24 rounded-full bg-card border border-border flex items-center justify-center">
+          <i data-lucide="sparkles" class="w-10 h-10 text-primary/70"></i>
+        </div>
+      </div>
+      <div class="text-lg font-black mb-2">Nothing here yet</div>
+      <div class="text-xs text-gray-500 max-w-[260px] leading-relaxed mb-5">
+        ${homeFilter === 'all' ? 'Be the first to post something — start by finding a squad or sharing a build.' : 'No ' + homeFilter + ' content yet.'}
+      </div>
+      <div class="flex gap-2">
+        <button id="home-empty-lfg" class="btn-press px-4 py-2.5 rounded-xl bg-primary text-white font-bold text-xs">Post Lobby</button>
+        <button id="home-empty-vault" class="btn-press px-4 py-2.5 rounded-xl bg-card border border-border font-bold text-xs">Build Gunsmith</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireHomeEmpty() {
+  const lfgBtn = document.getElementById('home-empty-lfg');
+  if (lfgBtn) lfgBtn.onclick = openPostLobbySheet;
+  const vaultBtn = document.getElementById('home-empty-vault');
+  if (vaultBtn) vaultBtn.onclick = () => {
+    labSubTab = 'vault';
+    switchTab('lab');
+  };
+}
+
+// ============================================
+// PART 4: FEED CARD RENDERERS
+// ============================================
+
+function renderHomeCard(item) {
+  switch (item.type) {
+    case 'lobby': return renderHomeLobbyCard(item);
+    case 'vault': return renderHomeVaultCard(item);
+    case 'clip': return renderHomeClipCard(item);
+    case 'leak': return renderHomeLeakCard(item);
+    default: return '';
+  }
+}
+
+function renderHomeLobbyCard(l) {
+  const isMine = l.uid === State.user.uid;
+  const playersText = `${l.players || 1}/5`;
+  return `
+    <div class="home-card bg-card border border-border rounded-2xl p-4 mb-3 fade-in" data-type="lobby" data-id="${l.id}" style="cursor: pointer;">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-black">🎮 LOBBY</span>
+        <span class="text-[10px] text-gray-500">${timeAgo(l.createdAt)}</span>
+        <div class="ml-auto text-right">
+          <div class="text-xs font-black text-primary">${playersText}</div>
+        </div>
+      </div>
+
+      <div class="flex items-start gap-3 mb-3">
+        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0">
+          ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
+            ${l.uid === ADMIN_UID ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑</span>' : ''}
+          </div>
+          <div class="text-[10px] text-gray-500 mt-0.5">${esc(l.mode)} · ${esc(l.region)}${l.mic ? ' · 🎤' : ''}</div>
+        </div>
+      </div>
+
+      ${l.note ? `<p class="text-xs text-gray-400 mb-3 line-clamp-2">${esc(l.note)}</p>` : ''}
+
+      <div class="flex gap-2">
+        <button class="home-join-btn btn-press flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold flex items-center justify-center gap-1.5" data-id="${l.id}">
+          <i data-lucide="log-in" class="w-4 h-4"></i> Join
+        </button>
+        <button class="home-like-btn btn-press w-11 h-11 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-type="lobby" data-id="${l.id}">
+          <i data-lucide="heart" class="w-4 h-4 text-gray-400"></i>
+        </button>
+        <button class="home-share-btn btn-press w-11 h-11 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-type="lobby" data-id="${l.id}">
+          <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHomeVaultCard(v) {
+  const isSens = v.type === 'sens';
+  const isHud = v.type === 'hud';
+  const isLiked = State.likedItems?.vault?.[v.id] || false;
+
+  return `
+    <div class="home-card bg-card border border-border rounded-2xl p-4 mb-3 fade-in" data-type="vault" data-id="${v.id}" style="cursor: pointer;">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-[10px] px-2 py-1 rounded-full ${isSens ? 'bg-primary/15 text-primary' : isHud ? 'bg-gold/15 text-gold' : 'bg-primary/15 text-primary'} font-black">
+          ${isSens ? '🎯 SENS' : isHud ? '🎮 HUD' : '🔧 BUILD'}
+        </span>
+        <span class="text-[10px] text-gray-500">${timeAgo(v.createdAt)}</span>
+      </div>
+
+      <div class="flex items-start gap-3 mb-3">
+        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0">
+          ${v.avatar ? `<img src="${esc(v.avatar)}" class="w-full h-full object-cover" />` : getInitials(v.ign)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-sm">${esc(v.gunName || 'Build')}</div>
+          <div class="text-[10px] text-gray-500 mt-0.5">
+            by ${esc(v.ign || 'Unknown')}
+            ${v.approved ? ' · <span class="text-green-400">✓ Approved</span>' : ''}
+          </div>
+        </div>
+      </div>
+
+      ${v.imageUrl && !isSens ? `
+        <img src="${esc(v.imageUrl)}" class="w-full h-40 object-cover rounded-xl mb-3" loading="lazy" />
+      ` : isHud && v.imageUrl ? `
+        <img src="${esc(v.imageUrl)}" class="w-full h-40 object-cover rounded-xl mb-3" loading="lazy" />
+      ` : ''}
+
+      ${v.gunsmithCode && !isSens ? `
+        <div class="bg-cardAlt border border-border rounded-lg p-2.5 mb-3">
+          <div class="font-mono text-xs text-primary font-bold truncate">${esc(v.gunsmithCode)}</div>
+        </div>
+      ` : isSens ? `
+        <div class="text-[10px] text-gray-500 mb-3 line-clamp-2">${esc(v.gunsmithCode || '')}</div>
+      ` : ''}
+
+      <div class="flex gap-2">
+        ${v.gunsmithCode && !isSens && !isHud ? `
+          <button class="home-copy-btn btn-press flex-1 py-2.5 rounded-xl bg-primary/15 border border-primary/30 text-primary text-sm font-bold flex items-center justify-center gap-1.5" data-code="${esc(v.gunsmithCode)}">
+            <i data-lucide="copy" class="w-4 h-4"></i> Copy Code
+          </button>
+        ` : `
+          <button class="home-view-vault-btn btn-press flex-1 py-2.5 rounded-xl bg-primary/15 border border-primary/30 text-primary text-sm font-bold" data-id="${v.id}">
+            View Details
+          </button>
+        `}
+        <button class="home-like-btn btn-press w-11 h-11 rounded-xl ${isLiked ? 'bg-primary/15 border-primary/30' : 'bg-cardAlt border-border'} border flex items-center justify-center" data-type="vault" data-id="${v.id}">
+          <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'text-primary fill-current' : 'text-gray-400'}"></i>
+        </button>
+        <button class="home-share-btn btn-press w-11 h-11 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-type="vault" data-id="${v.id}">
+          <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHomeClipCard(c) {
+  const embedUrl = getYouTubeEmbed(c.youtubeUrl);
+  const isApproved = !!c.approved;
+  const isLiked = State.likedItems?.clip?.[c.id] || false;
+  const authorName = c.submittedByIgn || c.ign || 'CODMPanda';
+
+  return `
+    <div class="home-card bg-card border border-border rounded-2xl overflow-hidden mb-3 fade-in" data-type="clip" data-id="${c.id}">
+      <div class="p-3 pb-2">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-black">🎬 CLIP</span>
+          ${isApproved ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold">✓ Approved</span>' : ''}
+          <span class="text-[10px] text-gray-500 ml-auto">${timeAgo(c.createdAt)}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
+            ${c.submittedByAvatar ? `<img src="${esc(c.submittedByAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName)}
+          </div>
+          <div class="text-xs text-gray-400">by <span class="text-white font-bold">${esc(authorName)}</span> · ${esc(c.gunTag || 'CODM')}</div>
+        </div>
+      </div>
+
+      ${embedUrl ? `
+        <div class="relative w-full aspect-video bg-black">
+          <iframe src="${embedUrl}" class="w-full h-full" frameborder="0" allowfullscreen loading="lazy"></iframe>
+        </div>
+      ` : `
+        <a href="${esc(c.youtubeUrl)}" target="_blank" class="block w-full aspect-video bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+          <div class="text-center">
+            <i data-lucide="external-link" class="w-8 h-8 mx-auto text-primary mb-2"></i>
+            <div class="text-xs text-gray-400">Open link</div>
+          </div>
+        </a>
+      `}
+
+      <div class="p-3 flex items-center justify-between">
+        <button class="home-like-btn btn-press flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'}" data-type="clip" data-id="${c.id}">
+          <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i> ${c.likes || 0}
+        </button>
+        <button class="home-share-btn btn-press text-primary" data-type="clip" data-id="${c.id}">
+          <i data-lucide="share-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHomeLeakCard(l) {
+  const rarityColors = {
+    common: 'bg-gray-500', rare: 'bg-blue-500', epic: 'bg-purple-500',
+    legendary: 'bg-gold text-black', mythic: 'bg-red-500'
+  };
+  const authorName = l.submittedByIgn || l.authorIgn || 'CODMPanda';
+  const isLiked = State.likedItems?.leak?.[l.id] || false;
+
+  return `
+    <div class="home-card bg-card border border-border rounded-2xl overflow-hidden mb-3 fade-in" data-type="leak" data-id="${l.id}">
+      ${l.imageUrl ? `<img src="${esc(l.imageUrl)}" class="w-full h-44 object-cover" loading="lazy" />` : ''}
+      <div class="p-4">
+        <div class="flex items-center gap-2 mb-2 flex-wrap">
+          <span class="text-[10px] px-2 py-1 rounded-full bg-gold/15 text-gold font-black">🔥 LEAK</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full ${rarityColors[l.rarity] || 'bg-gray-500'} font-black uppercase">${esc(l.rarity || 'common')}</span>
+          <span class="text-[10px] text-gray-500 ml-auto">${timeAgo(l.createdAt || l.publishedAt)}</span>
+        </div>
+        <h3 class="text-base font-bold mb-2">${esc(l.title)}</h3>
+        ${l.body ? `<p class="text-xs text-gray-400 line-clamp-3 mb-3">${esc(l.body)}</p>` : ''}
+        <div class="flex items-center justify-between pt-2 border-t border-border">
+          <button class="home-like-btn btn-press flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'}" data-type="leak" data-id="${l.id}">
+            <i data-lucide="flame" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i> ${l.hypes || 0}
+          </button>
+          <button class="home-share-btn btn-press text-primary" data-type="leak" data-id="${l.id}">
+            <i data-lucide="share-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// PART 5: WIRE CARD INTERACTIONS
+// ============================================
+
+function wireHomeCards(items) {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  // Join lobby
+  feedEl.querySelectorAll('.home-join-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      joinLobby(btn.dataset.id);
+    };
+  });
+
+  // Copy code
+  feedEl.querySelectorAll('.home-copy-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      copyText(btn.dataset.code, 'Code copied!');
+    };
+  });
+
+  // View vault
+  feedEl.querySelectorAll('.home-view-vault-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      // Refresh cache to ensure vault is available
+      openVaultDetail(btn.dataset.id);
+    };
+  });
+
+  // Like
+  feedEl.querySelectorAll('.home-like-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const itemType = btn.dataset.type;
+      const itemId = btn.dataset.id;
+
+      const nowLiked = await toggleLike(itemType, itemId, itemType === 'leak' ? 'hypes' : 'likes');
+
+      State.likedItems = State.likedItems || {};
+      State.likedItems[itemType] = State.likedItems[itemType] || {};
+      State.likedItems[itemType][itemId] = nowLiked;
+
+      const icon = btn.querySelector('i');
+      if (nowLiked) {
+        icon.classList.add('fill-current', 'text-primary');
+        icon.classList.remove('text-gray-400');
+        btn.classList.add('text-primary');
+      } else {
+        icon.classList.remove('fill-current', 'text-primary');
+        icon.classList.add('text-gray-400');
+        btn.classList.remove('text-primary');
+      }
+
+      toast(nowLiked ? '❤️ Liked!' : 'Unliked', 'success', 1000);
+    };
+  });
+
+  // Share
+  feedEl.querySelectorAll('.home-share-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const type = btn.dataset.type;
+      const id = btn.dataset.id;
+      const urls = {
+        lobby: getLobbyShareUrl,
+        vault: getVaultShareUrl,
+        clip: getClipShareUrl,
+        leak: getLeakShareUrl
+      };
+      const urlFn = urls[type];
+      if (urlFn) {
+        openShareSheet({
+          title: `CODMPanda ${type}`,
+          text: `Check this out on CODMPanda!`,
+          url: urlFn(id)
+        });
+      }
+    };
+  });
+
+  // Card tap → detail
+  feedEl.querySelectorAll('.home-card').forEach(card => {
+    card.onclick = (e) => {
+      if (e.target.closest('button')) return;
+      const type = card.dataset.type;
+      const id = card.dataset.id;
+      if (type === 'vault') openVaultDetail(id);
+      else if (type === 'clip') { squadSubTab = 'clips'; switchTab('squad'); }
+      else if (type === 'leak') { intelSubTab = 'leaks'; switchTab('intel'); }
+      else if (type === 'lobby') { /* lobbies are self-contained */ }
+    };
+  });
+}
+
+window.renderHomeTab = renderHomeTab;
+window.fetchHomeFeed = fetchHomeFeed;
+window.renderHomeFeed = renderHomeFeed;
+window.HOME_FILTERS = HOME_FILTERS;
+
+console.log('✅ Chunk 48a: HOME feed core loaded');
+
+/* END OF CHUNK 48a */
+// ============================================
+// Chunk 48b: HOME Feed — Live + Polish (clean)
+// ============================================
+
+// ============================================
+// PART 1: LIVE UPDATES via onSnapshot
+// ============================================
+
+let homeLiveUnsubs = [];
+
+function startHomeLiveUpdates() {
+  stopHomeLiveUpdates();
+
+  try {
+    homeLiveUnsubs.push(onSnapshot(
+      query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(20)),
+      () => { scheduleHomeRefresh(); },
+      () => {}
+    ));
+
+    homeLiveUnsubs.push(onSnapshot(
+      query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(20)),
+      () => { scheduleHomeRefresh(); },
+      () => {}
+    ));
+
+    homeLiveUnsubs.push(onSnapshot(
+      query(collection(db, 'clips'), limit(20)),
+      () => { scheduleHomeRefresh(); },
+      () => {}
+    ));
+
+    homeLiveUnsubs.push(onSnapshot(
+      query(collection(db, 'leaks'), limit(15)),
+      () => { scheduleHomeRefresh(); },
+      () => {}
+    ));
+  } catch (e) {
+    console.warn('Live updates failed:', e);
+  }
+}
+
+function stopHomeLiveUpdates() {
+  homeLiveUnsubs.forEach(unsub => {
+    try { unsub(); } catch (e) {}
+  });
+  homeLiveUnsubs = [];
+}
+
+let homeRefreshTimer = null;
+function scheduleHomeRefresh() {
+  clearTimeout(homeRefreshTimer);
+  homeRefreshTimer = setTimeout(async () => {
+    if (State.currentTab !== 'home') return;
+    await fetchHomeFeed();
+    renderHomeFeed();
+  }, 3000);
+}
+
+// ============================================
+// PART 2: PATCH renderHomeTab for live + timeout
+// ============================================
+
+const _origRenderHomeTabLive = renderHomeTab;
+renderHomeTab = async function() {
+  const content = document.getElementById('content');
+  if (!content) return;
+
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <div class="mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h1 class="text-2xl font-black">Home</h1>
+            <p class="text-xs text-gray-500">What's happening in CODM</p>
+          </div>
+          <button id="home-refresh-btn" class="btn-press w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center">
+            <i data-lucide="refresh-cw" class="w-4 h-4 text-gray-400"></i>
+          </button>
+        </div>
+
+        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+          ${HOME_FILTERS.map(f => `
+            <button class="chip home-filter-btn ${homeFilter === f.key ? 'active' : ''}" data-filter="${f.key}">
+              ${f.emoji} ${f.label}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div id="home-feed">
+        ${renderHomeSkeleton()}
+      </div>
+    </div>
+  `;
+
+  document.querySelectorAll('.home-filter-btn').forEach(btn => {
+    btn.onclick = () => {
+      homeFilter = btn.dataset.filter;
+      document.querySelectorAll('.home-filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderHomeFeed();
+    };
+  });
+
+  document.getElementById('home-refresh-btn').onclick = async () => {
+    homeCache.lastFetch = 0;
+    toast('Refreshing...', 'info', 1000);
+    await fetchHomeFeed();
+    renderHomeFeed();
+  };
+
+  const fetchPromise = fetchHomeFeed();
+  const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 5000));
+  const result = await Promise.race([fetchPromise, timeoutPromise]);
+
+  if (result === 'timeout') {
+    toast('Taking longer than usual...', 'warning', 2000);
+  }
+
+  renderHomeFeed();
+  startHomeLiveUpdates();
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 3: FEED STATS BAR
+// ============================================
+
+function renderHomeStats() {
+  const feed = homeCache.feed;
+  if (!feed.length) return '';
+
+  const counts = {
+    lobby: feed.filter(f => f.type === 'lobby').length,
+    vault: feed.filter(f => f.type === 'vault').length,
+    clip: feed.filter(f => f.type === 'clip').length,
+    leak: feed.filter(f => f.type === 'leak').length
+  };
+
+  return `
+    <div class="flex items-center gap-2 mb-3 text-[10px] text-gray-500">
+      <span class="px-2 py-1 rounded-full bg-card border border-border">🎮 ${counts.lobby}</span>
+      <span class="px-2 py-1 rounded-full bg-card border border-border">🔧 ${counts.vault}</span>
+      <span class="px-2 py-1 rounded-full bg-card border border-border">🎬 ${counts.clip}</span>
+      <span class="px-2 py-1 rounded-full bg-card border border-border">🔥 ${counts.leak}</span>
+    </div>
+  `;
+}
+
+// Patch renderHomeFeed to include stats
+const _origRenderHomeFeedStats = renderHomeFeed;
+renderHomeFeed = function() {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  let items = homeCache.feed;
+
+  if (homeFilter !== 'all') {
+    const typeMap = {
+      lfg: 'lobby',
+      builds: 'vault',
+      clips: 'clip',
+      leaks: 'leak'
+    };
+    items = items.filter(i => i.type === typeMap[homeFilter]);
+  }
+
+  if (items.length === 0) {
+    feedEl.innerHTML = renderHomeEmpty();
+    wireHomeEmpty();
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feedEl.innerHTML = renderHomeStats() + items.map(item => renderHomeCard(item)).join('');
+
+  wireHomeCards(items);
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 4: PATCH switchTab for 'home' routing
+// ============================================
+
+const _origSwitchTabHome = switchTab;
+switchTab = function(tab) {
+  State.currentTab = tab;
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const isActive = btn.dataset.tab === tab;
+    btn.classList.toggle('tab-active', isActive);
+    btn.classList.toggle('text-gray-500', !isActive);
+  });
+
+  if (State.lobbiesUnsub && tab !== 'play') { State.lobbiesUnsub(); State.lobbiesUnsub = null; }
+  if (State.vaultsUnsub && tab !== 'lab') { State.vaultsUnsub(); State.vaultsUnsub = null; }
+  if (State.camosUnsub && tab !== 'lab') { State.camosUnsub(); State.camosUnsub = null; }
+  if (State.clansUnsub && tab !== 'squad') { State.clansUnsub(); State.clansUnsub = null; }
+  if (State.scrimsUnsub && tab !== 'squad') { State.scrimsUnsub(); State.scrimsUnsub = null; }
+  if (State.clipsUnsub && tab !== 'squad') { State.clipsUnsub(); State.clipsUnsub = null; }
+  if (State.leaksUnsub && tab !== 'intel') { State.leaksUnsub(); State.leaksUnsub = null; }
+
+  // Stop home live if leaving home
+  if (tab !== 'home') stopHomeLiveUpdates();
+
+  const content = document.getElementById('content');
+  content.innerHTML = '';
+  content.scrollTop = 0;
+  window.scrollTo(0, 0);
+
+  switch (tab) {
+    case 'home': renderHomeTab(); break;
+    case 'play': renderPlayTab(); break;
+    case 'lab': renderLabTab(); break;
+    case 'squad': renderSquadTab(); break;
+    case 'intel': renderIntelTab(); break;
+    case 'you': renderYouTab(); break;
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 5: DEFAULT TO HOME ON APP LOAD
+// ============================================
+
+const _origShowMainAppHome = showMainApp;
+showMainApp = function() {
+  _origShowMainAppHome();
+  setTimeout(() => {
+    // Set HOME as default tab
+    switchTab('home');
+  }, 300);
+};
+
+// ============================================
+// PART 6: PATCH openVaultDetail to fetch if not cached
+// ============================================
+
+const _origOpenVaultDetailHome = openVaultDetail;
+openVaultDetail = async function(vaultId) {
+  let vault = State.cache.vaults?.find(v => v.id === vaultId);
+  if (!vault) {
+    try {
+      const snap = await getDoc(doc(db, 'vaults', vaultId));
+      if (snap.exists()) {
+        vault = { id: snap.id, ...snap.data() };
+        State.cache.vaults = State.cache.vaults || [];
+        State.cache.vaults.unshift(vault);
+      }
+    } catch (e) {}
+  }
+  return _origOpenVaultDetailHome(vaultId);
+};
+
+// ============================================
+// PART 7: CLEANUP
+// ============================================
+
+const _origHandleSignOutHome = handleSignOut;
+handleSignOut = function() {
+  stopHomeLiveUpdates();
+  return _origHandleSignOutHome();
+};
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopHomeLiveUpdates();
+  } else if (State.currentTab === 'home' && State.user) {
+    startHomeLiveUpdates();
+  }
+});
+
+window.startHomeLiveUpdates = startHomeLiveUpdates;
+window.stopHomeLiveUpdates = stopHomeLiveUpdates;
+
+console.log('✅ Chunk 48b: HOME feed live updates loaded');
+
+/* END OF CHUNK 48b */
