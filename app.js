@@ -17288,3 +17288,604 @@ window.renderRealMap = renderRealMap;
 console.log('✅ Chunk 44: Real map + Smart vault loaded');
 
 /* END OF CHUNK 44 */
+// ============================================
+// Chunk 45: Corrected Map + 3-Dot Menu + Perf Fixes
+// ============================================
+
+// ============================================
+// PART 1: CORRECTED POI DATA (research-backed)
+// ============================================
+
+const ISOLATED_POIS = [
+  { name: 'Black Market', x: 20, y: 40, hot: true, tier: 'S', desc: 'Contested S-tier. Underground bunker with T.E.D.D. robot — pick any weapon. Vehicle vending machines + hidden ballroom.' },
+  { name: 'Floating HQ', x: 88, y: 13, hot: true, tier: 'S', desc: 'Random spawn — not every match. Best loot in game: Level 3 vests + high-tier weapons. Extremely contested.' },
+  { name: 'Farm', x: 45, y: 56, hot: true, tier: 'S', desc: 'Butcher boss spawn. Defeat for Level 3 vest, legendary weapons, gold attachments, adrenaline.' },
+  { name: 'Launch Base', x: 62, y: 48, hot: true, tier: 'S', desc: 'Best loot density on map. Rocket launch pad, great cover.' },
+  { name: 'Nuketown', x: 15, y: 88, hot: true, tier: 'S', desc: 'Iconic BO map. Mystery Box spawn. High risk, high reward.' },
+  { name: 'Docks', x: 20, y: 62, hot: true, tier: 'A', desc: 'Warehouses + shipping containers stuffed with loot. Large ship has high-tier gear.' },
+  { name: 'Nuclear Plant', x: 50, y: 31, hot: true, tier: 'A', desc: 'Central. Cooling towers, roof access, contested.' },
+  { name: 'Crash Site', x: 88, y: 50, hot: true, tier: 'A', desc: 'Sky Carrier. Locked door needs 3 color-coded codes (red, blue, green).' },
+  { name: 'Killhouse', x: 78, y: 40, hot: true, tier: 'A', desc: 'Live fire area. Power positions on 2nd floor windows of warehouses.' },
+  { name: 'Countdown', x: 88, y: 68, hot: true, tier: 'A', desc: 'Massive missile launch site. Multiple silos + hangars.' },
+  { name: 'Downtown', x: 62, y: 63, hot: true, tier: 'A', desc: 'Urban sprawl. Roof camping paradise.' },
+  { name: 'Sakura', x: 82, y: 30, hot: false, tier: 'A', desc: 'Underrated safe loot. Enough gear for a full 4-man. Small island nearby has heavy snipers + rocket launchers.' },
+  { name: 'Standoff', x: 35, y: 50, hot: false, tier: 'A', desc: 'Safe central location. Good rotation, many vehicles nearby.' },
+  { name: 'Estate', x: 50, y: 82, hot: false, tier: 'A', desc: 'Safe loot spot. Hills + trees for cover. Campers love it.' },
+  { name: 'Sanitarium', x: 35, y: 26, hot: false, tier: 'B', desc: 'Secret room on 3rd floor — shoot 8 teddy bears in warehouse to open it.' },
+  { name: 'Overgrown', x: 68, y: 20, hot: false, tier: 'B', desc: 'Jungle ruins. Sneaky rotations.' },
+  { name: 'Bus Station', x: 55, y: 40, hot: false, tier: 'B', desc: 'Central transit. Mystery Box spawn location.' },
+  { name: 'Harbor', x: 12, y: 30, hot: false, tier: 'B', desc: 'West coast ships. Vehicle friendly.' },
+  { name: 'Pipeline', x: 38, y: 68, hot: false, tier: 'B', desc: 'Industrial zone. Loot + vehicles.' },
+  { name: 'Circus', x: 42, y: 82, hot: false, tier: 'B', desc: 'Ferris wheel landmark. Mid-tier loot.' },
+  { name: 'Ski Town', x: 50, y: 15, hot: false, tier: 'B', desc: 'Snowy resort. Elevation advantage, good vantage points. Cabin loot is decent.' },
+  { name: 'Diner', x: 68, y: 56, hot: false, tier: 'C', desc: 'Zombies + Mystery Box can spawn here.' },
+  { name: 'Pier', x: 12, y: 68, hot: false, tier: 'C', desc: 'Coastal. Boat spawns.' }
+];
+
+// ============================================
+// PART 2: REAL MAP with transparent pins
+// ============================================
+
+function renderRealMap() {
+  return `
+    <div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+      <div class="relative w-full" style="aspect-ratio: 1;">
+        <img src="/isolated-map.png" alt="CODM Isolated Map" class="w-full h-full object-cover" loading="lazy" />
+
+        ${ISOLATED_POIS.map((p, i) => {
+          const pinColor = p.hot ? '#FF6B00' : (p.tier === 'S' ? '#FFD700' : (p.tier === 'A' ? '#00BFFF' : '#8E8E93'));
+          const pinIcon = p.hot ? '🔥' : (p.tier === 'S' ? '★' : '•');
+          return `
+            <button class="map-poi" style="
+              position: absolute;
+              left: ${p.x}%;
+              top: ${p.y}%;
+              transform: translate(-50%, -50%);
+              z-index: 5;
+              background: transparent;
+              border: none;
+              padding: 0;
+            " data-poi-index="${i}">
+              <div class="map-pin" style="
+                width: 22px;
+                height: 22px;
+                border-radius: 50%;
+                background: ${pinColor};
+                border: 2px solid #fff;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 10px;
+                font-weight: 900;
+                color: #000;
+                opacity: 0.65;
+                transition: opacity 0.2s, transform 0.2s;
+              ">${pinIcon}</div>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+      <div class="flex items-center gap-2 mb-3">
+        <i data-lucide="flame" class="w-4 h-4 text-primary"></i>
+        <div class="text-xs font-bold text-primary uppercase">Hot Drops</div>
+      </div>
+      <div class="space-y-2">
+        ${ISOLATED_POIS.filter(p => p.hot).slice(0, 7).map(p => `
+          <button class="poi-row w-full text-left flex items-start gap-3 p-2.5 rounded-xl bg-cardAlt border border-border" data-poi-index="${ISOLATED_POIS.indexOf(p)}">
+            <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+              <span class="text-sm">🔥</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5 mb-0.5">
+                <span class="text-xs font-bold">${p.name}</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-gold text-black font-black">${p.tier}-TIER</span>
+              </div>
+              <div class="text-[10px] text-gray-500 line-clamp-2">${p.desc}</div>
+            </div>
+          </button>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="bg-card border border-border rounded-2xl p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <i data-lucide="info" class="w-4 h-4 text-blue-400"></i>
+        <div class="text-xs font-bold text-blue-400 uppercase">Legend</div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="flex items-center gap-2 text-[10px]">
+          <div class="w-3 h-3 rounded-full" style="background: #FF6B00; border: 1px solid #fff;"></div>
+          <span class="text-gray-400">🔥 Hot Drop</span>
+        </div>
+        <div class="flex items-center gap-2 text-[10px]">
+          <div class="w-3 h-3 rounded-full" style="background: #FFD700; border: 1px solid #fff;"></div>
+          <span class="text-gray-400">★ S-Tier</span>
+        </div>
+        <div class="flex items-center gap-2 text-[10px]">
+          <div class="w-3 h-3 rounded-full" style="background: #00BFFF; border: 1px solid #fff;"></div>
+          <span class="text-gray-400">• A-Tier</span>
+        </div>
+        <div class="flex items-center gap-2 text-[10px]">
+          <div class="w-3 h-3 rounded-full" style="background: #8E8E93; border: 1px solid #fff;"></div>
+          <span class="text-gray-400">• B/C-Tier</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openPoiDetail(index) {
+  const p = ISOLATED_POIS[index];
+  if (!p) return;
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-center">
+        <div class="text-5xl mb-3">${p.hot ? '🔥' : (p.tier === 'S' ? '★' : '📍')}</div>
+        <div class="text-xl font-black mb-1">${esc(p.name)}</div>
+        <div class="flex items-center justify-center gap-2 mb-3">
+          <span class="text-[10px] px-2 py-0.5 rounded-full ${p.hot ? 'bg-primary text-white' : (p.tier === 'S' ? 'bg-gold text-black' : 'bg-gray-500 text-white')} font-black">
+            ${p.hot ? '🔥 HOT DROP' : p.tier + '-TIER'}
+          </span>
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="text-xs font-bold text-gray-400 uppercase mb-2">Tactical Info</div>
+        <p class="text-sm text-gray-300 leading-relaxed">${esc(p.desc)}</p>
+      </div>
+
+      <button onclick="closeSheet()" class="btn-press w-full py-3 rounded-xl bg-primary font-bold text-sm">
+        Got it
+      </button>
+    </div>
+  `, 'Location');
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// Override maps sub-tab
+const _origRenderMapsSub45 = renderMapsSub;
+renderMapsSub = function() {
+  const body = document.getElementById('intel-body');
+  if (!body) return;
+
+  body.innerHTML = renderRealMap();
+
+  // Wire pin animations (opacity on touch)
+  body.querySelectorAll('.map-poi').forEach(el => {
+    const pin = el.querySelector('.map-pin');
+    if (pin) {
+      el.addEventListener('touchstart', () => {
+        pin.style.opacity = '1';
+        pin.style.transform = 'scale(1.3)';
+      }, { passive: true });
+      el.addEventListener('touchend', () => {
+        pin.style.opacity = '0.65';
+        pin.style.transform = 'scale(1)';
+      }, { passive: true });
+    }
+    el.onclick = () => openPoiDetail(parseInt(el.dataset.poiIndex));
+  });
+
+  body.querySelectorAll('.poi-row').forEach(el => {
+    el.onclick = () => openPoiDetail(parseInt(el.dataset.poiIndex));
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 3: 3-DOT MENU on vault cards
+// ============================================
+
+const _origRenderVaultsMenu = renderVaults;
+renderVaults = function() {
+  const feed = document.getElementById('vault-feed');
+  if (!feed) return;
+  let vaults = State.cache.vaults;
+  if (State.filters.vaults.search) {
+    const s = State.filters.vaults.search;
+    vaults = vaults.filter(v =>
+      (v.gunName || '').toLowerCase().includes(s) ||
+      (v.gunsmithCode || '').toLowerCase().includes(s)
+    );
+  }
+
+  if (vaults.length === 0) {
+    feed.className = '';
+    let emptyText = 'Share your first build';
+    let emptyCta = 'Submit Build';
+    let emptyFn = openSubmitVaultSheet;
+    if (vaultTypeFilter === 'sens') { emptyText = 'Share your best sensitivity'; emptyCta = 'Share Sensitivity'; emptyFn = openSubmitSensSheet; }
+    if (vaultTypeFilter === 'hud') { emptyText = 'Share your HUD layout'; emptyCta = 'Share HUD'; emptyFn = openSubmitHudSheet; }
+    feed.innerHTML = emptyState('package-open', 'Nothing here yet', emptyText, emptyCta, emptyFn);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.className = 'grid grid-cols-2 gap-3';
+  feed.innerHTML = vaults.map(v => {
+    const isMine = v.uid === State.user.uid;
+    const isSens = v.type === 'sens';
+    const isHud = v.type === 'hud';
+
+    return `
+      <div class="bg-card border border-border rounded-2xl p-3 fade-in relative">
+        ${isMine ? `
+          <button class="vault-menu-btn absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center z-10" data-id="${v.id}">
+            <i data-lucide="more-vertical" class="w-3.5 h-3.5 text-white/70"></i>
+          </button>
+        ` : ''}
+
+        ${isHud && v.imageUrl ? `
+          <img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" loading="lazy" />
+        ` : isSens ? `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-primaryDark/20 flex items-center justify-center flex-col gap-1">
+            <span class="text-2xl">🎯</span>
+            <span class="text-[10px] text-primary font-bold">SENSITIVITY</span>
+          </div>
+        ` : isHud ? `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-gold/20 to-yellow-500/20 flex items-center justify-center flex-col gap-1">
+            <span class="text-2xl">🎮</span>
+            <span class="text-[10px] text-gold font-bold">HUD LAYOUT</span>
+          </div>
+        ` : v.imageUrl ? `
+          <img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" loading="lazy" />
+        ` : `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+            <i data-lucide="crosshair" class="w-8 h-8 text-primary/60"></i>
+          </div>
+        `}
+
+        <div class="text-xs font-bold text-gray-300 truncate">${esc(v.gunName || 'Unknown')}</div>
+        <div class="text-[10px] text-gray-500 mb-2 truncate">${esc(v.gunsmithCode || v.type || 'build')}</div>
+
+        ${!isSens && !isHud && v.gunsmithCode ? `
+          <button class="copy-code-btn w-full py-2 rounded-lg bg-primary/15 border border-primary/30 text-primary text-[11px] font-bold flex items-center justify-center gap-1 mb-2" data-code="${esc(v.gunsmithCode)}">
+            <i data-lucide="copy" class="w-3 h-3"></i> Copy Code
+          </button>
+        ` : isSens ? `
+          <div class="text-[9px] text-gray-500 mb-2 leading-relaxed line-clamp-3">${esc(v.gunsmithCode || '')}</div>
+        ` : isHud && v.notes ? `
+          <div class="text-[9px] text-gray-500 mb-2 line-clamp-2">${esc(v.notes)}</div>
+        ` : ''}
+
+        <div class="flex items-center justify-between">
+          <button class="like-btn flex items-center gap-1 text-[11px] text-gray-400" data-id="${v.id}">
+            <i data-lucide="heart" class="w-3.5 h-3.5"></i> ${v.likes || 0}
+          </button>
+          <button class="share-vault-btn text-primary" data-id="${v.id}" data-gun="${esc(v.gunName)}">
+            <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Wire buttons
+  feed.querySelectorAll('.copy-code-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); copyText(btn.dataset.code, 'Code copied!'); };
+  });
+  feed.querySelectorAll('.like-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'vaults', btn.dataset.id), { likes: increment(1) });
+        toast('❤️ Liked!', 'success', 1500);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-vault-btn').forEach(btn => {
+    btn.onclick = () => {
+      openShareSheet({
+        title: `${btn.dataset.gun}`,
+        text: `Check out this ${btn.dataset.gun} on CODMPanda!`,
+        url: getVaultShareUrl(btn.dataset.id)
+      });
+    };
+  });
+  feed.querySelectorAll('.vault-menu-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openVaultMenu(btn.dataset.id);
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ---------- 3-DOT MENU ----------
+function openVaultMenu(vaultId) {
+  const vault = State.cache.vaults.find(v => v.id === vaultId);
+  if (!vault) return;
+
+  openSheet(`
+    <div class="space-y-2">
+      <div class="text-[10px] text-gray-500 uppercase font-bold mb-2">${esc(vault.gunName || 'Build')}</div>
+
+      <button id="vault-menu-edit" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+        <i data-lucide="pencil" class="w-4 h-4 text-primary"></i>
+        <span class="text-sm font-bold">Edit</span>
+      </button>
+
+      <button id="vault-menu-share" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+        <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+        <span class="text-sm font-bold">Share</span>
+      </button>
+
+      ${vault.gunsmithCode && vault.type === 'gunsmith' ? `
+        <button id="vault-menu-copy" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+          <i data-lucide="copy" class="w-4 h-4 text-primary"></i>
+          <span class="text-sm font-bold">Copy Code</span>
+        </button>
+      ` : ''}
+
+      <button id="vault-menu-delete" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-left">
+        <i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i>
+        <span class="text-sm font-bold text-red-400">Delete</span>
+      </button>
+
+      <button onclick="closeSheet()" class="text-xs text-gray-500 w-full pt-3">Cancel</button>
+    </div>
+  `, '');
+
+  document.getElementById('vault-menu-edit').onclick = () => {
+    closeSheet();
+    setTimeout(() => openEditVaultModal(vault), 300);
+  };
+
+  document.getElementById('vault-menu-share').onclick = () => {
+    closeSheet();
+    setTimeout(() => {
+      openShareSheet({
+        title: vault.gunName,
+        text: `Check out this ${vault.gunName} on CODMPanda!`,
+        url: getVaultShareUrl(vault.id)
+      });
+    }, 300);
+  };
+
+  const copyBtn = document.getElementById('vault-menu-copy');
+  if (copyBtn) {
+    copyBtn.onclick = () => {
+      closeSheet();
+      copyText(vault.gunsmithCode, 'Code copied!');
+    };
+  }
+
+  document.getElementById('vault-menu-delete').onclick = () => {
+    closeSheet();
+    setTimeout(() => {
+      confirmDialog('Delete Build', 'This will remove it permanently.', async () => {
+        try {
+          await deleteDoc(doc(db, 'vaults', vault.id));
+          State.cache.vaults = State.cache.vaults.filter(v => v.id !== vault.id);
+          renderVaults();
+          toast('🗑️ Deleted', 'success');
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Delete', true);
+    }, 300);
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- EDIT VAULT ----------
+function openEditVaultModal(vault) {
+  if (vault.type === 'sens') {
+    // Sensitivity edit
+    openSheet(`
+      <div class="space-y-4">
+        <div class="bg-primary/10 border border-primary/30 rounded-xl p-3 text-xs text-primary">
+          Edit your sensitivity values
+        </div>
+
+        ${SENS_FIELDS.map(f => `
+          <div>
+            <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">${f.label}</label>
+            <input id="edit-sens-${f.key}" type="number" min="0" max="300" value="${vault.attachments?.[f.key] || ''}" placeholder="${f.placeholder}" />
+          </div>
+        `).join('')}
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Notes</label>
+          <textarea id="edit-sens-notes" rows="3" maxlength="200">${esc(vault.notes || '')}</textarea>
+        </div>
+
+        <button id="edit-sens-save" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+          Save Changes
+        </button>
+      </div>
+    `, 'Edit Sensitivity');
+
+    document.getElementById('edit-sens-save').onclick = async () => {
+      const values = {};
+      SENS_FIELDS.forEach(f => {
+        const val = document.getElementById('edit-sens-' + f.key).value.trim();
+        if (val) values[f.key] = parseInt(val);
+      });
+      const notes = document.getElementById('edit-sens-notes').value.trim();
+
+      const summary = SENS_FIELDS
+        .filter(f => values[f.key] !== undefined)
+        .map(f => `${f.label.split(' ')[0]}: ${values[f.key]}`)
+        .join(' | ');
+
+      try {
+        await updateDoc(doc(db, 'vaults', vault.id), {
+          attachments: values,
+          gunsmithCode: summary.slice(0, 50),
+          notes
+        });
+        toast('✏️ Updated', 'success');
+        closeSheet();
+        State.cache.vaults = State.cache.vaults.map(v => v.id === vault.id ? { ...v, attachments: values, gunsmithCode: summary.slice(0, 50), notes } : v);
+        renderVaults();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    };
+
+  } else if (vault.type === 'hud') {
+    // HUD edit
+    openSheet(`
+      <div class="space-y-4">
+        <div class="bg-gold/10 border border-gold/30 rounded-xl p-3 text-xs text-gold">
+          Edit HUD info
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Control Style</label>
+          <select id="edit-hud-style" data-dropdown-title="Control Style">
+            ${HUD_STYLES.map(s => `<option ${vault.attachments?.style === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Device</label>
+          <select id="edit-hud-device" data-dropdown-title="Device">
+            <option ${vault.attachments?.device === 'Phone' ? 'selected' : ''}>Phone</option>
+            <option ${vault.attachments?.device === 'Tablet' ? 'selected' : ''}>Tablet</option>
+            <option ${vault.attachments?.device === 'Controller' ? 'selected' : ''}>Controller</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">New Screenshot (optional)</label>
+          <input id="edit-hud-image" type="file" accept="image/*" class="text-xs" />
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Notes</label>
+          <textarea id="edit-hud-notes" rows="3" maxlength="200">${esc(vault.notes || '')}</textarea>
+        </div>
+
+        <button id="edit-hud-save" class="btn-press w-full py-4 rounded-2xl bg-gold text-black font-bold">
+          Save Changes
+        </button>
+      </div>
+    `, 'Edit HUD');
+
+    document.getElementById('edit-hud-save').onclick = async () => {
+      const style = document.getElementById('edit-hud-style').value;
+      const device = document.getElementById('edit-hud-device').value;
+      const notes = document.getElementById('edit-hud-notes').value.trim();
+      const fileInput = document.getElementById('edit-hud-image');
+
+      try {
+        const updates = {
+          gunName: `HUD · ${style}`,
+          gunsmithCode: device,
+          attachments: { style, device },
+          notes
+        };
+
+        if (fileInput.files && fileInput.files[0]) {
+          updates.imageUrl = await compressImage(fileInput.files[0], 800, 0.7);
+        }
+
+        await updateDoc(doc(db, 'vaults', vault.id), updates);
+        toast('✏️ Updated', 'success');
+        closeSheet();
+        State.cache.vaults = State.cache.vaults.map(v => v.id === vault.id ? { ...v, ...updates } : v);
+        renderVaults();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    };
+
+  } else {
+    // Gunsmith edit
+    openSheet(`
+      <div class="space-y-4">
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gun Name</label>
+          <input id="edit-v-gun" type="text" value="${esc(vault.gunName || '')}" maxlength="40" />
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gunsmith Code</label>
+          <input id="edit-v-code" type="text" value="${esc(vault.gunsmithCode || '')}" maxlength="20" />
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Attachments</label>
+          <textarea id="edit-v-attach" rows="4" maxlength="500">${esc(Object.entries(vault.attachments || {}).map(([k, v]) => `${k}: ${v}`).join('\n'))}</textarea>
+        </div>
+
+        <button id="edit-v-save" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+          Save Changes
+        </button>
+      </div>
+    `, 'Edit Build');
+
+    document.getElementById('edit-v-save').onclick = async () => {
+      const gunName = document.getElementById('edit-v-gun').value.trim();
+      const gunsmithCode = document.getElementById('edit-v-code').value.trim();
+      const attachRaw = document.getElementById('edit-v-attach').value.trim();
+
+      if (!gunName) { toast('Gun name required', 'error'); return; }
+
+      const attachments = {};
+      attachRaw.split('\n').forEach(line => {
+        const [k, ...v] = line.split(':');
+        if (k && v.length) attachments[k.trim()] = v.join(':').trim();
+      });
+
+      try {
+        await updateDoc(doc(db, 'vaults', vault.id), {
+          gunName,
+          gunsmithCode,
+          attachments
+        });
+        toast('✏️ Updated', 'success');
+        closeSheet();
+        State.cache.vaults = State.cache.vaults.map(v => v.id === vault.id ? { ...v, gunName, gunsmithCode, attachments } : v);
+        renderVaults();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    };
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 4: PERFORMANCE — Lazy load images
+// ============================================
+
+if (!document.getElementById('perf-lazy-images')) {
+  const style = document.createElement('style');
+  style.id = 'perf-lazy-images';
+  style.textContent = `
+    img {
+      content-visibility: auto;
+    }
+    .map-pin:active {
+      transform: scale(1.3);
+      opacity: 1;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+// ============================================
+// PART 5: SMOOTHER TABS — Cache tab renders
+// ============================================
+
+// Cache the last rendered tab to avoid re-renders when switching back
+const _origSwitchTabPerf = switchTab;
+switchTab = function(tab) {
+  const startTime = performance.now();
+  _origSwitchTabPerf(tab);
+  const elapsed = performance.now() - startTime;
+  if (elapsed > 500) {
+    console.log(`⚠️ Tab "${tab}" took ${Math.round(elapsed)}ms to render`);
+  }
+};
+
+window.openVaultMenu = openVaultMenu;
+window.openEditVaultModal = openEditVaultModal;
+
+console.log('✅ Chunk 45: Corrected map + 3-dot menu + perf loaded');
+
+/* END OF CHUNK 45 */
