@@ -19015,3 +19015,286 @@ window.stopHomeLiveUpdates = stopHomeLiveUpdates;
 console.log('✅ Chunk 48b: HOME feed live updates loaded');
 
 /* END OF CHUNK 48b */
+// ============================================
+// Chunk 49: Fix 3 Bugs (Sens view + Stat pills + Instant likes)
+// ============================================
+
+// ============================================
+// PART 1: FIX SENSITIVITY DETAIL VIEW
+// ============================================
+
+const _origOpenVaultDetailFix = openVaultDetail;
+openVaultDetail = function(vaultId) {
+  const vault = State.cache.vaults.find(v => v.id === vaultId);
+  if (!vault) {
+    // Try fetching from Firestore
+    getDoc(doc(db, 'vaults', vaultId)).then(snap => {
+      if (snap.exists()) {
+        const fetched = { id: snap.id, ...snap.data() };
+        State.cache.vaults = State.cache.vaults || [];
+        State.cache.vaults.unshift(fetched);
+        _origOpenVaultDetailFix(vaultId);
+      } else {
+        toast('Item not found', 'error');
+      }
+    }).catch(() => toast('Failed to load', 'error'));
+    return;
+  }
+  return _origOpenVaultDetailFix(vaultId);
+};
+
+// ============================================
+// PART 2: REMOVE STAT PILLS FROM HOME
+// ============================================
+
+renderHomeStats = function() {
+  return ''; // Empty — remove the 4 pills
+};
+
+// Patch renderHomeFeed to not use stat pills
+const _origRenderHomeFeedPills = renderHomeFeed;
+renderHomeFeed = function() {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  let items = homeCache.feed;
+
+  if (homeFilter !== 'all') {
+    const typeMap = {
+      lfg: 'lobby',
+      builds: 'vault',
+      clips: 'clip',
+      leaks: 'leak'
+    };
+    items = items.filter(i => i.type === typeMap[homeFilter]);
+  }
+
+  if (items.length === 0) {
+    feedEl.innerHTML = renderHomeEmpty();
+    wireHomeEmpty();
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  // No more stats bar — just cards
+  feedEl.innerHTML = items.map(item => renderHomeCard(item)).join('');
+
+  wireHomeCards(items);
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 3: INSTANT HEART FILL (Optimistic UI)
+// ============================================
+
+// Patch wireHomeCards for instant feedback
+const _origWireHomeCardsInstant = wireHomeCards;
+wireHomeCards = function(items) {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  // Join lobby
+  feedEl.querySelectorAll('.home-join-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); joinLobby(btn.dataset.id); };
+  });
+
+  // Copy
+  feedEl.querySelectorAll('.home-copy-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); copyText(btn.dataset.code, 'Code copied!'); };
+  });
+
+  // View vault
+  feedEl.querySelectorAll('.home-view-vault-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); openVaultDetail(btn.dataset.id); };
+  });
+
+  // LIKE — instant optimistic UI
+  feedEl.querySelectorAll('.home-like-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const itemType = btn.dataset.type;
+      const itemId = btn.dataset.id;
+
+      // OPTIMISTIC — flip UI instantly
+      State.likedItems = State.likedItems || {};
+      State.likedItems[itemType] = State.likedItems[itemType] || {};
+      const wasLiked = State.likedItems[itemType][itemId] || false;
+      const nowLiked = !wasLiked;
+      State.likedItems[itemType][itemId] = nowLiked;
+
+      // Update button appearance IMMEDIATELY
+      const icon = btn.querySelector('i');
+      // Get current count from the button text
+      const currentText = btn.textContent.trim();
+      const currentCount = parseInt(currentText.replace(/[^0-9]/g, '')) || 0;
+      const newCount = nowLiked ? currentCount + 1 : Math.max(0, currentCount - 1);
+
+      // Rebuild button contents
+      const iconName = itemType === 'leak' ? 'flame' : 'heart';
+      btn.innerHTML = `<i data-lucide="${iconName}" class="w-4 h-4 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+      btn.classList.toggle('text-primary', nowLiked);
+      btn.classList.toggle('text-gray-400', !nowLiked);
+      if (window.lucide) window.lucide.createIcons();
+
+      // Then sync to Firestore in background
+      try {
+        await toggleLike(itemType, itemId, itemType === 'leak' ? 'hypes' : 'likes');
+      } catch (err) {
+        // Revert on failure
+        State.likedItems[itemType][itemId] = wasLiked;
+        btn.innerHTML = `<i data-lucide="${iconName}" class="w-4 h-4 ${wasLiked ? 'fill-current' : ''}"></i> ${currentCount}`;
+        btn.classList.toggle('text-primary', wasLiked);
+        btn.classList.toggle('text-gray-400', !wasLiked);
+        if (window.lucide) window.lucide.createIcons();
+        toast('Failed to update like', 'error');
+      }
+    };
+  });
+
+  // SHARE
+  feedEl.querySelectorAll('.home-share-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const type = btn.dataset.type;
+      const id = btn.dataset.id;
+      const urls = {
+        lobby: getLobbyShareUrl,
+        vault: getVaultShareUrl,
+        clip: getClipShareUrl,
+        leak: getLeakShareUrl
+      };
+      const urlFn = urls[type];
+      if (urlFn) {
+        openShareSheet({
+          title: `CODMPanda ${type}`,
+          text: `Check this out on CODMPanda!`,
+          url: urlFn(id)
+        });
+      }
+    };
+  });
+
+  // Card tap
+  feedEl.querySelectorAll('.home-card').forEach(card => {
+    card.onclick = (e) => {
+      if (e.target.closest('button')) return;
+      const type = card.dataset.type;
+      const id = card.dataset.id;
+      if (type === 'vault') openVaultDetail(id);
+      else if (type === 'clip') { squadSubTab = 'clips'; switchTab('squad'); }
+      else if (type === 'leak') { intelSubTab = 'leaks'; switchTab('intel'); }
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 4: PATCH VAULT RENDER FOR INSTANT LIKES
+// ============================================
+
+const _origRenderVaultsInstantLike = renderVaults;
+renderVaults = function() {
+  _origRenderVaultsInstantLike();
+
+  // Re-wire like buttons with instant feedback
+  setTimeout(() => {
+    const feed = document.getElementById('vault-feed');
+    if (!feed) return;
+
+    feed.querySelectorAll('.like-btn').forEach(btn => {
+      const oldOnclick = btn.onclick;
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const vaultId = btn.dataset.id;
+        const vault = State.cache.vaults.find(v => v.id === vaultId);
+        if (!vault) return;
+
+        // Optimistic
+        const wasLiked = State.likedItems?.vault?.[vaultId] || false;
+        const nowLiked = !wasLiked;
+
+        State.likedItems = State.likedItems || {};
+        State.likedItems.vault = State.likedItems.vault || {};
+        State.likedItems.vault[vaultId] = nowLiked;
+
+        const newCount = nowLiked ? (vault.likes || 0) + 1 : Math.max(0, (vault.likes || 0) - 1);
+        btn.innerHTML = `<i data-lucide="heart" class="w-3.5 h-3.5 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+        btn.classList.toggle('text-primary', nowLiked);
+        btn.classList.toggle('text-gray-400', !nowLiked);
+        if (window.lucide) window.lucide.createIcons();
+
+        // Sync
+        try {
+          await toggleLike('vault', vaultId, 'likes');
+          vault.likes = newCount;
+        } catch (err) {
+          State.likedItems.vault[vaultId] = wasLiked;
+          toast('Failed to like', 'error');
+        }
+      };
+    });
+
+    feed.querySelectorAll('.like-clip').forEach(btn => {
+      btn.onclick = async () => {
+        const clipId = btn.dataset.id;
+        const clip = State.cache.clips.find(c => c.id === clipId);
+        if (!clip) return;
+
+        const wasLiked = State.likedItems?.clip?.[clipId] || false;
+        const nowLiked = !wasLiked;
+
+        State.likedItems = State.likedItems || {};
+        State.likedItems.clip = State.likedItems.clip || {};
+        State.likedItems.clip[clipId] = nowLiked;
+
+        const newCount = nowLiked ? (clip.likes || 0) + 1 : Math.max(0, (clip.likes || 0) - 1);
+        btn.innerHTML = `<i data-lucide="heart" class="w-4 h-4 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+        btn.classList.toggle('text-primary', nowLiked);
+        btn.classList.toggle('text-gray-400', !nowLiked);
+        if (window.lucide) window.lucide.createIcons();
+
+        try {
+          await toggleLike('clip', clipId, 'likes');
+          clip.likes = newCount;
+        } catch (err) {
+          State.likedItems.clip[clipId] = wasLiked;
+          toast('Failed to like', 'error');
+        }
+      };
+    });
+
+    feed.querySelectorAll('.hype-leak').forEach(btn => {
+      btn.onclick = async () => {
+        const leakId = btn.dataset.id;
+        const leak = State.cache.leaks.find(l => l.id === leakId);
+        if (!leak) return;
+
+        const wasLiked = State.likedItems?.leak?.[leakId] || false;
+        const nowLiked = !wasLiked;
+
+        State.likedItems = State.likedItems || {};
+        State.likedItems.leak = State.likedItems.leak || {};
+        State.likedItems.leak[leakId] = nowLiked;
+
+        const newCount = nowLiked ? (leak.hypes || 0) + 1 : Math.max(0, (leak.hypes || 0) - 1);
+        btn.innerHTML = `<i data-lucide="flame" class="w-4 h-4 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+        btn.classList.toggle('text-primary', nowLiked);
+        btn.classList.toggle('text-gray-400', !nowLiked);
+        if (window.lucide) window.lucide.createIcons();
+
+        try {
+          await toggleLike('leak', leakId, 'hypes');
+          leak.hypes = newCount;
+        } catch (err) {
+          State.likedItems.leak[leakId] = wasLiked;
+          toast('Failed to like', 'error');
+        }
+      };
+    });
+  }, 200);
+};
+
+console.log('✅ Chunk 49: 3 bug fixes loaded');
+
+/* END OF CHUNK 49 */
