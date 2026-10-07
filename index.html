@@ -43,8 +43,6 @@
 </script>
 
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-<script>eruda.init();</script>
 
 <style>
   :root {
@@ -404,7 +402,7 @@
 
     <main id="content" class="pt-14 min-h-screen"></main>
 
-    <div id="ad-banner" class="hidden fixed bottom-[72px] left-0 right-0 z-30 bg-card border-t border-border px-4 py-2">
+    <div id="ad-banner" class="hidden fixed bottom-[68px] left-0 right-0 z-30 bg-card border-t border-border px-4 py-2">
       <div class="flex items-center justify-between">
         <span class="text-[10px] text-gray-500 font-medium">Sponsored</span>
         <div class="text-xs text-gray-400">Ad space — upgrade to Pro to remove</div>
@@ -413,26 +411,30 @@
     </div>
 
     <nav id="bottom-nav" class="bottom-nav fixed bottom-0 left-0 right-0 z-40 bg-amoled/95 border-t border-border">
-      <div class="grid grid-cols-5 h-[72px]">
-        <button data-tab="play" class="tab-btn flex flex-col items-center justify-center gap-1 tab-active">
-          <i data-lucide="gamepad-2" class="tab-icon w-6 h-6"></i>
-          <span class="text-[10px] font-bold">PLAY</span>
+      <div class="grid grid-cols-6 h-[68px]">
+        <button data-tab="home" class="tab-btn flex flex-col items-center justify-center gap-0.5 tab-active">
+          <i data-lucide="home" class="tab-icon w-5 h-5"></i>
+          <span class="text-[9px] font-bold">HOME</span>
         </button>
-        <button data-tab="lab" class="tab-btn flex flex-col items-center justify-center gap-1 text-gray-500">
-          <i data-lucide="flask-conical" class="tab-icon w-6 h-6"></i>
-          <span class="text-[10px] font-bold">LAB</span>
+        <button data-tab="play" class="tab-btn flex flex-col items-center justify-center gap-0.5 text-gray-500">
+          <i data-lucide="gamepad-2" class="tab-icon w-5 h-5"></i>
+          <span class="text-[9px] font-bold">PLAY</span>
         </button>
-        <button data-tab="squad" class="tab-btn flex flex-col items-center justify-center gap-1 text-gray-500">
-          <i data-lucide="users" class="tab-icon w-6 h-6"></i>
-          <span class="text-[10px] font-bold">SQUAD</span>
+        <button data-tab="lab" class="tab-btn flex flex-col items-center justify-center gap-0.5 text-gray-500">
+          <i data-lucide="flask-conical" class="tab-icon w-5 h-5"></i>
+          <span class="text-[9px] font-bold">LAB</span>
         </button>
-        <button data-tab="intel" class="tab-btn flex flex-col items-center justify-center gap-1 text-gray-500">
-          <i data-lucide="radar" class="tab-icon w-6 h-6"></i>
-          <span class="text-[10px] font-bold">INTEL</span>
+        <button data-tab="squad" class="tab-btn flex flex-col items-center justify-center gap-0.5 text-gray-500">
+          <i data-lucide="users" class="tab-icon w-5 h-5"></i>
+          <span class="text-[9px] font-bold">SQUAD</span>
         </button>
-        <button data-tab="you" class="tab-btn flex flex-col items-center justify-center gap-1 text-gray-500">
-          <i data-lucide="user" class="tab-icon w-6 h-6"></i>
-          <span class="text-[10px] font-bold">YOU</span>
+        <button data-tab="intel" class="tab-btn flex flex-col items-center justify-center gap-0.5 text-gray-500">
+          <i data-lucide="radar" class="tab-icon w-5 h-5"></i>
+          <span class="text-[9px] font-bold">INTEL</span>
+        </button>
+        <button data-tab="you" class="tab-btn flex flex-col items-center justify-center gap-0.5 text-gray-500">
+          <i data-lucide="user" class="tab-icon w-5 h-5"></i>
+          <span class="text-[9px] font-bold">YOU</span>
         </button>
       </div>
     </nav>
