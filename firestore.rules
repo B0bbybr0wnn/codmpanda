@@ -180,12 +180,12 @@ service cloud.firestore {
       allow create, update, delete: if isSignedIn();
     }
 
-    // ---------- MESSAGES (DMs) - RELAXED READ FOR QUERY ----------
+    // ---------- MESSAGES (DMs) ----------
     match /messages/{messageId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
       allow update: if isSignedIn() && resource.data.fromUid == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.fromUid == request.auth.uid || isAdmin();
+      allow delete: if isSignedIn() && (resource.data.fromUid == request.auth.uid || isAdmin());
     }
 
     // ---------- PARTIES ----------
@@ -217,6 +217,14 @@ service cloud.firestore {
         || isAdmin()
       );
       allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    // ---------- LIKES ----------
+    match /likes/{likeId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow update: if false;
     }
 
     // ---------- DEFAULT DENY ----------
