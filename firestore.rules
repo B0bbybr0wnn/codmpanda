@@ -32,7 +32,10 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAvg', 'ratingCount', 'ratingTags']) ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends', 'friendRequests', 'friendRequestsSent']) ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentParty']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tournamentWins'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tournamentWins']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['themeStyle', 'avatarFrame']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActiveDate', 'activeStreak']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verified', 'verifiedAt'])
       );
       allow delete: if isOwner(uid) || isAdmin();
     }
@@ -67,6 +70,21 @@ service cloud.firestore {
     match /camos/{uid} {
       allow read: if isSignedIn();
       allow write: if isOwner(uid);
+    }
+
+    // ---------- POSTS ----------
+    match /posts/{postId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() >= 2;
+      allow update: if isSignedIn() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'commentCount']))
+        || (resource.data.uid == request.auth.uid)
+        || isAdmin()
+      );
+      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
     // ---------- CLANS ----------
