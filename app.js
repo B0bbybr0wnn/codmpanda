@@ -18884,14 +18884,15 @@ renderHomeFeed = function() {
   const feedEl = document.getElementById('home-feed');
   if (!feedEl) return;
 
-  let items = homeCache.feed;
+  let items = homeCache.feed.filter(i => !['gunsmith','hud','sens'].includes(i.type));
 
   if (homeFilter !== 'all') {
     const typeMap = {
       lfg: 'lobby',
       builds: 'vault',
       clips: 'clip',
-      leaks: 'leak'
+      leaks: 'leak',
+      posts: 'post'
     };
     items = items.filter(i => i.type === typeMap[homeFilter]);
   }
