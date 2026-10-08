@@ -18199,13 +18199,6 @@ let homeCache = {
   isLoading: false
 };
 
-const HOME_FILTERS = [
-  { key: 'all', label: 'All', emoji: '✨' },
-  { key: 'lfg', label: 'LFG', emoji: '🎮' },
-  { key: 'builds', label: 'Builds', emoji: '🔧' },
-  { key: 'clips', label: 'Clips', emoji: '🎬' },
-  { key: 'leaks', label: 'Leaks', emoji: '🔥' }
-];
 
 // ============================================
 // PART 2: FETCH UNIFIED FEED
