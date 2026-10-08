@@ -19320,3 +19320,507 @@ var HUD_STYLES = ['2-Finger', '3-Finger', '4-Finger Claw', '5-Finger Claw', '6-F
 console.log('✅ Chunk 49.5: Restored SENS_FIELDS + HUD_STYLES');
 
 /* END OF CHUNK 49.5 */
+// ============================================
+// Chunk 50: Panda Replacements + Hero Welcome + Share Card
+// ============================================
+
+// ============================================
+// PART 1: HERO WELCOME SCREEN (after onboarding)
+// ============================================
+
+function showHeroWelcome() {
+  // Check if already shown on this device
+  if (localStorage.getItem('codmpanda_hero_welcome_shown') === 'true') {
+    return false;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'hero-welcome-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    z-index: 9500;
+    background: #050505;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    animation: heroFadeIn 0.6s ease-out;
+  `;
+
+  overlay.innerHTML = `
+    <!-- Background panda image with breathing -->
+    <div style="
+      position: absolute;
+      inset: 0;
+      background-image: url('/hero-panda.jpg');
+      background-size: cover;
+      background-position: center top;
+      animation: pandaBreathe 8s ease-in-out infinite;
+      z-index: 1;
+    "></div>
+
+    <!-- Dark gradient overlay for text readability -->
+    <div style="
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(5,5,5,0.3) 0%, rgba(5,5,5,0.5) 50%, rgba(5,5,5,0.95) 100%);
+      z-index: 2;
+    "></div>
+
+    <!-- Orange glow pulse behind panda -->
+    <div style="
+      position: absolute;
+      top: 40%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(255, 107, 0, 0.5) 0%, transparent 70%);
+      animation: glowPulse 3s ease-in-out infinite;
+      z-index: 1;
+      pointer-events: none;
+    "></div>
+
+    <!-- Fireflies container -->
+    <div id="hero-fireflies" style="
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      overflow: hidden;
+    "></div>
+
+    <!-- Content -->
+    <div style="
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+      width: 100%;
+      max-width: 500px;
+      margin-top: auto;
+      margin-bottom: 80px;
+      text-align: center;
+    ">
+      <div style="
+        font-size: 36px;
+        font-weight: 900;
+        margin-bottom: 8px;
+        letter-spacing: -0.5px;
+      ">
+        <span style="color: #FF6B00; text-shadow: 0 0 30px rgba(255, 107, 0, 0.6);">Welcome to</span>
+        <br/>
+        <span style="color: #fff;">CODMPanda</span>
+      </div>
+
+      <div style="
+        font-size: 13px;
+        color: #aaa;
+        margin-bottom: 32px;
+        max-width: 280px;
+        line-height: 1.5;
+      ">
+        Your ultimate CODM companion. Time to dominate.
+      </div>
+
+      <button id="hero-get-started" class="btn-press" style="
+        padding: 16px 48px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #FF6B00 0%, #CC5500 100%);
+        border: none;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 900;
+        font-family: Inter, sans-serif;
+        cursor: pointer;
+        box-shadow: 0 8px 32px rgba(255, 107, 0, 0.5), 0 0 20px rgba(255, 107, 0, 0.3);
+        letter-spacing: 0.5px;
+      ">
+        Get Started →
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Add keyframe animations
+  if (!document.getElementById('hero-animations')) {
+    const style = document.createElement('style');
+    style.id = 'hero-animations';
+    style.textContent = `
+      @keyframes heroFadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes pandaBreathe {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.04); }
+      }
+      @keyframes glowPulse {
+        0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+        50% { opacity: 0.7; transform: translate(-50%, -50%) scale(1.15); }
+      }
+      @keyframes fireflyFloat {
+        0% {
+          transform: translateY(0) translateX(0);
+          opacity: 0;
+        }
+        10% {
+          opacity: 1;
+        }
+        90% {
+          opacity: 1;
+        }
+        100% {
+          transform: translateY(-100vh) translateX(20px);
+          opacity: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Generate 20 fireflies
+  const firefliesContainer = document.getElementById('hero-fireflies');
+  for (let i = 0; i < 20; i++) {
+    const firefly = document.createElement('div');
+    const size = 3 + Math.random() * 5;
+    const leftPos = Math.random() * 100;
+    const delay = Math.random() * 8;
+    const duration = 6 + Math.random() * 6;
+    const color = Math.random() > 0.5 ? '#FFD700' : '#FF6B00';
+    const startBottom = -50 - Math.random() * 200;
+
+    firefly.style.cssText = `
+      position: absolute;
+      width: ${size}px;
+      height: ${size}px;
+      border-radius: 50%;
+      background: ${color};
+      box-shadow: 0 0 ${size * 3}px ${color}, 0 0 ${size * 6}px ${color};
+      left: ${leftPos}%;
+      bottom: ${startBottom}px;
+      animation: fireflyFloat ${duration}s linear infinite;
+      animation-delay: ${delay}s;
+      opacity: 0;
+    `;
+    firefliesContainer.appendChild(firefly);
+  }
+
+  // Wire Get Started button
+  document.getElementById('hero-get-started').onclick = () => {
+    localStorage.setItem('codmpanda_hero_welcome_shown', 'true');
+    overlay.style.animation = 'heroFadeIn 0.4s ease-out reverse';
+    setTimeout(() => {
+      overlay.remove();
+      // Now show onboarding or main app
+      if (!State.profile?.onboardingDone) {
+        showOnboarding();
+      } else {
+        showMainApp();
+      }
+    }, 400);
+  };
+
+  return true;
+}
+
+// ============================================
+// PART 2: HOOK WELCOME INTO SIGN-IN FLOW
+// ============================================
+
+// After Google auth, if user is brand new, show welcome BEFORE onboarding
+const _origOnAuthStateChangedHero = null; // onAuthStateChanged isn't overridable here since it's already registered
+
+// Patch ensureUserProfile path — hook into the auth flow
+const _origEnsureUserProfileHero = ensureUserProfile;
+// Can't easily override — instead, hook into onboarding render
+const _origShowOnboardingHero = showOnboarding;
+showOnboarding = function() {
+  // Show hero welcome first
+  const heroShown = showHeroWelcome();
+  if (heroShown) return; // Wait for user to tap Get Started
+
+  return _origShowOnboardingHero();
+};
+
+// ============================================
+// PART 3: REPLACE EMOJI 🐼 IN EXISTING SCREENS
+// ============================================
+
+// 1. Auth gate — replace 🐼 with icon
+const _origShowAuthGateHero = showAuthGate;
+showAuthGate = function() {
+  _origShowAuthGateHero();
+  setTimeout(() => {
+    const authGate = document.getElementById('auth-gate');
+    if (!authGate) return;
+    const pandaDiv = authGate.querySelector('.text-6xl');
+    if (pandaDiv && pandaDiv.textContent.includes('🐼')) {
+      pandaDiv.innerHTML = '<img src="/icon-512.png" alt="CODMPanda" class="w-24 h-24 rounded-3xl" style="box-shadow: 0 0 40px rgba(255, 107, 0, 0.5);" />';
+      pandaDiv.classList.remove('text-6xl');
+    }
+  }, 100);
+};
+
+// 2. Onboarding slides — replace 🐼 in emoji field (already uses images + emoji)
+const _origRenderOnboardingHero = renderOnboarding;
+renderOnboarding = function() {
+  _origRenderOnboardingHero();
+  setTimeout(() => {
+    const onboarding = document.getElementById('onboarding-content');
+    if (!onboarding) return;
+    // Replace any 🐼 that leaked through
+    onboarding.querySelectorAll('div').forEach(el => {
+      if (el.textContent === '🐼' && !el.querySelector('img')) {
+        el.innerHTML = '<img src="/icon-512.png" class="w-20 h-20 mx-auto rounded-3xl" style="box-shadow: 0 0 30px rgba(255, 107, 0, 0.4);" />';
+      }
+    });
+  }, 100);
+};
+
+// 3. Welcome toast — remove emoji
+const _origToastHero = toast;
+toast = function(message, type, duration) {
+  // Clean any remaining 🐼 emoji from toast messages
+  const cleanedMessage = String(message).replace(/🐼/g, '').trim();
+  return _origToastHero(cleanedMessage, type, duration);
+};
+
+// 4. Camo share text — remove emoji
+// (Already handled by toast override + inline cleanup below)
+
+// ============================================
+// PART 4: PROFILE SHARE CARD with panda background
+// ============================================
+
+const _origGenerateProfileCardHero = generateProfileCard;
+generateProfileCard = async function() {
+  const p = State.profile || {};
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  const W = 1080;
+  const H = 1920;
+  canvas.width = W;
+  canvas.height = H;
+
+  // Background: AMOLED base
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, 0, W, H);
+
+  // Try to draw hero panda background (bottom portion)
+  try {
+    const heroImg = await loadImage('/hero-panda.jpg');
+    // Draw it at bottom with opacity
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    // Cover bottom 60% of canvas
+    const heroH = H * 0.6;
+    const imgAspect = heroImg.width / heroImg.height;
+    let drawW = W;
+    let drawH = W / imgAspect;
+    if (drawH < heroH) {
+      drawH = heroH;
+      drawW = heroH * imgAspect;
+    }
+    const offsetX = (W - drawW) / 2;
+    const offsetY = H - heroH;
+    ctx.drawImage(heroImg, offsetX, offsetY, drawW, drawH);
+    ctx.restore();
+
+    // Gradient overlay for text
+    const grad = ctx.createLinearGradient(0, H - heroH, 0, H);
+    grad.addColorStop(0, 'rgba(5, 5, 5, 0.6)');
+    grad.addColorStop(1, 'rgba(5, 5, 5, 0.95)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, H - heroH, W, heroH);
+  } catch (e) {
+    console.warn('Hero panda bg not found, using gradient only');
+  }
+
+  // Top orange glow
+  const grad1 = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, 900);
+  grad1.addColorStop(0, 'rgba(255, 107, 0, 0.35)');
+  grad1.addColorStop(1, 'rgba(255, 107, 0, 0)');
+  ctx.fillStyle = grad1;
+  ctx.fillRect(0, 0, W, 900);
+
+  // Border
+  ctx.strokeStyle = p.isPro ? '#FFD700' : '#222';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(20, 20, W - 40, H - 40);
+
+  // Header
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 52px Inter, sans-serif';
+  ctx.fillStyle = '#FF6B00';
+  ctx.fillText('CODMPanda', W / 2, 140);
+
+  ctx.font = '500 26px Inter, sans-serif';
+  ctx.fillStyle = '#666';
+  ctx.fillText('The Ultimate CODM Companion', W / 2, 190);
+
+  // Avatar
+  const avatarY = 420;
+  const avatarR = 140;
+
+  if (p.isPro) {
+    const avatarGrad = ctx.createLinearGradient(W / 2 - avatarR, avatarY - avatarR, W / 2 + avatarR, avatarY + avatarR);
+    avatarGrad.addColorStop(0, '#FFD700');
+    avatarGrad.addColorStop(0.5, '#FFF176');
+    avatarGrad.addColorStop(1, '#FFD700');
+    ctx.fillStyle = avatarGrad;
+    ctx.beginPath();
+    ctx.arc(W / 2, avatarY, avatarR + 12, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = '#FF6B00';
+    ctx.beginPath();
+    ctx.arc(W / 2, avatarY, avatarR + 8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.arc(W / 2, avatarY, avatarR, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (p.avatar) {
+    try {
+      const img = await loadImage(p.avatar);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(W / 2, avatarY, avatarR, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(img, W / 2 - avatarR, avatarY - avatarR, avatarR * 2, avatarR * 2);
+      ctx.restore();
+    } catch (e) {
+      drawInitials(ctx, p.ign, W / 2, avatarY, avatarR);
+    }
+  } else {
+    drawInitials(ctx, p.ign, W / 2, avatarY, avatarR);
+  }
+
+  if (p.isPro) {
+    ctx.font = 'bold 90px Inter, sans-serif';
+    ctx.fillText('👑', W / 2 + 115, avatarY - 85);
+  }
+
+  // Name
+  ctx.font = 'bold 72px Inter, sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(truncateText(ctx, p.ign || 'Panda Player', W - 100), W / 2, 700);
+
+  ctx.font = '500 32px Inter, sans-serif';
+  ctx.fillStyle = '#888';
+  ctx.fillText(`${p.rank || 'Rookie'} • ${p.region || 'Global'}`, W / 2, 760);
+
+  // Pro pill
+  if (p.isPro) {
+    const proText = '👑 PRO MEMBER';
+    ctx.font = 'bold 30px Inter, sans-serif';
+    const proW = ctx.measureText(proText).width + 60;
+    const proX = W / 2 - proW / 2;
+    const proY = 810;
+    ctx.fillStyle = '#FFD700';
+    roundRect(ctx, proX, proY, proW, 60, 30);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.fillText(proText, W / 2, proY + 42);
+  }
+
+  // Stats
+  const statY = 980;
+  const boxW = 300;
+  const boxH = 180;
+  const gap = 20;
+  const totalW = boxW * 3 + gap * 2;
+  const startX = (W - totalW) / 2;
+
+  let vaultCount = State.cache.myVaultCount || 0;
+  let camoPct = State.cache.myCamoPct || 0;
+  const approved = p.approvedCount || 0;
+  const stats = [
+    { value: vaultCount.toString(), label: 'VAULTS' },
+    { value: camoPct + '%', label: 'CAMOS' },
+    { value: approved.toString(), label: 'APPROVED' }
+  ];
+
+  stats.forEach((stat, i) => {
+    const x = startX + (boxW + gap) * i;
+    ctx.fillStyle = 'rgba(20, 20, 20, 0.9)';
+    roundRect(ctx, x, statY, boxW, boxH, 24);
+    ctx.fill();
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = 'bold 64px Inter, sans-serif';
+    ctx.fillStyle = i === 1 ? '#FFD700' : '#FF6B00';
+    ctx.textAlign = 'center';
+    ctx.fillText(stat.value, x + boxW / 2, statY + 100);
+
+    ctx.font = '600 20px Inter, sans-serif';
+    ctx.fillStyle = '#666';
+    ctx.fillText(stat.label, x + boxW / 2, statY + 145);
+  });
+
+  // Badges
+  const badges = p.badges || [];
+  if (badges.length > 0) {
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 32px Inter, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('CONTRIBUTOR BADGES', W / 2, 1300);
+
+    const badgeEmojis = { first_leak: '🥉', rising: '🥈', legend: '🥇', elite: '💎' };
+    const badgeLabels = { first_leak: 'First Leak', rising: 'Rising', legend: 'Legend', elite: 'Elite' };
+    const badgeW = 200;
+    const badgeGap = 30;
+    const totalBadgeW = badges.length * badgeW + (badges.length - 1) * badgeGap;
+    const badgeStartX = (W - totalBadgeW) / 2;
+    const badgeY = 1340;
+
+    badges.forEach((b, i) => {
+      const x = badgeStartX + (badgeW + badgeGap) * i;
+      ctx.fillStyle = 'rgba(255, 215, 0, 0.1)';
+      roundRect(ctx, x, badgeY, badgeW, 160, 20);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.font = 'bold 70px Inter, sans-serif';
+      ctx.fillText(badgeEmojis[b] || '⭐', x + badgeW / 2, badgeY + 95);
+
+      ctx.font = '600 18px Inter, sans-serif';
+      ctx.fillStyle = '#FFD700';
+      ctx.fillText(badgeLabels[b] || 'Badge', x + badgeW / 2, badgeY + 135);
+    });
+  }
+
+  // Footer
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 36px Inter, sans-serif';
+  ctx.fillStyle = '#FF6B00';
+  ctx.fillText('codmpanda.pages.dev', W / 2, 1810);
+
+  ctx.font = '500 22px Inter, sans-serif';
+  ctx.fillStyle = '#444';
+  ctx.fillText('Join the ultimate CODM companion', W / 2, 1855);
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/png', 0.95);
+  });
+};
+
+window.showHeroWelcome = showHeroWelcome;
+
+console.log('✅ Chunk 50: Hero welcome + panda replacements + share card loaded');
+
+/* END OF CHUNK 50 */
