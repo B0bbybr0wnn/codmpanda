@@ -19838,3 +19838,2536 @@ window.showHeroWelcome = showHeroWelcome;
 console.log('✅ Chunk 50 (revised): Full image + realistic fireflies loaded');
 
 /* END OF CHUNK 50 */
+// ============================================
+// Chunk 51a: Text Posts + Filter Grid + Empty Home
+// ============================================
+
+var POST_CHAR_FREE_LIMIT = 500;
+
+// ============================================
+// PART 1: WRITE POST SHEET
+// ============================================
+
+function openWritePostSheet() {
+  const isPro = State.profile?.isPro;
+  const limit = isPro ? 5000 : POST_CHAR_FREE_LIMIT;
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="flex items-center gap-3 mb-2">
+        <div class="w-11 h-11 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden flex-shrink-0">
+          ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" class="w-full h-full object-cover" />` : getInitials(State.profile?.ign || '?')}
+        </div>
+        <div>
+          <div class="text-sm font-bold">${esc(State.profile?.ign || 'You')}</div>
+          <div class="text-[10px] text-gray-500">${isPro ? '👑 Pro · Unlimited' : 'Free · 500 chars'}</div>
+        </div>
+      </div>
+
+      <div>
+        <textarea id="post-text" rows="6" maxlength="${limit}" placeholder="What's on your mind, Panda?" style="font-size: 15px; line-height: 1.5;"></textarea>
+        <div class="flex items-center justify-between mt-2">
+          <span id="post-counter" class="text-[10px] text-gray-500">0 / ${limit}</span>
+          ${!isPro ? `<span id="pro-hint" class="text-[10px] text-gold font-bold hidden">👑 Upgrade for unlimited</span>` : ''}
+        </div>
+      </div>
+
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Image (optional)</label>
+        <input id="post-image" type="file" accept="image/*" class="text-xs" />
+      </div>
+
+      <button id="post-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-black glow-primary">
+        Post to Feed
+      </button>
+    </div>
+  `, '✍️ Write Post');
+
+  const textarea = document.getElementById('post-text');
+  const counter = document.getElementById('post-counter');
+  const proHint = document.getElementById('pro-hint');
+
+  textarea.oninput = () => {
+    const len = textarea.value.length;
+    counter.textContent = `${len} / ${limit}`;
+    if (len > limit - 50) counter.classList.add('text-gold');
+    else counter.classList.remove('text-gold');
+    if (proHint && len >= limit - 20) proHint.classList.remove('hidden');
+    else if (proHint) proHint.classList.add('hidden');
+  };
+
+  document.getElementById('post-submit').onclick = async () => {
+    const text = textarea.value.trim();
+    const fileInput = document.getElementById('post-image');
+
+    if (text.length < 2) { toast('Write something first', 'error'); return; }
+    if (text.length > limit) {
+      toast(`Max ${limit} chars. Upgrade for unlimited.`, 'error', 3000);
+      if (!isPro) showProPaywall('Post longer thoughts — Pro unlocks unlimited characters.');
+      return;
+    }
+
+    const btn = document.getElementById('post-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto"></div>';
+
+    try {
+      let imageUrl = '';
+      if (fileInput.files && fileInput.files[0]) {
+        imageUrl = await compressImage(fileInput.files[0], 800, 0.65);
+      }
+
+      const expiresAt = Timestamp.fromMillis(Date.now() + 90 * 24 * 60 * 60 * 1000);
+
+      await addDoc(collection(db, 'posts'), {
+        uid: State.user.uid,
+        ign: State.profile.ign,
+        avatar: State.profile.avatar || '',
+        text,
+        imageUrl,
+        likes: 0,
+        commentCount: 0,
+        createdAt: serverTimestamp(),
+        expiresAt
+      });
+
+      toast('✅ Posted!', 'success');
+      closeSheet();
+      if (State.currentTab === 'home') {
+        homeCache.lastFetch = 0;
+        await fetchHomeFeed();
+        renderHomeFeed();
+      }
+    } catch (e) {
+      console.error(e);
+      toast('Failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Post to Feed';
+    }
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 2: FETCH POSTS
+// ============================================
+
+var _origFetchHomeFeedWithPosts = fetchHomeFeed;
+fetchHomeFeed = async function() {
+  if (homeCache.isLoading) return homeCache.feed;
+  homeCache.isLoading = true;
+
+  try {
+    const now = Date.now();
+
+    const [lobbiesSnap, vaultsSnap, clipsSnap, leaksSnap, postsSnap] = await Promise.all([
+      getDocs(query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'clips'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'leaks'), limit(20))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'posts'), limit(30))).catch(() => ({ forEach: () => {} }))
+    ]);
+
+    const feed = [];
+
+    lobbiesSnap.forEach(d => {
+      const data = d.data();
+      const expiresAt = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
+      if (expiresAt < now) return;
+      feed.push({ id: d.id, type: 'lobby', ...data, _sortTime: data.createdAt?.seconds || 0 });
+    });
+
+    vaultsSnap.forEach(d => {
+      const data = d.data();
+      feed.push({ id: d.id, type: 'vault', ...data, _sortTime: data.createdAt?.seconds || 0 });
+    });
+
+    clipsSnap.forEach(d => {
+      const data = d.data();
+      feed.push({ id: d.id, type: 'clip', ...data, _sortTime: data.createdAt?.seconds || 0 });
+    });
+
+    leaksSnap.forEach(d => {
+      const data = d.data();
+      feed.push({ id: d.id, type: 'leak', ...data, _sortTime: (data.createdAt || data.publishedAt)?.seconds || 0 });
+    });
+
+    postsSnap.forEach(d => {
+      const data = d.data();
+      const expiresAt = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
+      if (expiresAt < now) return;
+      feed.push({ id: d.id, type: 'post', ...data, _sortTime: data.createdAt?.seconds || 0 });
+    });
+
+    feed.sort((a, b) => b._sortTime - a._sortTime);
+
+    homeCache.feed = feed;
+    homeCache.lastFetch = now;
+    homeCache.isLoading = false;
+    return feed;
+  } catch (e) {
+    console.error('Home feed error:', e);
+    homeCache.isLoading = false;
+    return homeCache.feed;
+  }
+};
+
+// ============================================
+// PART 3: POST CARD RENDERER
+// ============================================
+
+function renderHomePostCard(post) {
+  const isMine = post.uid === State.user.uid;
+  const isLiked = State.likedItems?.post?.[post.id] || false;
+  const wasEdited = !!post.editedAt;
+
+  return `
+    <div class="home-card bg-card border border-border rounded-2xl p-4 mb-3 fade-in" data-type="post" data-id="${post.id}">
+      <div class="flex items-start gap-3 mb-3">
+        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0">
+          ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-bold text-sm">${esc(post.ign || 'Unknown')}</span>
+            ${post.uid === ADMIN_UID ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑</span>' : ''}
+          </div>
+          <div class="text-[10px] text-gray-500 mt-0.5">
+            ${timeAgo(post.createdAt)}${wasEdited ? ' · edited' : ''}
+          </div>
+        </div>
+        ${isMine ? `
+          <button class="post-menu-btn w-7 h-7 rounded-lg bg-black/60 border border-white/10 flex items-center justify-center" data-id="${post.id}">
+            <i data-lucide="more-vertical" class="w-3.5 h-3.5 text-white/70"></i>
+          </button>
+        ` : ''}
+      </div>
+
+      <p class="text-sm text-gray-200 whitespace-pre-wrap break-words mb-3">${esc(post.text)}</p>
+
+      ${post.imageUrl ? `
+        <img src="${esc(post.imageUrl)}" class="w-full rounded-xl mb-3" loading="lazy" />
+      ` : ''}
+
+      <div class="flex items-center justify-between pt-2 border-t border-border">
+        <button class="post-like-btn flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'}" data-id="${post.id}">
+          <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i> ${post.likes || 0}
+        </button>
+        <button class="post-comments-btn flex items-center gap-1.5 text-xs text-gray-400" data-id="${post.id}">
+          <i data-lucide="message-circle" class="w-4 h-4"></i> ${post.commentCount || 0}
+        </button>
+        <button class="post-share-btn flex items-center gap-1.5 text-xs text-primary" data-id="${post.id}">
+          <i data-lucide="share-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// PART 4: PATCH renderHomeCard to include posts
+// ============================================
+
+var _origRenderHomeCardWithPosts = renderHomeCard;
+renderHomeCard = function(item) {
+  if (item.type === 'post') return renderHomePostCard(item);
+  return _origRenderHomeCardWithPosts(item);
+};
+
+// ============================================
+// PART 5: FILTER CHIPS GRID
+// ============================================
+
+HOME_FILTERS = [
+  { key: 'all', label: 'All', emoji: '✨' },
+  { key: 'lfg', label: 'LFG', emoji: '🎮' },
+  { key: 'builds', label: 'Builds', emoji: '🔧' },
+  { key: 'clips', label: 'Clips', emoji: '🎬' },
+  { key: 'leaks', label: 'Leaks', emoji: '🔥' },
+  { key: 'posts', label: 'Posts', emoji: '✍️' }
+];
+
+var _origRenderHomeTabGrid = renderHomeTab;
+renderHomeTab = async function() {
+  const content = document.getElementById('content');
+  if (!content) return;
+
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <div class="mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h1 class="text-2xl font-black">Home</h1>
+            <p class="text-xs text-gray-500">What's happening in CODM</p>
+          </div>
+          <div class="flex gap-2">
+            <button id="home-write-btn" class="btn-press w-9 h-9 rounded-full bg-primary flex items-center justify-center" style="box-shadow: 0 0 15px rgba(255, 107, 0, 0.5);">
+              <i data-lucide="plus" class="w-4 h-4 text-white"></i>
+            </button>
+            <button id="home-refresh-btn" class="btn-press w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center">
+              <i data-lucide="refresh-cw" class="w-4 h-4 text-gray-400"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2">
+          ${HOME_FILTERS.map(f => `
+            <button class="home-filter-btn chip ${homeFilter === f.key ? 'active' : ''}" data-filter="${f.key}" style="padding: 8px 6px; font-size: 11px; text-align: center;">
+              ${f.emoji} ${f.label}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div id="home-feed">
+        ${renderHomeSkeleton()}
+      </div>
+    </div>
+  `;
+
+  document.querySelectorAll('.home-filter-btn').forEach(btn => {
+    btn.onclick = () => {
+      homeFilter = btn.dataset.filter;
+      document.querySelectorAll('.home-filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderHomeFeed();
+    };
+  });
+
+  document.getElementById('home-write-btn').onclick = openWritePostSheet;
+
+  document.getElementById('home-refresh-btn').onclick = async () => {
+    homeCache.lastFetch = 0;
+    toast('Refreshing...', 'info', 1000);
+    await fetchHomeFeed();
+    renderHomeFeed();
+  };
+
+  const fetchPromise = fetchHomeFeed();
+  const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 5000));
+  const result = await Promise.race([fetchPromise, timeoutPromise]);
+
+  if (result === 'timeout') toast('Taking longer than usual...', 'warning', 2000);
+
+  renderHomeFeed();
+  startHomeLiveUpdates();
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 6: RENDER FEED with posts filter
+// ============================================
+
+var _origRenderHomeFeedPosts = renderHomeFeed;
+renderHomeFeed = function() {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  let items = homeCache.feed;
+
+  if (homeFilter !== 'all') {
+    const typeMap = {
+      lfg: 'lobby',
+      builds: 'vault',
+      clips: 'clip',
+      leaks: 'leak',
+      posts: 'post'
+    };
+    items = items.filter(i => i.type === typeMap[homeFilter]);
+  }
+
+  if (items.length === 0) {
+    feedEl.innerHTML = renderHomeEmpty();
+    wireHomeEmpty();
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feedEl.innerHTML = items.map(item => renderHomeCard(item)).join('');
+  wireHomeCards(items);
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 7: BETTER EMPTY HOME
+// ============================================
+
+renderHomeEmpty = function() {
+  return `
+    <div class="flex flex-col items-center justify-center py-12 px-6 text-center fade-in">
+      <div class="relative mb-6">
+        <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+        <img src="/icon-512.png" alt="CODMPanda" class="relative w-24 h-24 rounded-3xl mx-auto" style="box-shadow: 0 0 40px rgba(255, 107, 0, 0.5);" />
+      </div>
+
+      <div class="text-xl font-black mb-2">Nothing here yet</div>
+      <div class="text-xs text-gray-500 max-w-[280px] leading-relaxed mb-6">
+        Be the first to post something. Pick what you want to share:
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 w-full max-w-sm">
+        <button id="empty-write" class="btn-press py-4 rounded-2xl bg-gradient-to-br from-primary to-primaryDark text-white font-black text-xs flex flex-col items-center gap-1.5 glow-primary">
+          <i data-lucide="pencil" class="w-5 h-5"></i>
+          <span>Write Post</span>
+        </button>
+        <button id="empty-lfg" class="btn-press py-4 rounded-2xl bg-card border border-border font-bold text-xs flex flex-col items-center gap-1.5">
+          <i data-lucide="gamepad-2" class="w-5 h-5 text-primary"></i>
+          <span>Find Squad</span>
+        </button>
+        <button id="empty-build" class="btn-press py-4 rounded-2xl bg-card border border-border font-bold text-xs flex flex-col items-center gap-1.5">
+          <i data-lucide="wrench" class="w-5 h-5 text-primary"></i>
+          <span>Share Build</span>
+        </button>
+        <button id="empty-clip" class="btn-press py-4 rounded-2xl bg-card border border-border font-bold text-xs flex flex-col items-center gap-1.5">
+          <i data-lucide="video" class="w-5 h-5 text-primary"></i>
+          <span>Post Clip</span>
+        </button>
+      </div>
+    </div>
+  `;
+};
+
+wireHomeEmpty = function() {
+  const write = document.getElementById('empty-write');
+  if (write) write.onclick = openWritePostSheet;
+  const lfg = document.getElementById('empty-lfg');
+  if (lfg) lfg.onclick = () => switchTab('play');
+  const build = document.getElementById('empty-build');
+  if (build) build.onclick = () => { labSubTab = 'vault'; switchTab('lab'); };
+  const clip = document.getElementById('empty-clip');
+  if (clip) clip.onclick = () => { squadSubTab = 'clips'; switchTab('squad'); };
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 8: POST INTERACTIONS
+// ============================================
+
+var _origWireHomeCardsPosts = wireHomeCards;
+wireHomeCards = function(items) {
+  _origWireHomeCardsPosts(items);
+
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  // Post like buttons
+  feedEl.querySelectorAll('.post-like-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const postId = btn.dataset.id;
+      const post = items.find(i => i.id === postId);
+      if (!post) return;
+
+      const wasLiked = State.likedItems?.post?.[postId] || false;
+      const nowLiked = !wasLiked;
+
+      State.likedItems = State.likedItems || {};
+      State.likedItems.post = State.likedItems.post || {};
+      State.likedItems.post[postId] = nowLiked;
+
+      const newCount = nowLiked ? (post.likes || 0) + 1 : Math.max(0, (post.likes || 0) - 1);
+      btn.innerHTML = `<i data-lucide="heart" class="w-4 h-4 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+      btn.classList.toggle('text-primary', nowLiked);
+      btn.classList.toggle('text-gray-400', !nowLiked);
+      if (window.lucide) window.lucide.createIcons();
+
+      try {
+        await toggleLike('post', postId, 'likes');
+        post.likes = newCount;
+      } catch (err) {
+        State.likedItems.post[postId] = wasLiked;
+        toast('Failed', 'error');
+      }
+    };
+  });
+
+  // Post comments button
+  feedEl.querySelectorAll('.post-comments-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      if (typeof openPostComments === 'function') {
+        openPostComments(btn.dataset.id);
+      } else {
+        toast('Comments loading...', 'info', 1500);
+      }
+    };
+  });
+
+  // Post share button
+  feedEl.querySelectorAll('.post-share-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openShareSheet({
+        title: 'CODMPanda Post',
+        text: 'Check out this post on CODMPanda!',
+        url: `${location.origin}/?post=${btn.dataset.id}`
+      });
+    };
+  });
+
+  // Post 3-dot menu
+  feedEl.querySelectorAll('.post-menu-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openPostMenu(btn.dataset.id);
+    };
+  });
+};
+
+// ============================================
+// PART 9: POST 3-DOT MENU (Edit / Delete)
+// ============================================
+
+function openPostMenu(postId) {
+  const post = homeCache.feed.find(p => p.id === postId);
+  if (!post) return;
+
+  const ageMinutes = (Date.now() / 1000 - (post.createdAt?.seconds || 0)) / 60;
+  const canEdit = ageMinutes < 30;
+
+  openSheet(`
+    <div class="space-y-2">
+      <button id="pm-edit" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl ${canEdit ? 'bg-card border border-border' : 'bg-card/50 border border-border/50 opacity-50'} text-left" ${!canEdit ? 'disabled' : ''}>
+        <i data-lucide="pencil" class="w-4 h-4 ${canEdit ? 'text-primary' : 'text-gray-600'}"></i>
+        <div class="flex-1">
+          <span class="text-sm font-bold ${canEdit ? '' : 'text-gray-500'}">Edit</span>
+          ${!canEdit ? '<div class="text-[9px] text-gray-600">Edit window closed (30 min)</div>' : '<div class="text-[9px] text-gray-500">Available for 30 min after posting</div>'}
+        </div>
+      </button>
+
+      <button id="pm-share" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+        <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+        <span class="text-sm font-bold">Share</span>
+      </button>
+
+      <button id="pm-delete" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-left">
+        <i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i>
+        <span class="text-sm font-bold text-red-400">Delete Post</span>
+      </button>
+
+      <button onclick="closeSheet()" class="text-xs text-gray-500 w-full pt-3">Cancel</button>
+    </div>
+  `, 'Post Options');
+
+  const editBtn = document.getElementById('pm-edit');
+  if (editBtn && canEdit) {
+    editBtn.onclick = () => {
+      closeSheet();
+      setTimeout(() => openEditPostSheet(post), 300);
+    };
+  }
+
+  document.getElementById('pm-share').onclick = () => {
+    closeSheet();
+    openShareSheet({
+      title: 'CODMPanda Post',
+      text: 'Check out this post on CODMPanda!',
+      url: `${location.origin}/?post=${post.id}`
+    });
+  };
+
+  document.getElementById('pm-delete').onclick = () => {
+    closeSheet();
+    setTimeout(() => {
+      confirmDialog('Delete Post', 'This will remove your post permanently.', async () => {
+        try {
+          await deleteDoc(doc(db, 'posts', post.id));
+          homeCache.feed = homeCache.feed.filter(p => p.id !== post.id);
+          renderHomeFeed();
+          toast('🗑️ Post deleted', 'success');
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Delete', true);
+    }, 300);
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function openEditPostSheet(post) {
+  openSheet(`
+    <div class="space-y-4">
+      <div class="bg-primary/10 border border-primary/30 rounded-xl p-3 text-xs text-primary">
+        ✏️ Edit your post — 30 min window
+      </div>
+
+      <div>
+        <textarea id="edit-post-text" rows="6" maxlength="5000">${esc(post.text)}</textarea>
+        <div class="flex justify-between mt-2">
+          <span id="edit-post-counter" class="text-[10px] text-gray-500">${post.text.length} chars</span>
+        </div>
+      </div>
+
+      <button id="edit-post-save" class="btn-press w-full py-4 rounded-2xl bg-primary font-black glow-primary">
+        Save Changes
+      </button>
+    </div>
+  `, 'Edit Post');
+
+  const textarea = document.getElementById('edit-post-text');
+  const counter = document.getElementById('edit-post-counter');
+  textarea.oninput = () => {
+    counter.textContent = `${textarea.value.length} chars`;
+  };
+
+  document.getElementById('edit-post-save').onclick = async () => {
+    const text = textarea.value.trim();
+    if (text.length < 2) { toast('Post is empty', 'error'); return; }
+
+    try {
+      await updateDoc(doc(db, 'posts', post.id), {
+        text,
+        editedAt: serverTimestamp()
+      });
+      post.text = text;
+      post.editedAt = { seconds: Date.now() / 1000 };
+      toast('✏️ Updated', 'success');
+      closeSheet();
+      renderHomeFeed();
+    } catch (e) { toast('Failed: ' + e.message, 'error'); }
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+window.openWritePostSheet = openWritePostSheet;
+
+console.log('✅ Chunk 51a: Text posts loaded');
+
+/* END OF CHUNK 51a */
+// ============================================
+// Chunk 51b: Upgraded Comments (like, reply, edit, delete)
+// ============================================
+
+// ============================================
+// PART 1: POST COMMENTS SHEET
+// ============================================
+
+async function openPostComments(postId) {
+  const post = homeCache.feed.find(p => p.id === postId);
+  if (!post) return;
+
+  commentReplyTo = null;
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="bg-cardAlt border border-border rounded-xl p-3">
+        <div class="flex items-center gap-2 mb-2">
+          <div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden">
+            ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
+          </div>
+          <span class="text-xs font-bold">${esc(post.ign)}</span>
+        </div>
+        <p class="text-xs text-gray-300 line-clamp-2">${esc(post.text)}</p>
+      </div>
+
+      <div class="flex items-center justify-between">
+        <div class="text-xs font-bold text-gray-400 uppercase">Comments</div>
+        <div id="post-comments-count" class="text-[10px] text-gray-500">Loading...</div>
+      </div>
+
+      <div id="post-comments-list" class="space-y-3 max-h-[50vh] overflow-y-auto">
+        <div class="text-center py-6"><div class="spinner mx-auto"></div></div>
+      </div>
+
+      <div class="sticky bottom-0 bg-[#0a0a0a] pt-3 border-t border-border">
+        <div id="reply-indicator" class="hidden mb-2 flex items-center justify-between bg-primary/10 border border-primary/30 rounded-lg px-3 py-2">
+          <div class="text-[10px] text-primary font-bold">Replying to comment...</div>
+          <button id="cancel-reply" class="text-[10px] text-gray-400">✕</button>
+        </div>
+        <div class="flex gap-2">
+          <input id="comment-input" type="text" placeholder="Write a comment..." maxlength="300" class="flex-1" />
+          <button id="comment-send" class="btn-press w-11 h-11 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
+            <i data-lucide="send" class="w-5 h-5 text-white"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  `, '💬 Comments');
+
+  await loadPostComments(postId);
+
+  // Wire send button
+  const sendBtn = document.getElementById('comment-send');
+  const input = document.getElementById('comment-input');
+  if (sendBtn && input) {
+    sendBtn.onclick = () => sendPostComment(postId);
+    input.onkeypress = (e) => {
+      if (e.key === 'Enter') sendPostComment(postId);
+    };
+  }
+
+  const cancelReply = document.getElementById('cancel-reply');
+  if (cancelReply) {
+    cancelReply.onclick = () => {
+      commentReplyTo = null;
+      const indicator = document.getElementById('reply-indicator');
+      if (indicator) indicator.classList.add('hidden');
+      const inp = document.getElementById('comment-input');
+      if (inp) inp.placeholder = 'Write a comment...';
+    };
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 2: LOAD COMMENTS (with replies)
+// ============================================
+
+async function loadPostComments(postId) {
+  const listEl = document.getElementById('post-comments-list');
+  const countEl = document.getElementById('post-comments-count');
+  if (!listEl) return;
+
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'comments'),
+      where('contentId', '==', postId),
+      limit(150)
+    ));
+
+    const comments = [];
+    snap.forEach(d => comments.push({ id: d.id, ...d.data() }));
+    comments.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+
+    const topLevel = comments.filter(c => !c.parentId);
+    const repliesByParent = {};
+    comments.filter(c => c.parentId).forEach(c => {
+      if (!repliesByParent[c.parentId]) repliesByParent[c.parentId] = [];
+      repliesByParent[c.parentId].push(c);
+    });
+
+    if (countEl) countEl.textContent = `${comments.length} comment${comments.length === 1 ? '' : 's'}`;
+
+    if (topLevel.length === 0) {
+      listEl.innerHTML = `
+        <div class="text-center py-8">
+          <div class="text-3xl mb-2">💬</div>
+          <div class="text-xs text-gray-500">No comments yet</div>
+          <div class="text-[10px] text-gray-600 mt-1">Be the first to reply</div>
+        </div>
+      `;
+      return;
+    }
+
+    listEl.innerHTML = topLevel.map(c => renderCommentRow(c, repliesByParent[c.id] || [])).join('');
+
+    wireCommentInteractions(listEl, postId);
+  } catch (e) {
+    console.error('Load comments error:', e);
+    listEl.innerHTML = '<div class="text-center py-6 text-red-400 text-xs">Failed to load</div>';
+  }
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function renderCommentRow(c, replies) {
+  const isMine = c.uid === State.user.uid;
+  const isLiked = State.likedItems?.comment?.[c.id] || false;
+  const hasReplies = replies.length > 0;
+
+  return `
+    <div class="comment-thread" data-comment-id="${c.id}">
+      <div class="flex items-start gap-2.5">
+        <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
+          ${c.avatar ? `<img src="${esc(c.avatar)}" class="w-full h-full object-cover" />` : getInitials(c.ign)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="bg-cardAlt border border-border rounded-2xl px-3 py-2">
+            <div class="text-[10px] font-bold text-primary mb-0.5 flex items-center gap-1.5">
+              ${esc(c.ign)}
+              ${c.edited ? '<span class="text-[8px] text-gray-500">(edited)</span>' : ''}
+            </div>
+            <div class="text-xs text-gray-200 break-words">${esc(c.text)}</div>
+          </div>
+          <div class="flex items-center gap-3 mt-1.5 ml-1">
+            <button class="comment-like-btn text-[10px] ${isLiked ? 'text-primary' : 'text-gray-500'} font-bold flex items-center gap-1" data-id="${c.id}">
+              ❤️ <span class="like-num">${c.likes || 0}</span>
+            </button>
+            <button class="comment-reply-btn text-[10px] text-gray-500 font-bold" data-id="${c.id}" data-ign="${esc(c.ign)}">Reply</button>
+            ${isMine ? `
+              <button class="comment-edit-btn text-[10px] text-primary font-bold" data-id="${c.id}">Edit</button>
+              <button class="comment-delete-btn text-[10px] text-red-400 font-bold" data-id="${c.id}">Delete</button>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+
+      ${hasReplies ? `
+        <button class="comment-expand-btn text-[10px] text-primary font-bold mt-2 ml-10" data-id="${c.id}" data-count="${replies.length}">
+          ▸ Show ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}
+        </button>
+        <div class="replies-container hidden ml-10 mt-2 space-y-2" data-parent="${c.id}">
+          ${replies.map(r => renderReplyRow(r)).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderReplyRow(r) {
+  const isMine = r.uid === State.user.uid;
+  const isLiked = State.likedItems?.comment?.[r.id] || false;
+
+  return `
+    <div class="flex items-start gap-2">
+      <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden flex-shrink-0">
+        ${r.avatar ? `<img src="${esc(r.avatar)}" class="w-full h-full object-cover" />` : getInitials(r.ign)}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="bg-card border border-border rounded-2xl px-3 py-2">
+          <div class="text-[10px] font-bold text-primary mb-0.5 flex items-center gap-1.5">
+            ${esc(r.ign)}
+            ${r.edited ? '<span class="text-[8px] text-gray-500">(edited)</span>' : ''}
+          </div>
+          <div class="text-xs text-gray-200 break-words">${esc(r.text)}</div>
+        </div>
+        <div class="flex items-center gap-3 mt-1.5 ml-1">
+          <button class="comment-like-btn text-[10px] ${isLiked ? 'text-primary' : 'text-gray-500'} font-bold flex items-center gap-1" data-id="${r.id}">
+            ❤️ <span class="like-num">${r.likes || 0}</span>
+          </button>
+          ${isMine ? `
+            <button class="comment-edit-btn text-[10px] text-primary font-bold" data-id="${r.id}">Edit</button>
+            <button class="comment-delete-btn text-[10px] text-red-400 font-bold" data-id="${r.id}">Delete</button>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// PART 3: WIRE COMMENT INTERACTIONS
+// ============================================
+
+function wireCommentInteractions(container, postId) {
+  // Like buttons
+  container.querySelectorAll('.comment-like-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const commentId = btn.dataset.id;
+      const wasLiked = State.likedItems?.comment?.[commentId] || false;
+      const nowLiked = !wasLiked;
+
+      State.likedItems = State.likedItems || {};
+      State.likedItems.comment = State.likedItems.comment || {};
+      State.likedItems.comment[commentId] = nowLiked;
+
+      const numEl = btn.querySelector('.like-num');
+      const currentCount = parseInt(numEl.textContent) || 0;
+      const newCount = nowLiked ? currentCount + 1 : Math.max(0, currentCount - 1);
+      numEl.textContent = newCount;
+      btn.classList.toggle('text-primary', nowLiked);
+      btn.classList.toggle('text-gray-500', !nowLiked);
+
+      try {
+        await toggleLike('comment', commentId, 'likes');
+      } catch (err) {
+        State.likedItems.comment[commentId] = wasLiked;
+        numEl.textContent = currentCount;
+        btn.classList.toggle('text-primary', wasLiked);
+        btn.classList.toggle('text-gray-500', !wasLiked);
+      }
+    };
+  });
+
+  // Reply buttons
+  container.querySelectorAll('.comment-reply-btn').forEach(btn => {
+    btn.onclick = () => {
+      const commentId = btn.dataset.id;
+      const commentIgn = btn.dataset.ign;
+      commentReplyTo = { parentId: commentId, ign: commentIgn };
+
+      const indicator = document.getElementById('reply-indicator');
+      if (indicator) {
+        indicator.classList.remove('hidden');
+        indicator.querySelector('.text-primary').textContent = `Replying to ${commentIgn}...`;
+      }
+      const input = document.getElementById('comment-input');
+      if (input) {
+        input.placeholder = `Reply to ${commentIgn}...`;
+        input.focus();
+      }
+    };
+  });
+
+  // Expand replies
+  container.querySelectorAll('.comment-expand-btn').forEach(btn => {
+    btn.onclick = () => {
+      const commentId = btn.dataset.id;
+      const repliesContainer = container.querySelector(`.replies-container[data-parent="${commentId}"]`);
+      if (!repliesContainer) return;
+
+      const isHidden = repliesContainer.classList.contains('hidden');
+      if (isHidden) {
+        repliesContainer.classList.remove('hidden');
+        btn.textContent = `▾ Hide ${btn.dataset.count} ${btn.dataset.count === '1' ? 'reply' : 'replies'}`;
+      } else {
+        repliesContainer.classList.add('hidden');
+        btn.textContent = `▸ Show ${btn.dataset.count} ${btn.dataset.count === '1' ? 'reply' : 'replies'}`;
+      }
+    };
+  });
+
+  // Edit buttons
+  container.querySelectorAll('.comment-edit-btn').forEach(btn => {
+    btn.onclick = () => openEditCommentSheet(btn.dataset.id);
+  });
+
+  // Delete buttons
+  container.querySelectorAll('.comment-delete-btn').forEach(btn => {
+    btn.onclick = () => {
+      confirmDialog('Delete Comment', 'This will remove your comment.', async () => {
+        try {
+          await deleteDoc(doc(db, 'comments', btn.dataset.id));
+          toast('🗑️ Deleted', 'success');
+          await loadPostComments(postId);
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Delete', true);
+    };
+  });
+}
+
+// ============================================
+// PART 4: SEND COMMENT (with reply support)
+// ============================================
+
+async function sendPostComment(postId) {
+  const input = document.getElementById('comment-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  input.disabled = true;
+
+  try {
+    const commentData = {
+      contentId: postId,
+      contentType: 'post',
+      uid: State.user.uid,
+      ign: State.profile.ign,
+      avatar: State.profile.avatar || '',
+      text,
+      likes: 0,
+      createdAt: serverTimestamp()
+    };
+
+    if (commentReplyTo && commentReplyTo.parentId) {
+      commentData.parentId = commentReplyTo.parentId;
+    }
+
+    await addDoc(collection(db, 'comments'), commentData);
+
+    // Increment post comment count
+    try {
+      const postRef = doc(db, 'posts', postId);
+      const postSnap = await getDoc(postRef);
+      if (postSnap.exists()) {
+        await updateDoc(postRef, { commentCount: increment(1) });
+      }
+    } catch (e) { /* silent */ }
+
+    commentReplyTo = null;
+    const indicator = document.getElementById('reply-indicator');
+    if (indicator) indicator.classList.add('hidden');
+    input.placeholder = 'Write a comment...';
+
+    await loadPostComments(postId);
+  } catch (e) {
+    console.error('Send comment error:', e);
+    toast('Failed: ' + e.message, 'error');
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+}
+
+// ============================================
+// PART 5: EDIT COMMENT
+// ============================================
+
+function openEditCommentSheet(commentId) {
+  const currentText = document.querySelector(`.comment-thread [data-id="${commentId}"]`)?.closest('.flex-1')?.querySelector('.text-xs')?.textContent?.trim() || '';
+
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Edit Comment</label>
+        <textarea id="edit-comment-input" rows="4" maxlength="300">${esc(currentText)}</textarea>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="closeSheet()" class="btn-press flex-1 py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">Cancel</button>
+        <button id="edit-comment-save" class="btn-press flex-1 py-3 rounded-xl bg-primary font-bold text-sm text-white">Save</button>
+      </div>
+    </div>
+  `, 'Edit Comment');
+
+  setTimeout(() => {
+    const input = document.getElementById('edit-comment-input');
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }, 200);
+
+  document.getElementById('edit-comment-save').onclick = async () => {
+    const newText = document.getElementById('edit-comment-input').value.trim();
+    if (!newText) { toast('Comment cannot be empty', 'error'); return; }
+
+    try {
+      await updateDoc(doc(db, 'comments', commentId), {
+        text: newText,
+        edited: true,
+        editedAt: serverTimestamp()
+      });
+      toast('✏️ Comment edited', 'success');
+      closeSheet();
+
+      // Reload current post's comments
+      const postSheet = document.querySelector('#sheet-container');
+      if (postSheet) {
+        // Find the post id from active sheet context
+        setTimeout(() => {
+          // Reload whatever comments list is open
+          const listEl = document.getElementById('post-comments-list');
+          if (listEl) {
+            // Re-trigger load by finding post id from URL or cache
+            const activePostSheetTitle = document.querySelector('#sheet-container h3');
+            // Reload comments for whatever's open
+            document.querySelectorAll('.post-comments-btn').forEach(btn => {
+              // No-op — just reload the current comments
+            });
+          }
+        }, 300);
+      }
+    } catch (e) { toast('Failed: ' + e.message, 'error'); }
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 6: UPDATE openCommentsSheet FOR VAULTS/CLIPS/LEAKS (reuse)
+// ============================================
+
+// Override the original openCommentsSheet to also use upgraded system
+var _origOpenCommentsSheetUpgraded = openCommentsSheet;
+openCommentsSheet = async function(contentType, contentId, contentTitle) {
+  // Reuse post comments system for all content types
+  const pseudoPost = {
+    id: contentId,
+    text: contentTitle || 'Content',
+    ign: 'Content',
+    avatar: '',
+    likes: 0,
+    uid: ''
+  };
+
+  // Store in cache temporarily
+  const existingPost = homeCache.feed.find(p => p.id === contentId);
+  if (!existingPost) {
+    homeCache.feed.push({ ...pseudoPost, type: 'post' });
+  }
+
+  await openPostComments(contentId);
+};
+
+// ============================================
+// PART 7: LOAD USER COMMENT LIKES ON STARTUP
+// ============================================
+
+// Extend loadUserLikes to include comment likes
+var _origLoadUserLikesComments = loadUserLikes;
+loadUserLikes = async function() {
+  await _origLoadUserLikesComments();
+  // Comment likes are loaded with same query since they use the same collection
+};
+
+window.openPostComments = openPostComments;
+window.sendPostComment = sendPostComment;
+window.openEditCommentSheet = openEditCommentSheet;
+
+console.log('✅ Chunk 51b: Upgraded comments loaded');
+
+/* END OF CHUNK 51b */
+// ============================================
+// Chunk 51.5: Hidden Jitsi Voice Room UI
+// ============================================
+
+// ============================================
+// PART 1: VOICE ROOM STATE
+// ============================================
+
+var voiceRoomState = {
+  active: false,
+  lobbyId: null,
+  lobby: null,
+  jitsiApi: null,
+  isMuted: false,
+  participants: 0
+};
+
+// ============================================
+// PART 2: VOICE ROOM OVERLAY (replace joinLobby behavior)
+// ============================================
+
+const _origJoinLobbyVoice = joinLobby;
+joinLobby = async function(lobbyId) {
+  const lobby = State.cache.lobbies.find(l => l.id === lobbyId);
+  if (!lobby) { toast('Lobby not found', 'error'); return; }
+
+  // Increment player count
+  try {
+    if ((lobby.players || 1) < 5) {
+      await updateDoc(doc(db, 'lobbies', lobbyId), { players: increment(1) });
+    }
+  } catch (e) { /* silent */ }
+
+  // Notify creator
+  if (lobby.uid && lobby.uid !== State.user.uid) {
+    try {
+      await sendNotificationToUser(
+        lobby.uid,
+        '🎮 Someone Joined!',
+        `${State.profile.ign} joined your ${lobby.mode} lobby`,
+        { type: 'lobby_join', lobbyId }
+      );
+    } catch (e) { /* silent */ }
+  }
+
+  // Open voice room overlay
+  openVoiceRoom(lobby);
+};
+
+// ============================================
+// PART 3: VOICE ROOM OVERLAY
+// ============================================
+
+function openVoiceRoom(lobby) {
+  // Kill any existing room
+  if (voiceRoomState.active) closeVoiceRoom();
+
+  voiceRoomState.active = true;
+  voiceRoomState.lobbyId = lobby.id;
+  voiceRoomState.lobby = lobby;
+  voiceRoomState.isMuted = !lobby.mic;
+
+  const roomName = (lobby.jitsiLink || `https://meet.jit.si/CODMPanda-${lobby.id}`).split('/').pop();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'voice-room-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    z-index: 9200;
+    background: #050505;
+    display: flex;
+    flex-direction: column;
+    animation: voiceSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  `;
+
+  overlay.innerHTML = `
+    <!-- Hidden Jitsi iframe container -->
+    <div id="jitsi-hidden-container" style="
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      opacity: 0;
+      pointer-events: none;
+    "></div>
+
+    <!-- Dark background with subtle gradient -->
+    <div style="
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 40%, rgba(255, 107, 0, 0.08) 0%, #050505 60%);
+      z-index: 2;
+      pointer-events: none;
+    "></div>
+
+    <!-- Content -->
+    <div style="
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 24px;
+      padding-top: calc(env(safe-area-inset-top, 0px) + 24px);
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+    ">
+      <!-- Header -->
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+        <button id="voice-close-btn" class="btn-press" style="
+          width: 40px; height: 40px;
+          border-radius: 12px;
+          background: #111;
+          border: 1px solid #222;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        ">
+          <i data-lucide="chevron-down" style="width: 20px; height: 20px; color: #fff;"></i>
+        </button>
+
+        <div style="text-align: center; flex: 1; padding: 0 12px;">
+          <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;">Voice Room</div>
+          <div style="font-size: 13px; color: #fff; font-weight: 800; margin-top: 2px;">${esc(lobby.mode)} · ${esc(lobby.region)}</div>
+        </div>
+
+        <div style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
+          <div style="display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 20px; background: #111; border: 1px solid #222;">
+            <div style="width: 6px; height: 6px; border-radius: 50%; background: #22C55E; animation: pulse 2s infinite;"></div>
+            <span style="font-size: 10px; font-weight: 800; color: #22C55E;">LIVE</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Center avatar (room owner) -->
+      <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+        <div style="
+          width: 140px;
+          height: 140px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, rgba(255, 107, 0, 0.3), rgba(255, 215, 0, 0.2));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 56px;
+          font-weight: 900;
+          overflow: hidden;
+          box-shadow: 0 0 60px rgba(255, 107, 0, 0.5), 0 0 120px rgba(255, 107, 0, 0.2);
+          animation: voicePulse 3s ease-in-out infinite;
+          margin-bottom: 24px;
+          position: relative;
+        ">
+          ${lobby.avatar ? `<img src="${esc(lobby.avatar)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(lobby.ign)}
+        </div>
+
+        <div style="font-size: 22px; font-weight: 900; color: #fff; margin-bottom: 6px;">${esc(lobby.ign)}'s room</div>
+        <div style="font-size: 12px; color: #888;">${esc(lobby.note || lobby.mode + ' squad')}</div>
+
+        <div style="margin-top: 20px; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 20px; background: #111; border: 1px solid #222;">
+          <i data-lucide="users" style="width: 14px; height: 14px; color: #FF6B00;"></i>
+          <span style="font-size: 11px; font-weight: 800; color: #fff;" id="voice-participant-count">${lobby.players || 1}/5 players</span>
+        </div>
+
+        <div id="voice-status-text" style="
+          margin-top: 16px;
+          font-size: 11px;
+          color: #666;
+          font-weight: 600;
+        ">Connecting to voice...</div>
+      </div>
+
+      <!-- Controls -->
+      <div style="display: flex; justify-content: center; gap: 16px; margin-top: 24px;">
+        <button id="voice-mute-btn" class="btn-press" style="
+          width: 68px;
+          height: 68px;
+          border-radius: 50%;
+          background: ${voiceRoomState.isMuted ? '#FF3B30' : '#111'};
+          border: 1px solid ${voiceRoomState.isMuted ? '#FF3B30' : '#222'};
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 2px;
+          cursor: pointer;
+          box-shadow: ${voiceRoomState.isMuted ? '0 0 30px rgba(255, 59, 48, 0.5)' : 'none'};
+          transition: all 0.2s;
+        ">
+          <i data-lucide="${voiceRoomState.isMuted ? 'mic-off' : 'mic'}" style="width: 22px; height: 22px; color: #fff;"></i>
+          <span style="font-size: 8px; font-weight: 800; color: #fff;">${voiceRoomState.isMuted ? 'UNMUTE' : 'MUTE'}</span>
+        </button>
+
+        <button id="voice-leave-btn" class="btn-press" style="
+          width: 68px;
+          height: 68px;
+          border-radius: 50%;
+          background: #FF3B30;
+          border: none;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 2px;
+          cursor: pointer;
+          box-shadow: 0 0 30px rgba(255, 59, 48, 0.5);
+        ">
+          <i data-lucide="phone-off" style="width: 22px; height: 22px; color: #fff;"></i>
+          <span style="font-size: 8px; font-weight: 800; color: #fff;">LEAVE</span>
+        </button>
+      </div>
+    </div>
+
+    <style>
+      @keyframes voiceSlideIn {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes voicePulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.03); }
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+    </style>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Wire buttons
+  document.getElementById('voice-close-btn').onclick = closeVoiceRoom;
+  document.getElementById('voice-mute-btn').onclick = toggleVoiceMute;
+  document.getElementById('voice-leave-btn').onclick = closeVoiceRoom;
+
+  // Load Jitsi hidden
+  loadHiddenJitsi(roomName, overlay);
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 4: LOAD JITSI HIDDEN
+// ============================================
+
+function loadHiddenJitsi(roomName, overlay) {
+  const statusEl = document.getElementById('voice-status-text');
+
+  // Load Jitsi script if not loaded
+  if (!window.JitsiMeetExternalAPI) {
+    const script = document.createElement('script');
+    script.src = 'https://meet.jit.si/external_api.js';
+    script.onload = () => initHiddenJitsi(roomName, overlay);
+    script.onerror = () => {
+      if (statusEl) {
+        statusEl.textContent = '⚠️ Failed to load voice';
+        statusEl.style.color = '#FF3B30';
+      }
+      toast('Could not connect to voice. Check network.', 'error', 4000);
+    };
+    document.head.appendChild(script);
+
+    // Timeout protection
+    setTimeout(() => {
+      if (!window.JitsiMeetExternalAPI && statusEl) {
+        statusEl.textContent = '⚠️ Connection timeout';
+        statusEl.style.color = '#FF3B30';
+      }
+    }, 8000);
+  } else {
+    initHiddenJitsi(roomName, overlay);
+  }
+}
+
+function initHiddenJitsi(roomName, overlay) {
+  const statusEl = document.getElementById('voice-status-text');
+  const container = document.getElementById('jitsi-hidden-container');
+  if (!container || !window.JitsiMeetExternalAPI) return;
+
+  try {
+    const domain = 'meet.jit.si';
+    const options = {
+      roomName: roomName,
+      parentNode: container,
+      width: '100%',
+      height: '100%',
+      userInfo: {
+        displayName: State.profile.ign || 'Panda'
+      },
+      configOverwrite: {
+        startWithAudioMuted: voiceRoomState.isMuted,
+        startWithVideoMuted: true,
+        prejoinPageEnabled: false,
+        disableDeepLinking: true,
+        disableProfile: true,
+        hideConferenceSubject: true,
+        hideConferenceTimer: true,
+        toolbarButtons: [],
+        notifications: [],
+        disableInviteFunctions: true,
+        enableWelcomePage: false,
+        enableClosePage: false,
+        disableModeratorIndicator: true,
+        disableRemoteMute: true,
+        defaultLanguage: 'en',
+        requireDisplayName: false,
+        enableNoAudioDetection: false,
+        enableNoisyMicDetection: false,
+        disableAudioLevels: true,
+        videoQuality: {
+          preferredCodec: 'VP8',
+          maxBitrate: 200000
+        }
+      },
+      interfaceConfigOverwrite: {
+        SHOW_JITSI_WATERMARK: false,
+        SHOW_WATERMARK_FOR_GUESTS: false,
+        SHOW_BRAND_WATERMARK: false,
+        SHOW_POWERED_BY: false,
+        DEFAULT_BACKGROUND: '#050505',
+        TOOLBAR_BUTTONS: [],
+        DISABLE_JOIN_LEAVE_NOTIFICATIONS: true
+      }
+    };
+
+    const api = new window.JitsiMeetExternalAPI(domain, options);
+    voiceRoomState.jitsiApi = api;
+
+    // Event listeners
+    api.addEventListener('videoConferenceJoined', () => {
+      if (statusEl) {
+        statusEl.textContent = '🎤 Connected to voice';
+        statusEl.style.color = '#22C55E';
+      }
+      toast('Voice connected 🎤', 'success', 2000);
+    });
+
+    api.addEventListener('participantJoined', (data) => {
+      const count = (voiceRoomState.participants || 0) + 1;
+      voiceRoomState.participants = count;
+      updateParticipantCount();
+    });
+
+    api.addEventListener('participantLeft', () => {
+      const count = Math.max(0, (voiceRoomState.participants || 0) - 1);
+      voiceRoomState.participants = count;
+      updateParticipantCount();
+    });
+
+    api.addEventListener('audioMuteStatusChanged', (data) => {
+      voiceRoomState.isMuted = data.muted;
+      updateMuteButtonUI();
+    });
+
+    api.addEventListener('readyToClose', () => {
+      closeVoiceRoom();
+    });
+
+    api.addEventListener('errorOccurred', (data) => {
+      console.error('Jitsi error:', data);
+      if (statusEl) {
+        statusEl.textContent = '⚠️ Voice error — try again';
+        statusEl.style.color = '#FF3B30';
+      }
+    });
+
+  } catch (e) {
+    console.error('Jitsi init error:', e);
+    if (statusEl) {
+      statusEl.textContent = '⚠️ Failed to start voice';
+      statusEl.style.color = '#FF3B30';
+    }
+  }
+}
+
+// ============================================
+// PART 5: VOICE ROOM CONTROLS
+// ============================================
+
+function toggleVoiceMute() {
+  if (!voiceRoomState.jitsiApi) {
+    toast('Voice not ready yet', 'warning');
+    return;
+  }
+
+  try {
+    voiceRoomState.isMuted = !voiceRoomState.isMuted;
+    voiceRoomState.jitsiApi.executeCommand('toggleAudio');
+    updateMuteButtonUI();
+    toast(voiceRoomState.isMuted ? '🔇 Muted' : '🎤 Unmuted', 'success', 1200);
+  } catch (e) {
+    console.error('Mute toggle error:', e);
+    toast('Failed to toggle mic', 'error');
+  }
+}
+
+function updateMuteButtonUI() {
+  const btn = document.getElementById('voice-mute-btn');
+  if (!btn) return;
+
+  if (voiceRoomState.isMuted) {
+    btn.style.background = '#FF3B30';
+    btn.style.border = '1px solid #FF3B30';
+    btn.style.boxShadow = '0 0 30px rgba(255, 59, 48, 0.5)';
+    btn.innerHTML = `
+      <i data-lucide="mic-off" style="width: 22px; height: 22px; color: #fff;"></i>
+      <span style="font-size: 8px; font-weight: 800; color: #fff;">UNMUTE</span>
+    `;
+  } else {
+    btn.style.background = '#111';
+    btn.style.border = '1px solid #222';
+    btn.style.boxShadow = 'none';
+    btn.innerHTML = `
+      <i data-lucide="mic" style="width: 22px; height: 22px; color: #fff;"></i>
+      <span style="font-size: 8px; font-weight: 800; color: #fff;">MUTE</span>
+    `;
+  }
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function updateParticipantCount() {
+  const el = document.getElementById('voice-participant-count');
+  if (el) {
+    el.textContent = `${voiceRoomState.participants || 1}/5 players`;
+  }
+}
+
+function closeVoiceRoom() {
+  try {
+    if (voiceRoomState.jitsiApi) {
+      voiceRoomState.jitsiApi.dispose();
+      voiceRoomState.jitsiApi = null;
+    }
+  } catch (e) { /* silent */ }
+
+  const overlay = document.getElementById('voice-room-overlay');
+  if (overlay) {
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.3s ease-out';
+    setTimeout(() => overlay.remove(), 300);
+  }
+
+  voiceRoomState.active = false;
+  voiceRoomState.lobbyId = null;
+  voiceRoomState.lobby = null;
+  voiceRoomState.participants = 0;
+
+  toast('Left voice room', 'success', 1500);
+}
+
+// ============================================
+// PART 6: PRELOAD JITSI SCRIPT ON APP START
+// ============================================
+
+// Preload Jitsi script in background so joining is faster
+setTimeout(() => {
+  if (!window.JitsiMeetExternalAPI) {
+    const script = document.createElement('script');
+    script.src = 'https://meet.jit.si/external_api.js';
+    script.async = true;
+    document.head.appendChild(script);
+  }
+}, 8000);
+
+// ============================================
+// PART 7: HANDLE APP CLOSE
+// ============================================
+
+window.addEventListener('beforeunload', () => {
+  if (voiceRoomState.jitsiApi) {
+    try { voiceRoomState.jitsiApi.dispose(); } catch (e) {}
+  }
+});
+
+// Handle back button within voice room
+window.addEventListener('popstate', () => {
+  if (voiceRoomState.active) {
+    closeVoiceRoom();
+    try { history.pushState({ __codm: true }, ''); } catch (e) {}
+  }
+});
+
+window.openVoiceRoom = openVoiceRoom;
+window.closeVoiceRoom = closeVoiceRoom;
+window.toggleVoiceMute = toggleVoiceMute;
+
+console.log('✅ Chunk 51.5: Hidden Jitsi voice room loaded');
+
+/* END OF CHUNK 51.5 */
+// ============================================
+// Chunk 52a: Verified Badge + Themes + Avatar Frames
+// ============================================
+
+// ============================================
+// PART 1: AUTO-VERIFIED BADGE LOGIC
+// ============================================
+
+// Auto-check if user should be verified
+async function checkVerifiedStatus() {
+  if (!State.user || !State.profile) return;
+
+  const approvedCount = State.profile.approvedCount || 0;
+  const isPro = State.profile.isPro || false;
+  const shouldBeVerified = isPro && approvedCount >= 10;
+  const isCurrentlyVerified = State.profile.verified || false;
+
+  if (shouldBeVerified !== isCurrentlyVerified) {
+    try {
+      await updateDoc(doc(db, 'users', State.user.uid), {
+        verified: shouldBeVerified,
+        verifiedAt: shouldBeVerified ? serverTimestamp() : null
+      });
+      State.profile.verified = shouldBeVerified;
+      console.log('✅ Verified status updated:', shouldBeVerified);
+      if (shouldBeVerified) {
+        toast('🎉 You\'re now a Verified Creator!', 'success', 4000);
+      }
+    } catch (e) {
+      console.warn('Verified update failed:', e);
+    }
+  }
+}
+
+// ============================================
+// PART 2: BADGE RENDERER (use everywhere)
+// ============================================
+
+function renderVerifiedBadge(user) {
+  if (!user || !user.verified) return '';
+  return `<span class="verified-badge" title="Verified Creator" style="
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #1DA1F2;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 900;
+    flex-shrink: 0;
+    box-shadow: 0 0 8px rgba(29, 161, 242, 0.5);
+  ">✓</span>`;
+}
+
+function renderProCrown(user) {
+  if (!user || !user.isPro) return '';
+  return `<span style="font-size: 11px; flex-shrink: 0;" title="Pro Member">👑</span>`;
+}
+
+// ============================================
+// PART 3: PROFILE THEMES
+// ============================================
+
+var PROFILE_THEMES = {
+  dark: {
+    name: 'AMOLED Dark',
+    pro: false,
+    gradient: 'linear-gradient(135deg, #111 0%, #0a0a0a 100%)',
+    border: '#222222',
+    glow: 'none',
+    nameColor: '#ffffff',
+    animated: false
+  },
+  gold: {
+    name: 'Royal Gold',
+    pro: true,
+    gradient: 'linear-gradient(135deg, #1a1200 0%, #000000 100%)',
+    border: '#FFD700',
+    glow: '0 0 30px rgba(255, 215, 0, 0.4)',
+    nameColor: '#FFD700',
+    animated: true
+  },
+  fire: {
+    name: 'Fire Storm',
+    pro: true,
+    gradient: 'linear-gradient(135deg, #1a0500 0%, #000000 60%, #1a0500 100%)',
+    border: '#FF6B00',
+    glow: '0 0 30px rgba(255, 107, 0, 0.5)',
+    nameColor: '#FF6B00',
+    animated: true
+  },
+  ice: {
+    name: 'Ice Freeze',
+    pro: true,
+    gradient: 'linear-gradient(135deg, #001428 0%, #000000 100%)',
+    border: '#00BFFF',
+    glow: '0 0 30px rgba(0, 191, 255, 0.4)',
+    nameColor: '#00BFFF',
+    animated: true
+  },
+  galaxy: {
+    name: 'Galaxy',
+    pro: true,
+    gradient: 'linear-gradient(135deg, #1a0033 0%, #000000 50%, #0a001a 100%)',
+    border: '#AF52DE',
+    glow: '0 0 30px rgba(175, 82, 222, 0.5)',
+    nameColor: '#AF52DE',
+    animated: true
+  }
+};
+
+// ============================================
+// PART 4: AVATAR FRAMES
+// ============================================
+
+var AVATAR_FRAMES = {
+  none: { name: 'None', pro: false, style: '' },
+  gold: { name: 'Gold', pro: true, style: 'background: linear-gradient(135deg, #FFD700, #B8860B); padding: 3px; border-radius: 50%;' },
+  fire: { name: 'Fire', pro: true, style: 'background: linear-gradient(135deg, #FF6B00, #FF3B30); padding: 3px; border-radius: 50%;' },
+  ice: { name: 'Ice', pro: true, style: 'background: linear-gradient(135deg, #00BFFF, #0080FF); padding: 3px; border-radius: 50%;' },
+  neon: { name: 'Neon', pro: true, style: 'background: linear-gradient(135deg, #AF52DE, #FF6B00); padding: 3px; border-radius: 50%;' }
+};
+
+// ============================================
+// PART 5: THEME + FRAME APPLICATION
+// ============================================
+
+function applyProfileTheme() {
+  const theme = State.profile?.themeStyle || 'dark';
+  const themeData = PROFILE_THEMES[theme] || PROFILE_THEMES.dark;
+
+  // Apply to profile card on YOU tab
+  setTimeout(() => {
+    const profileCard = document.querySelector('#content .bg-card.border.rounded-2xl');
+    if (profileCard && document.getElementById('main-app') && !document.getElementById('main-app').classList.contains('hidden')) {
+      if (State.currentTab === 'you') {
+        profileCard.style.background = themeData.gradient;
+        profileCard.style.borderColor = themeData.border;
+        profileCard.style.boxShadow = themeData.glow;
+      }
+    }
+  }, 100);
+}
+
+function getAvatarWithFrame(avatarUrl, ign, size) {
+  const frame = State.profile?.avatarFrame || 'none';
+  const frameData = AVATAR_FRAMES[frame] || AVATAR_FRAMES.none;
+
+  if (frame === 'none' || !frameData.style) {
+    return `
+      <div style="width: ${size}px; height: ${size}px; border-radius: 50%; overflow: hidden; background: rgba(255, 107, 0, 0.15); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: ${size * 0.35}px;">
+        ${avatarUrl ? `<img src="${esc(avatarUrl)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(ign)}
+      </div>
+    `;
+  }
+
+  const innerSize = size - 6;
+  return `
+    <div style="${frameData.style} width: ${size}px; height: ${size}px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);">
+      <div style="width: ${innerSize}px; height: ${innerSize}px; border-radius: 50%; overflow: hidden; background: #111; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: ${innerSize * 0.35}px; border: 2px solid #0a0a0a;">
+        ${avatarUrl ? `<img src="${esc(avatarUrl)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(ign)}
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// PART 6: THEME PICKER SHEET
+// ============================================
+
+function openThemePicker() {
+  const isPro = State.profile?.isPro;
+  const currentTheme = State.profile?.themeStyle || 'dark';
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-xs text-gray-500">${isPro ? '👑 Pro — All themes unlocked' : 'Free — 1 theme, upgrade for all'}</div>
+
+      <div class="grid grid-cols-2 gap-3">
+        ${Object.entries(PROFILE_THEMES).map(([key, theme]) => {
+          const isSelected = currentTheme === key;
+          const isLocked = theme.pro && !isPro;
+          return `
+            <button class="theme-pick-btn btn-press relative rounded-2xl overflow-hidden" data-theme="${key}" data-locked="${isLocked}">
+              <div style="
+                height: 80px;
+                background: ${theme.gradient};
+                border: 2px solid ${isSelected ? theme.border : '#222'};
+                border-radius: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: ${isSelected ? theme.glow : 'none'};
+                position: relative;
+              ">
+                <div style="font-weight: 900; font-size: 14px; color: ${theme.nameColor};">${theme.name}</div>
+                ${isLocked ? `<div style="position: absolute; top: 6px; right: 6px; font-size: 14px;">🔒</div>` : ''}
+                ${isSelected && !isLocked ? `<div style="position: absolute; top: 6px; right: 6px; background: #FF6B00; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; font-weight: 900;">✓</div>` : ''}
+              </div>
+            </button>
+          `;
+        }).join('')}
+      </div>
+
+      ${!isPro ? `
+        <button id="theme-upgrade-btn" class="btn-press w-full py-3.5 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
+          👑 Unlock All Themes — Go Pro
+        </button>
+      ` : ''}
+    </div>
+  `, '🎨 Profile Themes');
+
+  document.querySelectorAll('.theme-pick-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const themeKey = btn.dataset.theme;
+      const isLocked = btn.dataset.locked === 'true';
+
+      if (isLocked) {
+        showProPaywall('Unlock all 5 animated profile themes with Pro.');
+        return;
+      }
+
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          themeStyle: themeKey
+        });
+        State.profile.themeStyle = themeKey;
+        toast('🎨 Theme applied!', 'success');
+        closeSheet();
+        if (State.currentTab === 'you') renderYouTab();
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+      }
+    };
+  });
+
+  const upgradeBtn = document.getElementById('theme-upgrade-btn');
+  if (upgradeBtn) upgradeBtn.onclick = goPro;
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 7: AVATAR FRAME PICKER
+// ============================================
+
+function openAvatarFramePicker() {
+  const isPro = State.profile?.isPro;
+  const currentFrame = State.profile?.avatarFrame || 'none';
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-xs text-gray-500">${isPro ? '👑 Pro — All frames unlocked' : 'Free — frames are a Pro feature'}</div>
+
+      <div class="grid grid-cols-3 gap-3">
+        ${Object.entries(AVATAR_FRAMES).map(([key, frame]) => {
+          const isSelected = currentFrame === key;
+          const isLocked = frame.pro && !isPro;
+          return `
+            <button class="frame-pick-btn btn-press flex flex-col items-center gap-2 p-3 rounded-2xl ${isSelected ? 'bg-primary/10 border-2 border-primary' : 'bg-card border border-border'}" data-frame="${key}" data-locked="${isLocked}">
+              <div style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
+                ${frame.style ? `
+                  <div style="${frame.style} width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; position: relative;">
+                    <div style="width: 44px; height: 44px; border-radius: 50%; background: #111; display: flex; align-items: center; justify-content: center; font-size: 14px;">
+                      ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />` : '🐼'}
+                    </div>
+                    ${isLocked ? `<div style="position: absolute; top: -4px; right: -4px; font-size: 12px;">🔒</div>` : ''}
+                  </div>
+                ` : `
+                  <div style="width: 50px; height: 50px; border-radius: 50%; background: rgba(255, 107, 0, 0.15); display: flex; align-items: center; justify-content: center; font-size: 20px;">
+                    ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />` : '🐼'}
+                  </div>
+                `}
+              </div>
+              <span class="text-[10px] font-bold ${isSelected ? 'text-primary' : 'text-gray-400'}">${frame.name}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+
+      ${!isPro ? `
+        <button id="frame-upgrade-btn" class="btn-press w-full py-3.5 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
+          👑 Unlock All Frames — Go Pro
+        </button>
+      ` : ''}
+    </div>
+  `, '✨ Avatar Frames');
+
+  document.querySelectorAll('.frame-pick-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const frameKey = btn.dataset.frame;
+      const isLocked = btn.dataset.locked === 'true';
+
+      if (isLocked) {
+        showProPaywall('Unlock animated avatar frames with Pro.');
+        return;
+      }
+
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          avatarFrame: frameKey
+        });
+        State.profile.avatarFrame = frameKey;
+        toast('✨ Frame applied!', 'success');
+        closeSheet();
+        if (State.currentTab === 'you') renderYouTab();
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+      }
+    };
+  });
+
+  const upgradeBtn = document.getElementById('frame-upgrade-btn');
+  if (upgradeBtn) upgradeBtn.onclick = goPro;
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 8: PATCH PROFILE HEADER (YOU tab)
+// ============================================
+
+const _origRenderYouTab52a = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTab52a();
+
+  setTimeout(() => {
+    const content = document.getElementById('content');
+    if (!content) return;
+
+    // Apply theme to profile card
+    const profileCard = content.querySelector('.bg-card.border.border-border.rounded-2xl, .bg-card.border.border-gold.rounded-2xl');
+    if (profileCard) {
+      const theme = PROFILE_THEMES[State.profile?.themeStyle || 'dark'] || PROFILE_THEMES.dark;
+      if (theme !== PROFILE_THEMES.dark) {
+        profileCard.style.background = theme.gradient;
+        profileCard.style.borderColor = theme.border;
+        profileCard.style.boxShadow = theme.glow;
+      }
+    }
+
+    // Insert theme + frame buttons after profile card
+    if (profileCard && !document.getElementById('theme-frame-buttons')) {
+      const btnContainer = document.createElement('div');
+      btnContainer.id = 'theme-frame-buttons';
+      btnContainer.className = 'grid grid-cols-2 gap-2 mt-3';
+      btnContainer.innerHTML = `
+        <button id="open-theme-btn" class="btn-press py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold flex items-center justify-center gap-1.5">
+          🎨 Themes
+        </button>
+        <button id="open-frame-btn" class="btn-press py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold flex items-center justify-center gap-1.5">
+          ✨ Avatar Frame
+        </button>
+      `;
+      profileCard.parentNode.insertBefore(btnContainer, profileCard.nextSibling);
+
+      document.getElementById('open-theme-btn').onclick = openThemePicker;
+      document.getElementById('open-frame-btn').onclick = openAvatarFramePicker;
+    }
+
+    // Replace avatar with framed version
+    const avatarContainer = profileCard?.querySelector('.w-16.h-16');
+    if (avatarContainer && !avatarContainer.dataset.framed) {
+      avatarContainer.dataset.framed = '1';
+      const frame = State.profile?.avatarFrame || 'none';
+      if (frame !== 'none') {
+        const parent = avatarContainer.parentNode;
+        const framedHTML = `<div class="relative">${getAvatarWithFrame(State.profile.avatar, State.profile.ign, 64)}${State.profile.isPro ? '<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>' : ''}</div>`;
+        avatarContainer.parentNode.innerHTML = framedHTML;
+      }
+    }
+
+    // Add verified badge next to IGN if applicable
+    const ignContainer = profileCard?.querySelector('.flex.items-center.gap-2.flex-wrap');
+    if (ignContainer && State.profile?.verified && !ignContainer.querySelector('.verified-badge')) {
+      const badge = document.createElement('span');
+      badge.innerHTML = renderVerifiedBadge(State.profile);
+      ignContainer.appendChild(badge.firstElementChild);
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  }, 150);
+};
+
+// ============================================
+// PART 9: HOOK VERIFIED CHECK ON PROFILE LOAD
+// ============================================
+
+// Check verification status periodically
+setTimeout(() => {
+  if (State.user && State.profile) checkVerifiedStatus();
+}, 5000);
+
+// Re-check after any approval
+setInterval(() => {
+  if (State.user && State.profile) checkVerifiedStatus();
+}, 5 * 60 * 1000);
+
+// ============================================
+// PART 10: ADD VERIFIED BADGE TO POSTS/COMMENTS
+// ============================================
+
+// Enhance post renderer to show verified badge
+var _origRenderHomePostCard52a = renderHomePostCard;
+renderHomePostCard = function(post) {
+  let html = _origRenderHomePostCard52a(post);
+  // Insert verified badge after IGN (if user is verified)
+  if (post.verified) {
+    html = html.replace(
+      /(<span class="font-bold text-sm">[^<]+<\/span>)/,
+      `$1 <span class="verified-badge" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: #1DA1F2; color: #fff; font-size: 9px; font-weight: 900; flex-shrink: 0;">✓</span>`
+    );
+  }
+  return html;
+};
+
+window.openThemePicker = openThemePicker;
+window.openAvatarFramePicker = openAvatarFramePicker;
+window.checkVerifiedStatus = checkVerifiedStatus;
+window.PROFILE_THEMES = PROFILE_THEMES;
+window.AVATAR_FRAMES = AVATAR_FRAMES;
+
+console.log('✅ Chunk 52a: Verified badge + themes + avatar frames loaded');
+
+/* END OF CHUNK 52a */
+// ============================================
+// Chunk 52b: App Activity Stats Dashboard
+// ============================================
+
+// ============================================
+// PART 1: ACTIVITY STATS LOADER
+// ============================================
+
+async function loadActivityStats() {
+  if (!State.user) return null;
+
+  try {
+    // Parallel fetch
+    const [lobbiesSnap, vaultsSnap, postsSnap, camoSnap] = await Promise.all([
+      getDocs(query(collection(db, 'lobbies'), where('uid', '==', State.user.uid), limit(200))).catch(() => ({ size: 0, forEach: () => {} })),
+      getDocs(query(collection(db, 'vaults'), where('uid', '==', State.user.uid), limit(200))).catch(() => ({ size: 0, forEach: () => {} })),
+      getDocs(query(collection(db, 'posts'), where('uid', '==', State.user.uid), limit(200))).catch(() => ({ size: 0, forEach: () => {} })),
+      getDoc(doc(db, 'camos', State.user.uid)).catch(() => ({ exists: () => false }))
+    ]);
+
+    // Count camos
+    let camoPct = 0;
+    let camosTracked = 0;
+    if (camoSnap.exists && camoSnap.exists()) {
+      const totalPossible = ALL_GUNS.length * CAMO_TYPES.length;
+      let checked = 0;
+      Object.values(camoSnap.data()).forEach(gun => {
+        if (typeof gun === 'object') {
+          CAMO_TYPES.forEach(c => { if (gun[c.key]) checked++; });
+        }
+      });
+      camoPct = Math.round((checked / totalPossible) * 100);
+      camosTracked = checked;
+    }
+
+    // Total likes received across posts + vaults
+    let likesReceived = 0;
+    postsSnap.forEach(d => { likesReceived += (d.data().likes || 0); });
+    vaultsSnap.forEach(d => { likesReceived += (d.data().likes || 0); });
+
+    // Active streak
+    const lastActive = State.profile?.lastActiveDate || '';
+    const today = new Date().toISOString().slice(0, 10);
+    let streak = State.profile?.activeStreak || 0;
+
+    // Update streak if needed
+    if (lastActive !== today) {
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      if (lastActive === yesterday) {
+        streak = streak + 1;
+      } else if (lastActive === '') {
+        streak = 1;
+      } else {
+        streak = 1; // Reset
+      }
+
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          lastActiveDate: today,
+          activeStreak: streak
+        });
+        State.profile.lastActiveDate = today;
+        State.profile.activeStreak = streak;
+      } catch (e) { /* silent */ }
+    }
+
+    // Contributor points (approved submissions * 10 + likes / 2)
+    const contributorPoints = ((State.profile?.approvedCount || 0) * 10) + Math.floor(likesReceived / 2);
+
+    // Weekly activity (last 7 days)
+    const weeklyActivity = [];
+    const now = Date.now();
+    for (let i = 6; i >= 0; i--) {
+      const dayStart = new Date(now - i * 24 * 60 * 60 * 1000);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+      let dayCount = 0;
+      lobbiesSnap.forEach(d => {
+        const t = d.data().createdAt?.seconds || 0;
+        const tMs = t * 1000;
+        if (tMs >= dayStart.getTime() && tMs < dayEnd.getTime()) dayCount++;
+      });
+      postsSnap.forEach(d => {
+        const t = d.data().createdAt?.seconds || 0;
+        const tMs = t * 1000;
+        if (tMs >= dayStart.getTime() && tMs < dayEnd.getTime()) dayCount++;
+      });
+
+      weeklyActivity.push({
+        day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayStart.getDay()],
+        count: dayCount,
+        date: dayStart.toISOString().slice(0, 10)
+      });
+    }
+
+    return {
+      lobbies: lobbiesSnap.size,
+      vaults: vaultsSnap.size,
+      posts: postsSnap.size,
+      camosTracked,
+      camoPct,
+      likesReceived,
+      streak,
+      contributorPoints,
+      weeklyActivity
+    };
+  } catch (e) {
+    console.error('Stats load error:', e);
+    return null;
+  }
+}
+
+// ============================================
+// PART 2: STATS DASHBOARD RENDER
+// ============================================
+
+function renderActivityStats(stats) {
+  if (!stats) {
+    return `
+      <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+        <div class="text-center py-4 text-xs text-gray-500">Loading stats...</div>
+      </div>
+    `;
+  }
+
+  const maxWeekly = Math.max(...stats.weeklyActivity.map(d => d.count), 1);
+
+  return `
+    <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="text-xs font-bold text-gray-400 uppercase">📊 Your Activity</div>
+          <div class="text-[10px] text-gray-500 mt-0.5">Your journey in CODMPanda</div>
+        </div>
+        <div class="text-right">
+          <div class="text-lg font-black text-primary">${stats.contributorPoints}</div>
+          <div class="text-[9px] text-gray-500 uppercase">Points</div>
+        </div>
+      </div>
+
+      <!-- Main stats grid -->
+      <div class="grid grid-cols-3 gap-2 mb-4">
+        <div class="bg-cardAlt border border-border rounded-xl p-3 text-center">
+          <div class="text-lg font-black text-primary">${stats.lobbies}</div>
+          <div class="text-[9px] text-gray-500 uppercase font-bold mt-0.5">Lobbies</div>
+        </div>
+        <div class="bg-cardAlt border border-border rounded-xl p-3 text-center">
+          <div class="text-lg font-black text-primary">${stats.vaults}</div>
+          <div class="text-[9px] text-gray-500 uppercase font-bold mt-0.5">Vaults</div>
+        </div>
+        <div class="bg-cardAlt border border-border rounded-xl p-3 text-center">
+          <div class="text-lg font-black text-primary">${stats.posts}</div>
+          <div class="text-[9px] text-gray-500 uppercase font-bold mt-0.5">Posts</div>
+        </div>
+      </div>
+
+      <!-- Secondary stats -->
+      <div class="grid grid-cols-2 gap-2 mb-4">
+        <div class="bg-gradient-to-br from-gold/10 to-transparent border border-gold/30 rounded-xl p-3">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-base">🎯</span>
+            <span class="text-[10px] text-gold uppercase font-bold">Camo Progress</span>
+          </div>
+          <div class="text-xl font-black text-gold">${stats.camoPct}%</div>
+          <div class="text-[9px] text-gray-500">${stats.camosTracked} camos tracked</div>
+        </div>
+        <div class="bg-gradient-to-br from-primary/10 to-transparent border border-primary/30 rounded-xl p-3">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-base">❤️</span>
+            <span class="text-[10px] text-primary uppercase font-bold">Likes Received</span>
+          </div>
+          <div class="text-xl font-black text-primary">${stats.likesReceived}</div>
+          <div class="text-[9px] text-gray-500">across all your posts</div>
+        </div>
+      </div>
+
+      <!-- Active streak -->
+      <div class="bg-gradient-to-r from-primary/15 to-transparent border border-primary/30 rounded-xl p-3 mb-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">🔥</span>
+            <div>
+              <div class="text-xs font-bold">Active Streak</div>
+              <div class="text-[10px] text-gray-500">Consecutive days in app</div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-2xl font-black text-primary">${stats.streak}</div>
+            <div class="text-[9px] text-gray-500 uppercase">Days</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Weekly activity chart -->
+      <div>
+        <div class="text-[10px] text-gray-400 uppercase font-bold mb-2">This Week</div>
+        <div class="flex items-end justify-between gap-1 h-20">
+          ${stats.weeklyActivity.map(d => {
+            const height = maxWeekly > 0 ? Math.max(4, (d.count / maxWeekly) * 100) : 4;
+            return `
+              <div class="flex-1 flex flex-col items-center gap-1">
+                <div style="
+                  width: 100%;
+                  height: ${height}%;
+                  min-height: 4px;
+                  background: ${d.count > 0 ? 'linear-gradient(180deg, #FF6B00, #FFD700)' : '#1a1a1a'};
+                  border-radius: 4px;
+                  transition: height 0.4s ease;
+                "></div>
+                <span class="text-[8px] text-gray-500 font-bold">${d.day}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
+      <div class="text-[9px] text-gray-600 text-center mt-4 pt-3 border-t border-border">
+        Stats update automatically as you use the app
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// PART 3: INJECT STATS INTO YOU TAB
+// ============================================
+
+const _origRenderYouTab52b = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTab52b();
+
+  setTimeout(async () => {
+    const content = document.getElementById('content');
+    if (!content) return;
+
+    // Find profile card
+    const profileCard = content.querySelector('.bg-card.border');
+    if (!profileCard) return;
+
+    // Check if stats already inserted
+    if (document.getElementById('activity-stats-card')) return;
+
+    // Insert placeholder first
+    const statsDiv = document.createElement('div');
+    statsDiv.id = 'activity-stats-card';
+    statsDiv.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+        <div class="text-center py-4">
+          <div class="spinner mx-auto"></div>
+          <div class="text-[10px] text-gray-500 mt-2">Loading your stats...</div>
+        </div>
+      </div>
+    `;
+
+    // Insert AFTER theme/frame buttons (or after profile card)
+    const themeFrameButtons = document.getElementById('theme-frame-buttons');
+    if (themeFrameButtons) {
+      themeFrameButtons.parentNode.insertBefore(statsDiv, themeFrameButtons.nextSibling);
+    } else {
+      profileCard.parentNode.insertBefore(statsDiv, profileCard.nextSibling);
+    }
+
+    // Load and render stats
+    const stats = await loadActivityStats();
+    statsDiv.innerHTML = renderActivityStats(stats);
+
+    if (window.lucide) window.lucide.createIcons();
+  }, 200);
+};
+
+// ============================================
+// PART 4: REFRESH STATS AFTER POST/VAULT/LOBBY
+// ============================================
+
+// Auto-refresh stats when user visits YOU tab
+var _origSwitchTab52b = switchTab;
+switchTab = function(tab) {
+  if (tab === 'you') {
+    // Clear stats card so it reloads
+    const existing = document.getElementById('activity-stats-card');
+    if (existing) existing.remove();
+  }
+  return _origSwitchTab52b(tab);
+};
+
+window.loadActivityStats = loadActivityStats;
+window.renderActivityStats = renderActivityStats;
+
+console.log('✅ Chunk 52b: Activity stats dashboard loaded');
+
+/* END OF CHUNK 52b */
+// ============================================
+// Chunk 53: Complete Pro Benefits
+// ============================================
+
+// ============================================
+// PART 1: BADGE HELPERS (show everywhere)
+// ============================================
+
+function getBadgeHTML(item) {
+  if (!item) return '';
+  let badges = '';
+  if (item.uid === ADMIN_UID) {
+    badges += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex-shrink-0">👑 FOUNDER</span>';
+  } else if (item.isPro) {
+    badges += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex-shrink-0">👑 PRO</span>';
+  }
+  if (item.verified) {
+    badges += '<span class="verified-badge" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: #1DA1F2; color: #fff; font-size: 9px; font-weight: 900; flex-shrink: 0; box-shadow: 0 0 8px rgba(29, 161, 242, 0.5);">✓</span>';
+  }
+  return badges;
+}
+
+// ============================================
+// PART 2: PRIORITY LFG PLACEMENT
+// ============================================
+
+var _origRenderLobbiesPriority = renderLobbies;
+renderLobbies = function() {
+  const feed = document.getElementById('lobbies-feed');
+  if (!feed) return;
+  let lobbies = State.cache.lobbies;
+
+  const f = State.filters.lobbies;
+  if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
+  if (f.mode && f.mode !== 'all') lobbies = lobbies.filter(l => l.mode === f.mode);
+  if (f.region && f.region !== 'all') lobbies = lobbies.filter(l => l.region === f.region);
+  if (f.mic) lobbies = lobbies.filter(l => l.mic === true);
+  if (f.search) {
+    lobbies = lobbies.filter(l =>
+      (l.ign || '').toLowerCase().includes(f.search) ||
+      (l.note || '').toLowerCase().includes(f.search)
+    );
+  }
+
+  // Sort: Pro lobbies first, then by time
+  lobbies.sort((a, b) => {
+    const aPro = a.isPro ? 1 : 0;
+    const bPro = b.isPro ? 1 : 0;
+    if (aPro !== bPro) return bPro - aPro;
+    return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+  });
+
+  if (lobbies.length === 0) {
+    feed.innerHTML = emptyState('users', 'No lobbies found', 'Try different filters or post your own', 'Post Lobby', openPostLobbySheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  const now = Date.now();
+
+  feed.innerHTML = lobbies.map(l => {
+    const expiresAt = l.expiresAt?.toMillis ? l.expiresAt.toMillis() : (l.expiresAt?.seconds ? l.expiresAt.seconds * 1000 : Infinity);
+    const isExpired = expiresAt < now;
+    const isMine = l.uid === State.user.uid;
+    const isProLobby = l.isPro || false;
+    const playersText = `${l.players || 1}/5`;
+
+    return `
+      <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : isProLobby ? 'border-gold' : 'border-border'} rounded-2xl p-4 fade-in ${isProLobby ? 'relative' : ''}" ${isProLobby ? 'style="box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);"' : ''}>
+        ${isProLobby ? `<div class="absolute top-2 right-2 text-[9px] px-2 py-0.5 rounded-full bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑 PRIORITY</div>` : ''}
+        <div class="flex items-start gap-3 mb-3">
+          <div class="relative">
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
+              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            </div>
+            ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              ${getBadgeHTML(l)}
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
+              ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
+            </div>
+            <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
+          </div>
+          <div class="text-right flex-shrink-0">
+            <div class="text-sm font-black text-primary">${playersText}</div>
+            <div class="text-[9px] text-gray-500">PLAYERS</div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-1.5 mb-3">
+          ${l.role ? `<span class="text-[10px] px-2 py-1 rounded-full bg-cardAlt border border-border font-semibold text-gray-300">${esc(l.role)}</span>` : ''}
+          ${l.mic ? `<span class="text-[10px] px-2 py-1 rounded-full bg-green-500/15 text-green-400 font-semibold">🎤 Mic</span>` : `<span class="text-[10px] px-2 py-1 rounded-full bg-cardAlt border border-border font-semibold text-gray-500">🔇 No Mic</span>`}
+        </div>
+
+        ${l.note ? `<p class="text-xs text-gray-400 mb-3 line-clamp-2">${esc(l.note)}</p>` : ''}
+
+        <div class="flex gap-2">
+          ${!isExpired ? `
+            <button class="join-btn btn-press flex-1 py-2.5 rounded-xl bg-primary text-sm font-bold flex items-center justify-center gap-1.5" data-id="${l.id}">
+              <i data-lucide="log-in" class="w-4 h-4"></i> Join
+            </button>
+          ` : `
+            <div class="flex-1 py-2.5 rounded-xl bg-gray-500/10 text-center text-xs font-bold text-gray-500">
+              Lobby Closed
+            </div>
+          `}
+          <button class="share-lobby btn-press w-10 h-10 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-id="${l.id}" data-ign="${esc(l.ign)}">
+            <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+          </button>
+          ${isMine ? `
+            <button class="delete-lobby btn-press w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center" data-id="${l.id}">
+              <i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i>
+            </button>
+          ` : `
+            <button class="report-lobby btn-press w-10 h-10 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-id="${l.id}" data-uid="${l.uid}">
+              <i data-lucide="flag" class="w-4 h-4 text-gray-500"></i>
+            </button>
+          `}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  feed.querySelectorAll('.join-btn').forEach(btn => {
+    btn.onclick = () => joinLobby(btn.dataset.id);
+  });
+  feed.querySelectorAll('.share-lobby').forEach(btn => {
+    btn.onclick = () => {
+      openShareSheet({
+        title: `${btn.dataset.ign}'s Lobby`,
+        text: `🎮 Join ${btn.dataset.ign}'s squad on CODMPanda!`,
+        url: getLobbyShareUrl(btn.dataset.id)
+      });
+    };
+  });
+  feed.querySelectorAll('.delete-lobby').forEach(btn => {
+    btn.onclick = () => deleteLobby(btn.dataset.id);
+  });
+  feed.querySelectorAll('.report-lobby').forEach(btn => {
+    btn.onclick = () => reportContent('lobby', btn.dataset.id, btn.dataset.uid);
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// Post lobby now sets isPro flag
+var _origPostLobbySheet53 = openPostLobbySheet;
+openPostLobbySheet = function() {
+  _origPostLobbySheet53();
+  setTimeout(() => {
+    const submitBtn = document.getElementById('pl-submit');
+    if (!submitBtn) return;
+    const origHandler = submitBtn.onclick;
+    submitBtn.onclick = async () => {
+      // Store original result and add isPro flag
+      const isPro = State.profile?.isPro || false;
+      // Patch addDoc by pre-setting flag via State
+      State.__tmpIsPro = isPro;
+      return origHandler.call(submitBtn);
+    };
+  }, 150);
+};
+
+// ============================================
+// PART 3: VERIFIED BADGE ON VAULT/CLIP/LEAK CARDS
+// ============================================
+
+var _origRenderVaultsBadges = renderVaults;
+renderVaults = function() {
+  _origRenderVaultsBadges();
+  setTimeout(() => {
+    const feed = document.getElementById('vault-feed');
+    if (!feed) return;
+    // Badges are already rendered in cards via uid===ADMIN_UID check
+    // Add verified badge for vault owners
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      const cardId = card.querySelector('[data-id]')?.dataset.id;
+      if (!cardId) return;
+      const vault = State.cache.vaults.find(v => v.id === cardId);
+      if (!vault || !vault.verified) return;
+      const nameEl = card.querySelector('.text-xs.font-bold');
+      if (nameEl && !nameEl.parentNode.querySelector('.verified-badge')) {
+        const badge = document.createElement('span');
+        badge.innerHTML = '<span class="verified-badge" style="display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; border-radius: 50%; background: #1DA1F2; color: #fff; font-size: 8px; font-weight: 900; flex-shrink: 0;">✓</span>';
+        nameEl.parentNode.appendChild(badge.firstElementChild);
+      }
+    });
+  }, 200);
+};
+
+// ============================================
+// PART 4: CUSTOM LOBBY URLs
+// ============================================
+
+// Handle ?lobby=USERNAME deep link
+function checkCustomLobbyUrl() {
+  const params = new URLSearchParams(location.search);
+  const lobbyUser = params.get('lobby');
+  if (!lobbyUser) return;
+
+  // Find user's active lobby
+  setTimeout(async () => {
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'lobbies'),
+        where('ign', '==', lobbyUser),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+      ));
+
+      if (!snap.empty) {
+        const lobby = { id: snap.docs[0].id, ...snap.docs[0].data() };
+        const expiresAt = lobby.expiresAt?.toMillis ? lobby.expiresAt.toMillis() : (lobby.expiresAt?.seconds ? lobby.expiresAt.seconds * 1000 : Infinity);
+        if (expiresAt > Date.now()) {
+          // Show join prompt
+          openSheet(`
+            <div class="text-center space-y-4 py-4">
+              <div class="text-5xl">🎮</div>
+              <div>
+                <h3 class="text-lg font-black mb-1">${esc(lobby.ign)}'s Lobby</h3>
+                <div class="text-xs text-gray-400">${esc(lobby.mode)} · ${esc(lobby.region)} · ${lobby.players || 1}/5 players</div>
+              </div>
+              ${lobby.note ? `<div class="bg-card border border-border rounded-xl p-3 text-xs text-gray-300">${esc(lobby.note)}</div>` : ''}
+              <button id="custom-lobby-join" class="btn-press w-full py-4 rounded-2xl bg-primary font-black glow-primary">
+                🎤 Join Voice Room
+              </button>
+              <button onclick="closeSheet()" class="text-xs text-gray-500">Cancel</button>
+            </div>
+          `, '');
+          document.getElementById('custom-lobby-join').onclick = () => {
+            closeSheet();
+            setTimeout(() => joinLobby(lobby.id), 300);
+          };
+          if (window.lucide) window.lucide.createIcons();
+        } else {
+          toast('This lobby has closed', 'info');
+        }
+      } else {
+        toast('No active lobby for that user', 'info');
+      }
+    } catch (e) { /* silent */ }
+  }, 2500);
+}
+
+// ============================================
+// PART 5: PRO USERS GET CUSTOM SHARE LINK
+// ============================================
+
+function getProLobbyShareUrl(lobby) {
+  if (lobby.isPro) {
+    return `${location.origin}/?lobby=${encodeURIComponent(lobby.ign)}`;
+  }
+  return getLobbyShareUrl(lobby.id);
+}
+
+// ============================================
+// PART 6: RUN SETUP ON APP LOAD
+// ============================================
+
+setTimeout(() => {
+  if (State.user) checkCustomLobbyUrl();
+}, 3000);
+
+window.getBadgeHTML = getBadgeHTML;
+window.checkCustomLobbyUrl = checkCustomLobbyUrl;
+window.getProLobbyShareUrl = getProLobbyShareUrl;
+
+console.log('✅ Chunk 53: Complete Pro benefits loaded');
+
+/* END OF CHUNK 53 */
