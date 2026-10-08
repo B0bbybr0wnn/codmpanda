@@ -19513,8 +19513,8 @@ function showHeroWelcome() {
     const size = 1.5 + Math.random() * 2; // 1.5-3.5px — small and real
     const color = fireflyColors[Math.floor(Math.random() * fireflyColors.length)];
     const animation = fireflyAnimations[Math.floor(Math.random() * fireflyAnimations.length)];
-    const duration = 10 + Math.random() * 8; // 10-18s
-    const delay = Math.random() * 12;
+    const duration = 5 + Math.random() * 4; // 5-9s
+    const delay = Math.random() * 6;
 
     // Random spawn from bottom area (40%-100%) or edges
     const spawnFromBottom = Math.random() > 0.3;
