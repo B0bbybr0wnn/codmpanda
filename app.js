@@ -19298,3 +19298,25 @@ renderVaults = function() {
 console.log('✅ Chunk 49: 3 bug fixes loaded');
 
 /* END OF CHUNK 49 */
+// ============================================
+// Chunk 49.5: Restore Missing Constants
+// ============================================
+
+// Sensitivity fields — real CODM settings
+const SENS_FIELDS = [
+  { key: 'standard', label: 'Standard (Hip-Fire)', placeholder: 'e.g. 120' },
+  { key: 'ads', label: 'ADS (Iron Sight)', placeholder: 'e.g. 130' },
+  { key: 'ads2x', label: 'ADS 2x Scope', placeholder: 'e.g. 120' },
+  { key: 'ads3x', label: 'ADS 3x Scope', placeholder: 'e.g. 120' },
+  { key: 'ads4x', label: 'ADS 4x Scope', placeholder: 'e.g. 100' },
+  { key: 'ads6x', label: 'ADS 6x Scope', placeholder: 'e.g. 100' },
+  { key: 'sniper', label: 'Sniper Scope', placeholder: 'e.g. 120' },
+  { key: 'gyro', label: 'Gyroscope', placeholder: 'e.g. 300 (0 = off)' }
+];
+
+// HUD control styles
+const HUD_STYLES = ['2-Finger', '3-Finger', '4-Finger Claw', '5-Finger Claw', '6-Finger', 'Custom'];
+
+console.log('✅ Chunk 49.5: Restored SENS_FIELDS + HUD_STYLES');
+
+/* END OF CHUNK 49.5 */
