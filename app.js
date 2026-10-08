@@ -20079,7 +20079,7 @@ renderHomeCard = function(item) {
 // PART 5: FILTER CHIPS GRID
 // ============================================
 
-HOME_FILTERS = [
+var HOME_FILTERS = [
   { key: 'all', label: 'All', emoji: '✨' },
   { key: 'lfg', label: 'LFG', emoji: '🎮' },
   { key: 'builds', label: 'Builds', emoji: '🔧' },
