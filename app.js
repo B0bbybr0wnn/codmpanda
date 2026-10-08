@@ -20158,7 +20158,7 @@ renderHomeFeed = function() {
   const feedEl = document.getElementById('home-feed');
   if (!feedEl) return;
 
-  let items = homeCache.feed;
+  let items = homeCache.feed.filter(i => !['gunsmith','hud','sens'].includes(i.type));
 
   if (homeFilter !== 'all') {
     const typeMap = {
