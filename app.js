@@ -22371,3 +22371,66 @@ window.getProLobbyShareUrl = getProLobbyShareUrl;
 console.log('✅ Chunk 53: Complete Pro benefits loaded');
 
 /* END OF CHUNK 53 */
+// === DIAGNOSTIC EXPOSURE (remove before launch) ===
+window.__diag = {
+  db, auth,
+  collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
+  query, where, orderBy, limit, serverTimestamp, onSnapshot,
+  async run() {
+    console.clear();
+    console.log('%c=== CODMPanda Diagnostic ===', 'color:lime;font-size:16px;font-weight:bold');
+
+    console.log('\n[1] Auth:');
+    console.log('  currentUser:', auth?.currentUser?.email || '❌ not signed in');
+    console.log('  uid:', auth?.currentUser?.uid || '—');
+
+    console.log('\n[2] Globals:');
+    ['State','SENS_FIELDS','HUD_STYLES','gunDatabase','GUNS'].forEach(k => {
+      console.log('  ' + k + ':', window[k] ? '✅' : '❌');
+    });
+
+    console.log('\n[3] Firestore reads:');
+    const cols = ['posts','lobbies','vault','users','clips','leaks','clans','camos','scrims'];
+    for (const c of cols) {
+      try {
+        const s = await getDocs(query(collection(db, c), limit(1)));
+        console.log('  ' + c + ': ✅ (' + s.size + ')');
+      } catch(e) {
+        console.log('  ' + c + ': ❌ ' + (e.code||'') + ' — ' + e.message);
+      }
+    }
+
+    if (!auth?.currentUser) { console.log('\n⚠️ Not signed in — skipping write tests'); return; }
+
+    const uid = auth.currentUser.uid;
+    console.log('\n[4] Write: users/' + uid);
+    try {
+      await setDoc(doc(db, 'users', uid), { _diag: serverTimestamp() }, { merge: true });
+      console.log('  ✅ write OK');
+    } catch(e) { console.log('  ❌ ' + (e.code||'') + ' — ' + e.message); }
+
+    console.log('\n[5] Write: posts (new doc)');
+    try {
+      const ref = await addDoc(collection(db, 'posts'), {
+        authorId: uid, authorName: auth.currentUser.displayName || 'test',
+        text: '_diag test', createdAt: serverTimestamp()
+      });
+      console.log('  ✅ addDoc OK — id:', ref.id);
+      await deleteDoc(ref);
+      console.log('  ✅ deleteDoc OK');
+    } catch(e) { console.log('  ❌ ' + (e.code||'') + ' — ' + e.message); }
+
+    console.log('\n[6] Write: likes (new doc)');
+    try {
+      const ref = await addDoc(collection(db, 'likes'), {
+        userId: uid, targetId: '_diag', targetType: 'post', createdAt: serverTimestamp()
+      });
+      console.log('  ✅ addDoc OK');
+      await deleteDoc(ref);
+      console.log('  ✅ deleteDoc OK');
+    } catch(e) { console.log('  ❌ ' + (e.code||'') + ' — ' + e.message); }
+
+    console.log('\n%c=== Done — paste output above ===', 'color:lime;font-weight:bold');
+  }
+};
+console.log('✅ Diagnostic ready. Run: __diag.run()');
