@@ -19303,7 +19303,7 @@ console.log('✅ Chunk 49: 3 bug fixes loaded');
 // ============================================
 
 // Sensitivity fields — real CODM settings
-const SENS_FIELDS = [
+var SENS_FIELDS = [
   { key: 'standard', label: 'Standard (Hip-Fire)', placeholder: 'e.g. 120' },
   { key: 'ads', label: 'ADS (Iron Sight)', placeholder: 'e.g. 130' },
   { key: 'ads2x', label: 'ADS 2x Scope', placeholder: 'e.g. 120' },
@@ -19315,7 +19315,7 @@ const SENS_FIELDS = [
 ];
 
 // HUD control styles
-const HUD_STYLES = ['2-Finger', '3-Finger', '4-Finger Claw', '5-Finger Claw', '6-Finger', 'Custom'];
+var HUD_STYLES = ['2-Finger', '3-Finger', '4-Finger Claw', '5-Finger Claw', '6-Finger', 'Custom'];
 
 console.log('✅ Chunk 49.5: Restored SENS_FIELDS + HUD_STYLES');
 
