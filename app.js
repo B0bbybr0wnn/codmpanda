@@ -22563,3 +22563,350 @@ wireHomeCards = function(items) {
 };
 
 console.log('✅ Chunk 54a: Post Detail View loaded');
+// ============================================
+// CHUNK 54b — Comments + Replies + Delete Modal + Mentions
+// ============================================
+
+// ---------- Load comments ----------
+window.loadPostDetailComments = async function(postId) {
+  var listEl = document.getElementById('pd-comments-list');
+  var countLabel = document.getElementById('pd-comment-count-label');
+  if (!listEl) return;
+
+  try {
+    var snap = await getDocs(query(collection(db, 'comments'), where('contentId', '==', postId), limit(200)));
+    var all = [];
+    snap.forEach(function(d) { all.push(Object.assign({ id: d.id }, d.data())); });
+    all.sort(function(a, b) { return (a.createdAt && a.createdAt.seconds || 0) - (b.createdAt && b.createdAt.seconds || 0); });
+
+    if (countLabel) countLabel.textContent = all.length + ' comment' + (all.length === 1 ? '' : 's');
+
+    var comCountEl = document.getElementById('pd-comment-count');
+    if (comCountEl) comCountEl.textContent = all.length;
+
+    if (all.length === 0) {
+      listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;"><div style="font-size:36px;margin-bottom:8px;">💬</div><div style="font-size:13px;color:#888;">No comments yet</div><div style="font-size:11px;color:#555;margin-top:4px;">Be the first to reply</div></div>';
+      return;
+    }
+
+    var ids = {}; all.forEach(function(c){ ids[c.id] = true; });
+    var topLevel = all.filter(function(c){ return !c.parentId || !ids[c.parentId]; });
+    var byParent = {};
+    all.filter(function(c){ return c.parentId && ids[c.parentId]; }).forEach(function(c) {
+      if (!byParent[c.parentId]) byParent[c.parentId] = [];
+      byParent[c.parentId].push(c);
+    });
+
+    listEl.innerHTML = topLevel.map(function(c) {
+      return renderPdComment(c, byParent[c.id] || [], 0);
+    }).join('');
+
+    wirePdComments(listEl, postId);
+  } catch (e) {
+    console.error('Load comments error:', e);
+    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#f44;font-size:12px;">Failed to load comments</div>';
+  }
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ---------- Render a single comment ----------
+function renderPdComment(c, replies, depth) {
+  var isMine = c.uid === State.user.uid;
+  var isLiked = (State.likedItems && State.likedItems.comment && State.likedItems.comment[c.id]) || false;
+  var indent = depth > 0 ? 'margin-left:36px;' : '';
+
+  var h = '<div class="pd-comment" data-cid="' + c.id + '" style="' + indent + 'display:flex;gap:10px;align-items:flex-start;">';
+  h += '<div class="pd-user" data-profile-uid="' + (c.uid || '') + '" style="width:32px;height:32px;border-radius:50%;background:rgba(255,107,0,.2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#ff6b00;overflow:hidden;flex-shrink:0;cursor:pointer;">';
+  h += c.avatar ? '<img src="' + esc(c.avatar) + '" style="width:100%;height:100%;object-fit:cover;" />' : getInitials(c.ign || '?');
+  h += '</div>';
+  h += '<div style="flex:1;min-width:0;">';
+  h += '<div style="background:#141414;border:1px solid #222;border-radius:14px;padding:10px 12px;">';
+  h += '<div class="pd-user" data-profile-uid="' + (c.uid || '') + '" style="font-size:12px;font-weight:700;color:#ff6b00;margin-bottom:3px;cursor:pointer;">' + esc(c.ign || 'Unknown');
+  if (c.edited) h += ' <span style="font-size:9px;color:#666;font-weight:400;">(edited)</span>';
+  h += '</div>';
+  h += '<div style="font-size:13px;color:#ddd;line-height:1.4;word-break:break-word;white-space:pre-wrap;">' + esc(c.text) + '</div>';
+  h += '</div>';
+  h += '<div style="display:flex;align-items:center;gap:14px;margin-top:6px;margin-left:4px;">';
+  h += '<button class="pd-clike" data-cid="' + c.id + '" style="background:none;border:none;padding:0;font-size:11px;font-weight:700;color:' + (isLiked ? '#ff6b00' : '#666') + ';display:flex;align-items:center;gap:4px;cursor:pointer;">❤️ <span class="pd-clikes">' + (c.likes || 0) + '</span></button>';
+  h += '<button class="pd-creply" data-cid="' + c.id + '" data-ign="' + esc(c.ign || '') + '" style="background:none;border:none;padding:0;font-size:11px;font-weight:700;color:#666;cursor:pointer;">Reply</button>';
+  if (isMine) {
+    h += '<button class="pd-cedit" data-cid="' + c.id + '" style="background:none;border:none;padding:0;font-size:11px;font-weight:700;color:#ff6b00;cursor:pointer;">Edit</button>';
+    h += '<button class="pd-cdel" data-cid="' + c.id + '" style="background:none;border:none;padding:0;font-size:11px;font-weight:700;color:#f44;cursor:pointer;">Delete</button>';
+  }
+  h += '</div></div></div>';
+
+  if (replies.length > 0 && depth === 0) {
+    h += '<div class="pd-replies-wrap" data-parent="' + c.id + '" style="display:none;margin-top:10px;flex-direction:column;gap:12px;">';
+    h += replies.map(function(r) { return renderPdComment(r, [], 1); }).join('');
+    h += '</div>';
+    h += '<button class="pd-expand" data-cid="' + c.id + '" data-count="' + replies.length + '" style="background:none;border:none;padding:6px 0 0 42px;font-size:11px;font-weight:700;color:#ff6b00;cursor:pointer;text-align:left;">▸ Show ' + replies.length + ' ' + (replies.length === 1 ? 'reply' : 'replies') + '</button>';
+  }
+  return h;
+}
+
+// ---------- Wire comment actions ----------
+function wirePdComments(container, postId) {
+  container.querySelectorAll('.pd-clike').forEach(function(btn) {
+    btn.onclick = async function() {
+      var cid = btn.dataset.cid;
+      var wasLiked = (State.likedItems && State.likedItems.comment && State.likedItems.comment[cid]) || false;
+      var nowLiked = !wasLiked;
+      State.likedItems = State.likedItems || {};
+      State.likedItems.comment = State.likedItems.comment || {};
+      State.likedItems.comment[cid] = nowLiked;
+      var numEl = btn.querySelector('.pd-clikes');
+      var cur = parseInt(numEl.textContent) || 0;
+      numEl.textContent = nowLiked ? cur + 1 : Math.max(0, cur - 1);
+      btn.style.color = nowLiked ? '#ff6b00' : '#666';
+      try { await toggleLike('comment', cid, 'likes'); }
+      catch (e) {
+        State.likedItems.comment[cid] = wasLiked;
+        numEl.textContent = cur;
+        btn.style.color = wasLiked ? '#ff6b00' : '#666';
+      }
+    };
+  });
+
+  container.querySelectorAll('.pd-creply').forEach(function(btn) {
+    btn.onclick = function(e) {
+      e.preventDefault(); e.stopPropagation();
+      var cid = btn.dataset.cid;
+      var ign = btn.dataset.ign;
+      window.__pdReplyTo = { parentId: cid, ign: ign };
+      var ind = document.getElementById('pd-reply-indicator');
+      var txt = document.getElementById('pd-reply-text');
+      if (ind) ind.style.display = 'flex';
+      if (txt) txt.textContent = 'Replying to ' + ign + '...';
+      var inp = document.getElementById('pd-input');
+      if (inp) { inp.placeholder = 'Reply to ' + ign + '...'; inp.focus(); }
+    };
+  });
+
+  container.querySelectorAll('.pd-expand').forEach(function(btn) {
+    btn.onclick = function() {
+      var cid = btn.dataset.cid;
+      var wrap = container.querySelector('.pd-replies-wrap[data-parent="' + cid + '"]');
+      if (!wrap) return;
+      var isOpen = wrap.style.display === 'flex';
+      wrap.style.display = isOpen ? 'none' : 'flex';
+      btn.textContent = (isOpen ? '▸ Show ' : '▾ Hide ') + btn.dataset.count + ' ' + (btn.dataset.count === '1' ? 'reply' : 'replies');
+    };
+  });
+
+  container.querySelectorAll('.pd-cedit').forEach(function(btn) {
+    btn.onclick = function(e) {
+      e.preventDefault(); e.stopPropagation();
+      if (typeof openEditCommentSheet === 'function') openEditCommentSheet(btn.dataset.cid);
+    };
+  });
+
+  container.querySelectorAll('.pd-cdel').forEach(function(btn) {
+    btn.onclick = function(e) {
+      e.preventDefault(); e.stopPropagation();
+      var cid = btn.dataset.cid;
+      confirmDialog('Delete Comment', 'This will remove your comment.', async function() {
+        try {
+          await deleteDoc(doc(db, 'comments', cid));
+          toast('🗑 Deleted', 'success');
+          await loadPostDetailComments(postId);
+          var s = await getDoc(doc(db, 'posts', postId));
+          if (s.exists()) {
+            var cnt = document.getElementById('pd-comment-count');
+            if (cnt) cnt.textContent = s.data().commentCount || 0;
+          }
+        } catch (err) { toast('Failed', 'error'); }
+      }, 'Delete', true);
+    };
+  });
+}
+
+// ---------- Submit comment ----------
+window.submitPostDetailComment = async function(postId) {
+  var input = document.getElementById('pd-input');
+  if (!input) return;
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.disabled = true;
+
+  try {
+    var data = {
+      contentId: postId,
+      contentType: 'post',
+      uid: State.user.uid,
+      ign: State.profile.ign,
+      avatar: State.profile.avatar || '',
+      text: text,
+      likes: 0,
+      createdAt: serverTimestamp()
+    };
+    if (window.__pdReplyTo && window.__pdReplyTo.parentId) data.parentId = window.__pdReplyTo.parentId;
+    await addDoc(collection(db, 'comments'), data);
+
+    try {
+      var pRef = doc(db, 'posts', postId);
+      var pSnap = await getDoc(pRef);
+      if (pSnap.exists()) await updateDoc(pRef, { commentCount: increment(1) });
+    } catch (e) {}
+
+    window.__pdReplyTo = null;
+    var ind = document.getElementById('pd-reply-indicator');
+    if (ind) ind.style.display = 'none';
+    input.placeholder = 'Write a comment...';
+
+    await loadPostDetailComments(postId);
+  } catch (e) {
+    console.error('Send comment error:', e);
+    toast('Failed: ' + e.message, 'error');
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+};
+
+// ---------- 💬 icon opens detail view ----------
+window.openPostComments = function(postId) {
+  if (typeof window.openPostDetail === 'function') window.openPostDetail(postId);
+};
+
+// ---------- @ Mention autocomplete ----------
+var _pdMentionPopup = null;
+var _pdMentionInput = null;
+var _pdFriendsCache = {};
+
+async function _pdLoadFriends() {
+  var friends = (State.profile && State.profile.friends) || [];
+  var need = friends.filter(function(uid){ return !_pdFriendsCache[uid]; });
+  if (!need.length) return;
+  try {
+    var results = await Promise.all(need.map(async function(uid){
+      try { var s = await getDoc(doc(db, 'users', uid)); return s.exists() ? Object.assign({ uid: uid }, s.data()) : null; }
+      catch (e) { return null; }
+    }));
+    results.forEach(function(u){ if (u && u.ign) _pdFriendsCache[u.uid] = { ign: u.ign, avatar: u.avatar || '' }; });
+    window.__friendsCache = _pdFriendsCache;
+  } catch (e) {}
+}
+
+function _pdCloseMention() {
+  if (_pdMentionPopup && _pdMentionPopup.parentNode) _pdMentionPopup.parentNode.removeChild(_pdMentionPopup);
+  _pdMentionPopup = null; _pdMentionInput = null;
+}
+
+function _pdRenderMention(inputEl, users) {
+  _pdCloseMention();
+  if (!users.length) return;
+  var popup = document.createElement('div');
+  popup.id = 'mention-popup';
+  popup.style.cssText = 'position:fixed;left:12px;right:12px;background:#141414;border:1px solid #2a2a2a;border-radius:12px;max-height:220px;overflow-y:auto;z-index:99999;box-shadow:0 8px 24px rgba(0,0,0,.6);';
+  var rect = inputEl.getBoundingClientRect();
+  popup.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+  popup.innerHTML = users.slice(0, 8).map(function(u, i) {
+    return '<div class="mention-item" data-ign="' + esc(u.ign || 'user') + '" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid ' + (i < users.length - 1 ? '#1a1a1a' : 'transparent') + ';">' +
+      '<div style="width:28px;height:28px;border-radius:50%;background:rgba(255,107,0,.2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#ff6b00;overflow:hidden;">' +
+        (u.avatar ? '<img src="' + esc(u.avatar) + '" style="width:100%;height:100%;object-fit:cover;" />' : getInitials(u.ign || '?')) +
+      '</div>' +
+      '<div style="font-size:13px;font-weight:600;color:#fff;">@' + esc(u.ign || 'user') + '</div>' +
+    '</div>';
+  }).join('');
+  document.body.appendChild(popup);
+  _pdMentionPopup = popup; _pdMentionInput = inputEl;
+  popup.querySelectorAll('.mention-item').forEach(function(item){
+    item.onclick = function(e){
+      e.preventDefault(); e.stopPropagation();
+      _pdInsertMention(inputEl, item.dataset.ign);
+      _pdCloseMention();
+    };
+  });
+}
+
+function _pdInsertMention(inputEl, ign) {
+  var val = inputEl.value;
+  var caret = inputEl.selectionStart || val.length;
+  var before = val.slice(0, caret);
+  var atIdx = before.lastIndexOf('@');
+  if (atIdx === -1) return;
+  var after = val.slice(caret);
+  var newVal = val.slice(0, atIdx) + '@' + ign + ' ' + after;
+  inputEl.value = newVal;
+  var nc = atIdx + ign.length + 2;
+  inputEl.setSelectionRange(nc, nc);
+  inputEl.focus();
+}
+
+async function _pdOpenMention(inputEl, query) {
+  await _pdLoadFriends();
+  var friends = (State.profile && State.profile.friends) || [];
+  var results = [];
+  friends.forEach(function(uid){
+    var p = _pdFriendsCache[uid];
+    if (p && p.ign && p.ign.toLowerCase().indexOf(query.toLowerCase()) === 0) {
+      results.push({ uid: uid, ign: p.ign, avatar: p.avatar });
+    }
+  });
+  var myIgn = State.profile && State.profile.ign;
+  if (myIgn && myIgn.toLowerCase().indexOf(query.toLowerCase()) === 0 && !results.find(function(r){return r.uid === State.user.uid;})) {
+    results.unshift({ uid: State.user.uid, ign: myIgn, avatar: State.profile.avatar || '' });
+  }
+  _pdRenderMention(inputEl, results);
+}
+
+document.addEventListener('input', function(e) {
+  var t = e.target;
+  if (!t || t.tagName !== 'INPUT') return;
+  if (t.id !== 'pd-input' && t.id !== 'comment-input') return;
+  var val = t.value;
+  var caret = t.selectionStart || val.length;
+  var before = val.slice(0, caret);
+  var match = before.match(/@([a-zA-Z0-9_]*)$/);
+  if (match) _pdOpenMention(t, match[1]);
+  else _pdCloseMention();
+}, true);
+
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') _pdCloseMention(); }, true);
+document.addEventListener('click', function(e) {
+  if (_pdMentionPopup && !_pdMentionPopup.contains(e.target) && e.target !== _pdMentionInput) _pdCloseMention();
+}, true);
+
+console.log('✅ Chunk 54b: Comments + Mentions loaded');
+// ============================================
+// CHUNK 55 — Comment count sync + openPostComments routing
+// ============================================
+
+// 55a: Force fresh comment count after loadPostDetailComments runs
+var _origLoadPdComments55 = window.loadPostDetailComments;
+window.loadPostDetailComments = async function(postId) {
+  await _origLoadPdComments55(postId);
+  try {
+    var snap = await getDoc(doc(db, 'posts', postId));
+    if (snap.exists()) {
+      var p = snap.data();
+      var comCountEl = document.getElementById('pd-comment-count');
+      if (comCountEl) comCountEl.textContent = p.commentCount || 0;
+    }
+    var cSnap = await getDocs(query(collection(db, 'comments'), where('contentId', '==', postId), limit(500)));
+    var countLabel = document.getElementById('pd-comment-count-label');
+    if (countLabel) countLabel.textContent = cSnap.size + ' comment' + (cSnap.size === 1 ? '' : 's');
+  } catch(e) {}
+};
+
+// 55b: Force fresh comment count after submitPostDetailComment runs
+var _origSubmitPdComment55 = window.submitPostDetailComment;
+window.submitPostDetailComment = async function(postId) {
+  await _origSubmitPdComment55(postId);
+  try {
+    var snap = await getDoc(doc(db, 'posts', postId));
+    if (snap.exists()) {
+      var p = snap.data();
+      var comCountEl = document.getElementById('pd-comment-count');
+      if (comCountEl) comCountEl.textContent = p.commentCount || 0;
+    }
+  } catch(e) {}
+};
+
+// 55c: Ensure 💬 button routes to detail view (not old sheet)
+window.openPostComments = function(postId) {
+  if (typeof window.openPostDetail === 'function') window.openPostDetail(postId);
+};
+
+console.log('✅ Chunk 55 loaded');
