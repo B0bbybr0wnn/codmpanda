@@ -22901,8 +22901,6 @@ window.__pdConfirm = function(title, message, onYes) {
     m.remove();
     if (typeof onYes === 'function') onYes();
   };
-};
-
 // ---------- 55c: Override loadPostDetailComments — always trust Firestore count ----------
 var _origLoadPdComments55 = window.loadPostDetailComments;
 window.loadPostDetailComments = async function(postId) {
@@ -22932,17 +22930,15 @@ if (typeof _origWirePdComments55 === 'function') {
     container.querySelectorAll('.pd-cdel').forEach(function(btn) {
       btn.onclick = async function(e) {
         e.preventDefault(); e.stopPropagation();
-        window.__pdConfirm('Delete Comment', 'This will remove your comment.', async function() {
+        confirmDialog('Delete Comment', 'This will remove your comment.', async function() {
           try {
             await deleteDoc(doc(db, 'comments', btn.dataset.cid));
             toast('🗑 Deleted', 'success');
             await loadPostDetailComments(postId);
           } catch (err) { toast('Failed', 'error'); }
-        });
-      };
-    });
-  };
-}
+        }, 'Delete', true);
+     };
+});
 
 // ---------- 55e: Override openPostComments — 💬 icon opens detail view instead of old sheet ----------
 window.openPostComments = function(postId) {
