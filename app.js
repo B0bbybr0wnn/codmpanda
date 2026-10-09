@@ -22910,3 +22910,100 @@ window.openPostComments = function(postId) {
 };
 
 console.log('✅ Chunk 55 loaded');
+// ============================================
+// CHUNK 56 — Count sync + profile on top + home author tap
+// ============================================
+
+// ---------- 56a: Store current detail post id ----------
+var _origOpenPostDetail56 = window.openPostDetail;
+window.openPostDetail = async function(postId) {
+  window.__currentDetailPostId = postId;
+  return _origOpenPostDetail56(postId);
+};
+
+// ---------- 56b: Recalc post.commentCount from Firestore (fixes drift) ----------
+async function __syncCommentCount(postId) {
+  try {
+    var cSnap = await getDocs(query(collection(db, 'comments'), where('contentId', '==', postId), limit(500)));
+    var realCount = cSnap.size;
+    var pRef = doc(db, 'posts', postId);
+    var pSnap = await getDoc(pRef);
+    if (pSnap.exists() && pSnap.data().commentCount !== realCount) {
+      await updateDoc(pRef, { commentCount: realCount });
+    }
+    var cnt = document.getElementById('pd-comment-count');
+    if (cnt) cnt.textContent = realCount;
+    var label = document.getElementById('pd-comment-count-label');
+    if (label) label.textContent = realCount + ' comment' + (realCount === 1 ? '' : 's');
+    // Also patch homeCache so home feed shows right number
+    if (homeCache && homeCache.feed) {
+      var item = homeCache.feed.find(function(p){return p.id === postId;});
+      if (item) item.commentCount = realCount;
+    }
+  } catch(e) {}
+}
+
+// After submit — sync
+var _origSubmitPdComment56 = window.submitPostDetailComment;
+window.submitPostDetailComment = async function(postId) {
+  await _origSubmitPdComment56(postId);
+  await __syncCommentCount(postId);
+};
+
+// After delete — sync
+var _origLoadPdComments56 = window.loadPostDetailComments;
+window.loadPostDetailComments = async function(postId) {
+  await _origLoadPdComments56(postId);
+  await __syncCommentCount(postId);
+};
+
+// After delete button tap — poll for Firestore to catch up
+document.addEventListener('click', function(e) {
+  var delBtn = e.target.closest('.pd-cdel');
+  if (!delBtn) return;
+  var postId = window.__currentDetailPostId;
+  if (!postId) return;
+  setTimeout(function() { __syncCommentCount(postId); }, 1500);
+  setTimeout(function() { __syncCommentCount(postId); }, 3000);
+}, true);
+
+// ---------- 56c: Profile views render ABOVE overlay ----------
+var _origOpenUserProfile56 = window.openUserProfile;
+window.openUserProfile = function(uid) {
+  if (typeof _origOpenUserProfile56 !== 'function') return;
+  var result = _origOpenUserProfile56(uid);
+  setTimeout(function() {
+    var els = document.querySelectorAll('body > *');
+    els.forEach(function(el) {
+      if (el.id === 'post-detail-overlay') return;
+      if (el.id === 'mention-popup') return;
+      var style = el.getAttribute('style') || '';
+      if (style.indexOf('position:fixed') !== -1 || style.indexOf('position: fixed') !== -1) {
+        var z = parseInt(el.style.zIndex || '0', 10);
+        if (z < 9999) el.style.zIndex = '99999';
+      }
+    });
+  }, 30);
+  return result;
+};
+
+// ---------- 56d: Home feed poster avatar tap → profile ----------
+// Capture-phase so it fires BEFORE the card's open-detail click
+document.addEventListener('click', function(e) {
+  if (e.target.closest('button')) return;
+  // Only when NOT inside the detail overlay
+  if (document.getElementById('post-detail-overlay')) return;
+  var card = e.target.closest('.home-card[data-type="post"]');
+  if (!card) return;
+  var authorEl = e.target.closest('[data-uid]');
+  if (!authorEl) return;
+  var uid = authorEl.dataset.uid;
+  if (!uid) return;
+  // Block card's detail-open handler
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+  if (typeof window.openUserProfile === 'function') window.openUserProfile(uid);
+}, true);
+
+console.log('✅ Chunk 56 loaded');
