@@ -22812,19 +22812,207 @@ wireHomeCards = function(items) {
 };
 
 console.log('✅ Chunk 54 v2: Post Detail View (clean) loaded');
-window.__peek = async function() {
-  var p = homeCache.feed.filter(function(i){return i.type==='post';})[0];
-  if (!p) return console.log('no posts');
-  var s = await getDocs(query(collection(db,'comments'),where('contentId','==',p.id)));
-  var pd = await getDoc(doc(db,'posts',p.id));
-  console.log('postId:', p.id);
-  console.log('homeCache post.likes:', p.likes);
-  console.log('comments in firestore:', s.size);
-  s.forEach(function(d){var c=d.data();console.log(' →', c.text, '| parent:', c.parentId||'none');});
-  if (pd.exists()) {
-    console.log('FIRESTORE post.likes:', pd.data().likes, '| commentCount:', pd.data().commentCount);
-  } else {
-    console.log('❌ posts/' + p.id + ' NOT FOUND in Firestore');
+// ============================================
+// CHUNK 55 — Profile links + Orphan replies + @ Mentions
+// ============================================
+
+// ---------- 55a: Delegated profile tap ----------
+document.addEventListener('click', function(e) {
+  if (e.target.closest('button')) return;
+  var u = e.target.closest('[data-profile-uid]');
+  if (u) {
+    var uid = u.dataset.profileUid;
+    if (uid && typeof window.openUserProfile === 'function') {
+      e.preventDefault();
+      e.stopPropagation();
+      window.openUserProfile(uid);
+    }
   }
+}, true);
+
+// Patch openPostDetail to add data-profile-uid + fix clicks after open
+var _origOpenPostDetail55 = window.openPostDetail;
+window.openPostDetail = function(postId) {
+  _origOpenPostDetail55(postId);
+  setTimeout(function() {
+    var post = (homeCache && homeCache.feed) ? homeCache.feed.find(function(p){return p.id === postId;}) : null;
+    if (!post) return;
+    var nameEl = document.getElementById('pd-author-name');
+    var avEl = document.getElementById('pd-author-avatar');
+    if (nameEl && post.uid) { nameEl.setAttribute('data-profile-uid', post.uid); nameEl.style.cursor = 'pointer'; }
+    if (avEl && post.uid) { avEl.setAttribute('data-profile-uid', post.uid); avEl.style.cursor = 'pointer'; }
+  }, 50);
 };
-console.log('✅ run __peek()');
+
+// After comments load, tag every .pd-user
+var _origLoadPostDetailComments55 = window.loadPostDetailComments;
+window.loadPostDetailComments = async function(postId) {
+  await _origLoadPostDetailComments55(postId);
+  setTimeout(function() {
+    document.querySelectorAll('#pd-comments-list .pd-user').forEach(function(el) {
+      var uid = el.dataset.uid;
+      if (uid) {
+        el.setAttribute('data-profile-uid', uid);
+        el.style.cursor = 'pointer';
+      }
+    });
+  }, 100);
+};
+
+// ---------- 55b: Orphan replies → promote to top-level ----------
+var _origLoadPostDetailComments55b = window.loadPostDetailComments;
+window.loadPostDetailComments = async function(postId) {
+  await _origLoadPostDetailComments55b(postId);
+  // After normal load, check for orphans and re-render
+  try {
+    var snap = await getDocs(query(collection(db, 'comments'), where('contentId', '==', postId), limit(200)));
+    var all = [];
+    snap.forEach(function(d){ all.push(Object.assign({ id: d.id }, d.data())); });
+    var ids = {}; all.forEach(function(c){ ids[c.id] = true; });
+    var orphans = all.filter(function(c){ return c.parentId && !ids[c.parentId]; });
+    if (!orphans.length) return;
+
+    var topLevel = all.filter(function(c){ return !c.parentId; }).concat(orphans);
+    var byParent = {};
+    all.filter(function(c){ return c.parentId; }).forEach(function(c){
+      if (!byParent[c.parentId]) byParent[c.parentId] = [];
+      byParent[c.parentId].push(c);
+    });
+
+    var listEl = document.getElementById('pd-comments-list');
+    if (!listEl) return;
+    listEl.innerHTML = topLevel.map(function(c){
+      return renderPdComment(c, byParent[c.id] || [], 0);
+    }).join('');
+    wirePdComments(listEl, postId);
+
+    // Re-tag users after re-render
+    setTimeout(function() {
+      document.querySelectorAll('#pd-comments-list .pd-user').forEach(function(el) {
+        var uid = el.dataset.uid;
+        if (uid) { el.setAttribute('data-profile-uid', uid); el.style.cursor = 'pointer'; }
+      });
+    }, 50);
+  } catch(e) { /* silent */ }
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ---------- 55c: @ Mention autocomplete ----------
+var _mentionPopup = null;
+var _mentionInput = null;
+var _friendsCache = {};
+
+async function loadFriendProfiles() {
+  var friends = (State.profile && State.profile.friends) || [];
+  var need = friends.filter(function(uid){ return !_friendsCache[uid]; });
+  if (!need.length) return;
+  try {
+    var results = await Promise.all(need.map(async function(uid){
+      try {
+        var s = await getDoc(doc(db, 'users', uid));
+        return s.exists() ? Object.assign({ uid: uid }, s.data()) : null;
+      } catch(e) { return null; }
+    }));
+    results.forEach(function(u){
+      if (u && u.ign) _friendsCache[u.uid] = { ign: u.ign, avatar: u.avatar || '' };
+    });
+    window.__friendsCache = _friendsCache;
+  } catch(e) { /* silent */ }
+}
+
+function closeMention() {
+  if (_mentionPopup && _mentionPopup.parentNode) _mentionPopup.parentNode.removeChild(_mentionPopup);
+  _mentionPopup = null; _mentionInput = null;
+}
+
+function renderMentionPopup(inputEl, users) {
+  closeMention();
+  if (!users.length) return;
+
+  var popup = document.createElement('div');
+  popup.id = 'mention-popup';
+  popup.style.cssText = 'position:fixed;left:12px;right:12px;background:#141414;border:1px solid #2a2a2a;border-radius:12px;max-height:220px;overflow-y:auto;z-index:99999;box-shadow:0 8px 24px rgba(0,0,0,.6);';
+  var rect = inputEl.getBoundingClientRect();
+  popup.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+
+  popup.innerHTML = users.slice(0, 8).map(function(u, i) {
+    return '<div class="mention-item" data-ign="' + esc(u.ign || 'user') + '" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid ' + (i < users.length - 1 ? '#1a1a1a' : 'transparent') + ';">' +
+      '<div style="width:28px;height:28px;border-radius:50%;background:rgba(255,107,0,.2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#ff6b00;overflow:hidden;">' +
+        (u.avatar ? '<img src="' + esc(u.avatar) + '" style="width:100%;height:100%;object-fit:cover;" />' : getInitials(u.ign || '?')) +
+      '</div>' +
+      '<div style="font-size:13px;font-weight:600;color:#fff;">@' + esc(u.ign || 'user') + '</div>' +
+    '</div>';
+  }).join('');
+
+  document.body.appendChild(popup);
+  _mentionPopup = popup; _mentionInput = inputEl;
+
+  popup.querySelectorAll('.mention-item').forEach(function(item){
+    item.onclick = function(e){
+      e.preventDefault(); e.stopPropagation();
+      insertMention(inputEl, item.dataset.ign);
+      closeMention();
+    };
+  });
+}
+
+function insertMention(inputEl, ign) {
+  var val = inputEl.value;
+  var caret = inputEl.selectionStart || val.length;
+  var before = val.slice(0, caret);
+  var atIdx = before.lastIndexOf('@');
+  if (atIdx === -1) return;
+  var after = val.slice(caret);
+  var newVal = val.slice(0, atIdx) + '@' + ign + ' ' + after;
+  inputEl.value = newVal;
+  var newCaret = atIdx + ign.length + 2;
+  inputEl.setSelectionRange(newCaret, newCaret);
+  inputEl.focus();
+}
+
+async function openMentionFor(inputEl, query) {
+  await loadFriendProfiles();
+  var friends = (State.profile && State.profile.friends) || [];
+  var results = [];
+  friends.forEach(function(uid){
+    var p = _friendsCache[uid];
+    if (p && p.ign && p.ign.toLowerCase().indexOf(query.toLowerCase()) === 0) {
+      results.push({ uid: uid, ign: p.ign, avatar: p.avatar });
+    }
+  });
+  // Always include own name if it matches
+  var myIgn = State.profile && State.profile.ign;
+  if (myIgn && myIgn.toLowerCase().indexOf(query.toLowerCase()) === 0 && !results.find(function(r){return r.uid === State.user.uid;})) {
+    results.unshift({ uid: State.user.uid, ign: myIgn, avatar: State.profile.avatar || '' });
+  }
+  renderMentionPopup(inputEl, results);
+}
+
+document.addEventListener('input', function(e) {
+  var t = e.target;
+  if (!t || t.tagName !== 'INPUT') return;
+  if (t.id !== 'pd-input' && t.id !== 'comment-input') return;
+
+  var val = t.value;
+  var caret = t.selectionStart || val.length;
+  var before = val.slice(0, caret);
+  var match = before.match(/@([a-zA-Z0-9_]*)$/);
+
+  if (match) {
+    openMentionFor(t, match[1]);
+  } else {
+    closeMention();
+  }
+}, true);
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeMention();
+}, true);
+
+document.addEventListener('click', function(e) {
+  if (_mentionPopup && !_mentionPopup.contains(e.target) && e.target !== _mentionInput) {
+    closeMention();
+  }
+}, true);
+
+console.log('✅ Chunk 55: Profile links + orphan replies + @ mentions loaded');
