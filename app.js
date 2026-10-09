@@ -23007,3 +23007,62 @@ document.addEventListener('click', function(e) {
 }, true);
 
 console.log('✅ Chunk 56 loaded');
+// ============================================
+// CHUNK 57 — Like fill + instant profile (no overrides)
+// ============================================
+
+// 57a: Refresh heart fill on home feed after every render
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.home-filter-btn')) return;
+  // Filter chip changed → refetch likes shortly after
+  setTimeout(__refreshLikeFill, 800);
+}, true);
+
+// Also run when home tab loads
+setTimeout(__refreshLikeFill, 1500);
+
+async function __refreshLikeFill() {
+  try {
+    var uid = State.user && State.user.uid;
+    if (!uid) return;
+    var likeSnap = await getDocs(query(collection(db, 'likes'), where('userId', '==', uid), where('itemType', '==', 'post')));
+    State.likedItems = State.likedItems || {};
+    State.likedItems.post = State.likedItems.post || {};
+    likeSnap.forEach(function(d) {
+      var data = d.data();
+      State.likedItems.post[data.itemId] = true;
+    });
+    var feedEl = document.getElementById('home-feed');
+    if (!feedEl) return;
+    feedEl.querySelectorAll('.post-like-btn').forEach(function(btn) {
+      var pid = btn.dataset.id;
+      var liked = State.likedItems.post[pid] === true;
+      var icon = btn.querySelector('i, svg');
+      if (icon) {
+        if (liked) icon.setAttribute('fill', 'currentColor');
+        else icon.removeAttribute('fill');
+      }
+      btn.classList.toggle('text-primary', liked);
+      btn.classList.toggle('text-gray-400', !liked);
+    });
+  } catch(e) { console.warn('like-fill failed', e); }
+}
+
+// 57b: Profile tap — close overlay BEFORE opening profile
+// We do this by hooking into the click on [data-profile-uid] elements
+// in the capture phase (before openUserProfile is called)
+document.addEventListener('pointerdown', function(e) {
+  if (e.target.closest('button')) return;
+  var u = e.target.closest('[data-profile-uid]');
+  if (!u) return;
+  var uid = u.dataset.profileUid;
+  if (!uid) return;
+  // If post detail overlay is open, close it NOW
+  var ov = document.getElementById('post-detail-overlay');
+  if (ov) {
+    ov.remove();
+    document.body.style.overflow = '';
+  }
+}, true);
+
+console.log('✅ Chunk 57 loaded');
