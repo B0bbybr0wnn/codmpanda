@@ -23007,46 +23007,92 @@ document.addEventListener('click', function(e) {
 }, true);
 
 console.log('✅ Chunk 56 loaded');
-window.__diag57 = async function() {
-  var btn = document.querySelector('.post-like-btn');
-  if (btn) {
-    var card = btn.closest('.home-card');
-    console.log('--- CARD HTML ---');
-    console.log(card ? card.outerHTML : 'no .home-card ancestor');
-    console.log('--- LIKE BTN HTML ---');
-    console.log(btn.outerHTML);
-    console.log('--- LIKE BTN onclick ---');
-    console.log('onclick property:', btn.onclick && btn.onclick.toString());
-    console.log('dataset:', JSON.stringify(Object.assign({}, btn.dataset)));
-  } else {
-    console.log('No .post-like-btn found');
-  }
+// ============================================
+// CHUNK 57 — Load liked items + tag card author
+// ============================================
 
+async function __loadLikesAndPaint() {
   var uid = State.user && State.user.uid;
-  console.log('--- FIRESTORE LIKES ---');
-  console.log('uid:', uid);
+  if (!uid) return;
+  try {
+    var snap = await getDocs(query(collection(db, 'likes'), where('userId', '==', uid)));
+    State.likedItems = State.likedItems || {};
+    snap.forEach(function(d) {
+      var data = d.data();
+      var t = data.itemType;
+      if (!t) return;
+      State.likedItems[t] = State.likedItems[t] || {};
+      State.likedItems[t][data.itemId] = true;
+    });
 
-  if (uid) {
-    try {
-      var snap = await getDocs(query(collection(db, 'likes'), where('userId', '==', uid)));
-      console.log('likes count:', snap.size);
-      snap.forEach(function(d) { console.log('LIKE DOC:', d.id, d.data()); });
-    } catch (e) { console.log('likes query err:', e.message); }
+    document.querySelectorAll('.post-like-btn').forEach(function(btn) {
+      var pid = btn.dataset.id;
+      if (!pid) return;
+      var liked = !!(State.likedItems.post && State.likedItems.post[pid]);
+      var icon = btn.querySelector('i, svg');
+      if (icon) {
+        if (liked) icon.setAttribute('fill', 'currentColor');
+        else icon.removeAttribute('fill');
+      }
+      btn.classList.toggle('text-primary', liked);
+      btn.classList.toggle('text-gray-400', !liked);
+    });
+
+    document.querySelectorAll('.comment-like-btn').forEach(function(btn) {
+      var cid = btn.dataset.id;
+      if (!cid) return;
+      var liked = !!(State.likedItems.comment && State.likedItems.comment[cid]);
+      var icon = btn.querySelector('i, svg');
+      if (icon) {
+        if (liked) icon.setAttribute('fill', 'currentColor');
+        else icon.removeAttribute('fill');
+      }
+      btn.classList.toggle('text-primary', liked);
+      btn.classList.toggle('text-gray-400', !liked);
+    });
+  } catch(e) { console.warn('loadLikes failed:', e); }
+}
+
+setTimeout(__loadLikesAndPaint, 2000);
+setTimeout(__loadLikesAndPaint, 4000);
+
+document.addEventListener('click', function(e) {
+  if (e.target.closest('.home-filter-btn')) {
+    setTimeout(__loadLikesAndPaint, 1500);
   }
+}, true);
 
-  if (typeof homeCache !== 'undefined' && homeCache && homeCache.feed) {
-    console.log('feed length:', homeCache.feed.length);
-    var post = homeCache.feed.find(function(p) { return p.type === 'post'; });
-    if (post) {
-      console.log('--- SAMPLE POST ---');
-      console.log(JSON.stringify(post, null, 2));
-      console.log('--- RENDERED HTML ---');
-      try { console.log(renderHomePostCard(post)); }
-      catch (e) { console.log('render err:', e.message); }
-    }
-  }
-
-  console.log('--- STATE.LIKEDITEMS ---');
-  console.log(JSON.stringify(State.likedItems, null, 2));
+var _origRenderHPC57 = renderHomePostCard;
+renderHomePostCard = function(post) {
+  var html = _origRenderHPC57(post);
+  if (!post || !post.uid) return html;
+  html = html.replace(
+    /<div class="w-11 h-11 rounded-full[^"]*"/,
+    '<div data-profile-uid="' + post.uid + '" style="cursor:pointer;" class="w-11 h-11 rounded-full'
+  );
+  html = html.replace(
+    /(<div class="font-bold[^"]*"[^>]*)(>)/,
+    '$1 data-profile-uid="' + post.uid + '" style="cursor:pointer;"$2'
+  );
+  return html;
 };
-console.log('run __diag57()');
+
+window.addEventListener('click', function(e) {
+  if (e.target.closest('button')) return;
+  var u = e.target.closest('[data-profile-uid]');
+  if (!u) return;
+  var uid = u.dataset.profileUid;
+  if (!uid) return;
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+  var ov = document.getElementById('post-detail-overlay');
+  if (ov) { ov.remove(); document.body.style.overflow = ''; }
+  setTimeout(function() {
+    if (typeof window.openUserProfile === 'function') window.openUserProfile(uid);
+    var sheet = document.getElementById('sheet-container');
+    if (sheet) sheet.style.zIndex = '99999';
+  }, 30);
+}, true);
+
+console.log('✅ Chunk 57 loaded');
