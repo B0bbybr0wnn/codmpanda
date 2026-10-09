@@ -22852,3 +22852,96 @@ wireHomeCards = function(items) {
 };
 
 console.log('✅ Chunk 54-56 MERGED loaded');
+// ============================================
+// CHUNK 55 — Comments count fix + delete modal + instant profile
+// ============================================
+
+// ---------- 55a: Instant profile tap ----------
+document.addEventListener('pointerdown', function(e) {
+  if (e.target.closest('button')) return;
+  var u = e.target.closest('[data-profile-uid]');
+  if (!u) return;
+  var uid = u.dataset.profileUid;
+  if (!uid) return;
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+  window.__pdProfileTapPending = uid;
+}, true);
+
+document.addEventListener('click', function(e) {
+  if (e.target.closest('button')) return;
+  var u = e.target.closest('[data-profile-uid]');
+  if (!u) return;
+  var uid = u.dataset.profileUid;
+  if (!uid) return;
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+  if (typeof window.openUserProfile === 'function') window.openUserProfile(uid);
+  window.__pdProfileTapPending = null;
+}, true);
+
+// ---------- 55c: Real Firestore comment count ----------
+var _origLoadPdComments55 = window.loadPostDetailComments;
+window.loadPostDetailComments = async function(postId) {
+  await _origLoadPdComments55(postId);
+  try {
+    var snap = await getDoc(doc(db, 'posts', postId));
+    if (snap.exists()) {
+      var p = snap.data();
+      var comCountEl = document.getElementById('pd-comment-count');
+      if (comCountEl) comCountEl.textContent = p.commentCount || 0;
+    }
+    var cSnap = await getDocs(query(collection(db, 'comments'), where('contentId', '==', postId), limit(500)));
+    var countLabel = document.getElementById('pd-comment-count-label');
+    if (countLabel) countLabel.textContent = cSnap.size + ' comment' + (cSnap.size === 1 ? '' : 's');
+  } catch(e) {}
+};
+
+// ---------- 55d: Delete comment uses app dialog + refresh count ----------
+var _origWirePdComments55 = window.wirePdComments;
+if (typeof _origWirePdComments55 === 'function') {
+  window.wirePdComments = function(container, postId) {
+    _origWirePdComments55(container, postId);
+    container.querySelectorAll('.pd-cdel').forEach(function(btn) {
+      btn.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var cid = btn.dataset.cid;
+        confirmDialog('Delete Comment', 'This will remove your comment.', async function() {
+          try {
+            await deleteDoc(doc(db, 'comments', cid));
+            toast('🗑 Deleted', 'success');
+            await loadPostDetailComments(postId);
+            var s = await getDoc(doc(db, 'posts', postId));
+            if (s.exists()) {
+              var cnt = document.getElementById('pd-comment-count');
+              if (cnt) cnt.textContent = s.data().commentCount || 0;
+            }
+          } catch (err) { toast('Failed', 'error'); }
+        }, 'Delete', true);
+      };
+    });
+  };
+}
+
+// ---------- 55e: 💬 icon opens detail view ----------
+window.openPostComments = function(postId) {
+  if (typeof window.openPostDetail === 'function') window.openPostDetail(postId);
+};
+
+// ---------- 55f: Comment submit — refresh count ----------
+var _origSubmitPdComment55 = window.submitPostDetailComment;
+window.submitPostDetailComment = async function(postId) {
+  await _origSubmitPdComment55(postId);
+  try {
+    var snap = await getDoc(doc(db, 'posts', postId));
+    if (snap.exists()) {
+      var p = snap.data();
+      var comCountEl = document.getElementById('pd-comment-count');
+      if (comCountEl) comCountEl.textContent = p.commentCount || 0;
+    }
+  } catch(e) {}
+};
+
+console.log('✅ Chunk 55 loaded');
