@@ -23008,9 +23008,7 @@ document.addEventListener('click', function(e) {
 
 console.log('✅ Chunk 56 loaded');
 window.__diag57 = async function() {
-  // 1. Dump home card HTML and onclick details
   var btn = document.querySelector('.post-like-btn');
-
   if (btn) {
     var card = btn.closest('.home-card');
     console.log('--- CARD HTML ---');
@@ -23019,97 +23017,36 @@ window.__diag57 = async function() {
     console.log(btn.outerHTML);
     console.log('--- LIKE BTN onclick ---');
     console.log('onclick property:', btn.onclick && btn.onclick.toString());
-    console.log('onclick attribute:', btn.getAttribute('onclick'));
-    console.log('dataset:', JSON.stringify({ ...btn.dataset }));
-
-    console.log('--- LIKE BTN ANCESTORS ---');
-    for (var el = btn; el && el !== document.body; el = el.parentElement) {
-      console.log(el.tagName, el.className, {
-        onclick: el.onclick ? el.onclick.toString() : null,
-        onclickAttribute: el.getAttribute('onclick')
-      });
-    }
+    console.log('dataset:', JSON.stringify(Object.assign({}, btn.dataset)));
   } else {
     console.log('No .post-like-btn found');
   }
 
-  // 2. Check Firestore likes for current user
   var uid = State.user && State.user.uid;
   console.log('--- FIRESTORE LIKES ---');
   console.log('uid:', uid);
 
   if (uid) {
     try {
-      var snap = await getDocs(
-        query(collection(db, 'likes'), where('userId', '==', uid))
-      );
+      var snap = await getDocs(query(collection(db, 'likes'), where('userId', '==', uid)));
       console.log('likes count:', snap.size);
-      snap.forEach(function(d) {
-        console.log('LIKE DOC:', d.id, d.data());
-      });
-    } catch (e) {
-      console.log('likes query err:', e.message);
-    }
-
-    try {
-      var allSnap = await getDocs(collection(db, 'likes'));
-      var matches = allSnap.docs.filter(function(d) {
-        return d.id.endsWith('_' + uid) ||
-          d.data().userId === uid ||
-          d.data().uid === uid;
-      });
-      console.log('UID matches across likes collection:', matches.length);
-      matches.forEach(function(d) {
-        console.log('MATCH:', d.id, d.data());
-      });
-    } catch (e) {
-      console.log('likes scan err:', e.message);
-    }
+      snap.forEach(function(d) { console.log('LIKE DOC:', d.id, d.data()); });
+    } catch (e) { console.log('likes query err:', e.message); }
   }
-
-  // 3. Inspect a sample home post and rendered HTML
-  console.log('--- HOME CACHE ---');
 
   if (typeof homeCache !== 'undefined' && homeCache && homeCache.feed) {
     console.log('feed length:', homeCache.feed.length);
-
-    var post = homeCache.feed.find(function(p) {
-      return p.type === 'post';
-    });
-
+    var post = homeCache.feed.find(function(p) { return p.type === 'post'; });
     if (post) {
       console.log('--- SAMPLE POST ---');
       console.log(JSON.stringify(post, null, 2));
       console.log('--- RENDERED HTML ---');
-
-      try {
-        console.log(renderHomePostCard(post));
-      } catch (e) {
-        console.log('render err:', e.message);
-      }
-    } else {
-      console.log('No post with type === "post" in homeCache.feed');
-      console.log('Feed sample:', homeCache.feed.slice(0, 3));
+      try { console.log(renderHomePostCard(post)); }
+      catch (e) { console.log('render err:', e.message); }
     }
-  } else {
-    console.log('homeCache.feed unavailable');
   }
 
-  // 4. Check current likedItems state
   console.log('--- STATE.LIKEDITEMS ---');
   console.log(JSON.stringify(State.likedItems, null, 2));
-
-  // 5. Inspect existing like functions without modifying anything
-  console.log('--- LIKE FUNCTION SOURCES ---');
-
-  ['likeItem', 'unlikeItem', 'toggleLike'].forEach(function(name) {
-    try {
-      var fn = eval(name);
-      console.log(name + ':', typeof fn === 'function' ? fn.toString() : 'not a function');
-    } catch (e) {
-      console.log(name + ': unavailable -', e.message);
-    }
-  });
-
-  console.log('--- DIAGNOSTICS COMPLETE ---');
 };
+console.log('run __diag57()');
