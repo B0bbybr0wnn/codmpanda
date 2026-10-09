@@ -23007,221 +23007,109 @@ document.addEventListener('click', function(e) {
 }, true);
 
 console.log('✅ Chunk 56 loaded');
-// ============================================
-// ============================================
-// CHUNK 57 v2 — Part A (like handler + zoom)
-// ============================================
+window.__diag57 = async function() {
+  // 1. Dump home card HTML and onclick details
+  var btn = document.querySelector('.post-like-btn');
 
-function __tagLikeButtons() {
-  document.querySelectorAll('.post-like-btn').forEach(function(btn) {
-    if (btn.dataset.likeType) return;
-    var id = btn.dataset.id;
-    if (!id) return;
-    btn.dataset.likeType = 'post';
-    btn.dataset.likeId = id;
-  });
-  document.querySelectorAll('.comment-like-btn').forEach(function(btn) {
-    if (btn.dataset.likeType) return;
-    var id = btn.dataset.id;
-    if (!id) return;
-    btn.dataset.likeType = 'comment';
-    btn.dataset.likeId = id;
-  });
-  document.querySelectorAll('.pd-clike').forEach(function(btn) {
-    if (btn.dataset.likeType) return;
-    var id = btn.dataset.cid;
-    if (!id) return;
-    btn.dataset.likeType = 'comment';
-    btn.dataset.likeId = id;
-  });
-}
-setTimeout(__tagLikeButtons, 1500);
-setInterval(__tagLikeButtons, 3000);
+  if (btn) {
+    var card = btn.closest('.home-card');
+    console.log('--- CARD HTML ---');
+    console.log(card ? card.outerHTML : 'no .home-card ancestor');
+    console.log('--- LIKE BTN HTML ---');
+    console.log(btn.outerHTML);
+    console.log('--- LIKE BTN onclick ---');
+    console.log('onclick property:', btn.onclick && btn.onclick.toString());
+    console.log('onclick attribute:', btn.getAttribute('onclick'));
+    console.log('dataset:', JSON.stringify({ ...btn.dataset }));
 
-window.addEventListener('click', async function(e) {
-  var btn = e.target.closest('[data-like-type][data-like-id]');
-  if (!btn) return;
-  if (btn.dataset.likeHandled === '1') return;
-  btn.dataset.likeHandled = '1';
-  setTimeout(function() { btn.dataset.likeHandled = ''; }, 500);
+    console.log('--- LIKE BTN ANCESTORS ---');
+    for (var el = btn; el && el !== document.body; el = el.parentElement) {
+      console.log(el.tagName, el.className, {
+        onclick: el.onclick ? el.onclick.toString() : null,
+        onclickAttribute: el.getAttribute('onclick')
+      });
+    }
+  } else {
+    console.log('No .post-like-btn found');
+  }
 
-  e.preventDefault();
-  e.stopPropagation();
-  e.stopImmediatePropagation();
-
-  var type = btn.dataset.likeType;
-  var id = btn.dataset.likeId;
-  if (!type || !id) return;
-
+  // 2. Check Firestore likes for current user
   var uid = State.user && State.user.uid;
-  if (!uid) return;
+  console.log('--- FIRESTORE LIKES ---');
+  console.log('uid:', uid);
 
-  var wasLiked = !!(State.likedItems && State.likedItems[type] && State.likedItems[type][id]);
-  var nowLiked = !wasLiked;
+  if (uid) {
+    try {
+      var snap = await getDocs(
+        query(collection(db, 'likes'), where('userId', '==', uid))
+      );
+      console.log('likes count:', snap.size);
+      snap.forEach(function(d) {
+        console.log('LIKE DOC:', d.id, d.data());
+      });
+    } catch (e) {
+      console.log('likes query err:', e.message);
+    }
 
-  State.likedItems = State.likedItems || {};
-  State.likedItems[type] = State.likedItems[type] || {};
-  State.likedItems[type][id] = nowLiked;
-
-  var icon = btn.querySelector('i, svg');
-  if (icon) {
-    if (nowLiked) icon.setAttribute('fill', 'currentColor');
-    else icon.removeAttribute('fill');
+    try {
+      var allSnap = await getDocs(collection(db, 'likes'));
+      var matches = allSnap.docs.filter(function(d) {
+        return d.id.endsWith('_' + uid) ||
+          d.data().userId === uid ||
+          d.data().uid === uid;
+      });
+      console.log('UID matches across likes collection:', matches.length);
+      matches.forEach(function(d) {
+        console.log('MATCH:', d.id, d.data());
+      });
+    } catch (e) {
+      console.log('likes scan err:', e.message);
+    }
   }
-  btn.classList.toggle('text-primary', nowLiked);
-  btn.classList.toggle('text-gray-400', !nowLiked);
 
-  var numEl = btn.querySelector('span');
-  if (numEl) {
-    var cur = parseInt(numEl.textContent) || 0;
-    numEl.textContent = nowLiked ? cur + 1 : Math.max(0, cur - 1);
-  }
+  // 3. Inspect a sample home post and rendered HTML
+  console.log('--- HOME CACHE ---');
 
-  try {
-    var likeRef = doc(db, 'likes', type + '_' + id + '_' + uid);
-    var likeSnap = await getDoc(likeRef);
-    var coll = type === 'vault' ? 'vaults' : type === 'clip' ? 'clips' : type === 'comment' ? 'comments' : type === 'leak' ? 'leaks' : type === 'post' ? 'posts' : type === 'lobby' ? 'lobbies' : 'vaults';
-    var itemRef = doc(db, coll, id);
-    if (nowLiked) {
-      if (!likeSnap.exists()) {
-        await setDoc(likeRef, { itemType: type, itemId: id, userId: uid, createdAt: serverTimestamp() });
-        try { await updateDoc(itemRef, { likes: increment(1) }); } catch(x) {}
+  if (typeof homeCache !== 'undefined' && homeCache && homeCache.feed) {
+    console.log('feed length:', homeCache.feed.length);
+
+    var post = homeCache.feed.find(function(p) {
+      return p.type === 'post';
+    });
+
+    if (post) {
+      console.log('--- SAMPLE POST ---');
+      console.log(JSON.stringify(post, null, 2));
+      console.log('--- RENDERED HTML ---');
+
+      try {
+        console.log(renderHomePostCard(post));
+      } catch (e) {
+        console.log('render err:', e.message);
       }
     } else {
-      if (likeSnap.exists()) {
-        await deleteDoc(likeRef);
-        try { await updateDoc(itemRef, { likes: increment(-1) }); } catch(x) {}
-      }
+      console.log('No post with type === "post" in homeCache.feed');
+      console.log('Feed sample:', homeCache.feed.slice(0, 3));
     }
-  } catch (err) {
-    State.likedItems[type][id] = wasLiked;
-    if (icon) {
-      if (wasLiked) icon.setAttribute('fill', 'currentColor');
-      else icon.removeAttribute('fill');
-    }
-    btn.classList.toggle('text-primary', wasLiked);
-    btn.classList.toggle('text-gray-400', !wasLiked);
-    if (numEl) {
-      var cur2 = parseInt(numEl.textContent) || 0;
-      numEl.textContent = wasLiked ? cur2 + 1 : Math.max(0, cur2 - 1);
-    }
+  } else {
+    console.log('homeCache.feed unavailable');
   }
-}, true);
 
-async function __loadLikedItems() {
-  var uid = State.user && State.user.uid;
-  if (!uid) return;
-  try {
-    var snap = await getDocs(query(collection(db, 'likes'), where('userId', '==', uid)));
-    State.likedItems = State.likedItems || {};
-    snap.forEach(function(d) {
-      var data = d.data();
-      var t = data.itemType;
-      if (!t) return;
-      State.likedItems[t] = State.likedItems[t] || {};
-      State.likedItems[t][data.itemId] = true;
-    });
-    __paintHearts();
-  } catch(e) { console.warn('Liked items load failed:', e); }
-}
+  // 4. Check current likedItems state
+  console.log('--- STATE.LIKEDITEMS ---');
+  console.log(JSON.stringify(State.likedItems, null, 2));
 
-function __paintHearts() {
-  document.querySelectorAll('[data-like-type][data-like-id]').forEach(function(btn) {
-    var t = btn.dataset.likeType;
-    var id = btn.dataset.likeId;
-    var liked = !!(State.likedItems[t] && State.likedItems[t][id]);
-    var icon = btn.querySelector('i, svg');
-    if (icon) {
-      if (liked) icon.setAttribute('fill', 'currentColor');
-      else icon.removeAttribute('fill');
+  // 5. Inspect existing like functions without modifying anything
+  console.log('--- LIKE FUNCTION SOURCES ---');
+
+  ['likeItem', 'unlikeItem', 'toggleLike'].forEach(function(name) {
+    try {
+      var fn = eval(name);
+      console.log(name + ':', typeof fn === 'function' ? fn.toString() : 'not a function');
+    } catch (e) {
+      console.log(name + ': unavailable -', e.message);
     }
-    btn.classList.toggle('text-primary', liked);
-    btn.classList.toggle('text-gray-400', !liked);
   });
-}
 
-setTimeout(__loadLikedItems, 2000);
-document.addEventListener('click', function(e) {
-  if (e.target.closest('.home-filter-btn')) setTimeout(__loadLikedItems, 1200);
-}, true);
-
-document.addEventListener('pointerdown', function(e) {
-  if (e.target.closest('button')) return;
-  var u = e.target.closest('[data-profile-uid]');
-  if (!u) return;
-  var uid = u.dataset.profileUid;
-  if (!uid) return;
-  var ov = document.getElementById('post-detail-overlay');
-  if (ov) { ov.remove(); document.body.style.overflow = ''; }
-  setTimeout(function() {
-    var sheet = document.getElementById('sheet-container');
-    if (sheet) sheet.style.zIndex = '99999';
-  }, 40);
-}, true);
-
-document.addEventListener('click', function(e) {
-  var img = e.target.closest('img');
-  if (!img) return;
-  if (img.closest('#pd-zoom-overlay')) return;
-  if (img.id === 'pd-zoom-img') return;
-  if (!img.closest('.home-card') && !img.closest('#post-detail-overlay')) return;
-  if (img.width < 100) return;
-
-  e.preventDefault();
-  e.stopPropagation();
-  e.stopImmediatePropagation();
-
-  var overlay = document.createElement('div');
-  overlay.id = 'pd-zoom-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.98);display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;';
-  overlay.innerHTML = '<div id="pd-zoom-close" style="position:absolute;top:12px;right:12px;z-index:2;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;cursor:pointer;">✕</div><img id="pd-zoom-img" src="' + img.src + '" style="max-width:100%;max-height:100%;object-fit:contain;transform-origin:center center;transition:transform 0.05s;user-select:none;-webkit-user-drag:none;" />';
-  document.body.appendChild(overlay);
-  document.getElementById('pd-zoom-close').onclick = function() { overlay.remove(); };
-
-  var zi = document.getElementById('pd-zoom-img');
-  var scale = 1, lastScale = 1, posX = 0, posY = 0, lastPosX = 0, lastPosY = 0;
-  var startX = 0, startY = 0, startDist = 0, touchMode = '';
-
-  zi.addEventListener('touchstart', function(ev) {
-    if (ev.touches.length === 2) {
-      touchMode = 'pinch';
-      startDist = Math.hypot(ev.touches[0].pageX - ev.touches[1].pageX, ev.touches[0].pageY - ev.touches[1].pageY);
-      lastScale = scale;
-    } else if (ev.touches.length === 1) {
-      touchMode = 'pan';
-      startX = ev.touches[0].pageX - lastPosX;
-      startY = ev.touches[0].pageY - lastPosY;
-    }
-  }, { passive: true });
-
-  zi.addEventListener('touchmove', function(ev) {
-    if (touchMode === 'pinch' && ev.touches.length === 2) {
-      var d = Math.hypot(ev.touches[0].pageX - ev.touches[1].pageX, ev.touches[0].pageY - ev.touches[1].pageY);
-      scale = Math.min(5, Math.max(1, lastScale * (d / startDist)));
-      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
-    } else if (touchMode === 'pan' && ev.touches.length === 1 && scale > 1) {
-      posX = ev.touches[0].pageX - startX;
-      posY = ev.touches[0].pageY - startY;
-      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
-    }
-  }, { passive: true });
-
-  zi.addEventListener('touchend', function() {
-    lastPosX = posX; lastPosY = posY;
-    if (scale <= 1) { posX = 0; posY = 0; lastPosX = 0; lastPosY = 0; }
-    touchMode = '';
-  }, { passive: true });
-
-  var lastTap = 0;
-  zi.addEventListener('touchend', function() {
-    var now = Date.now();
-    if (now - lastTap < 300) {
-      if (scale > 1) { scale = 1; posX = 0; posY = 0; } else { scale = 2.5; }
-      lastScale = scale;
-      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
-    }
-    lastTap = now;
-  });
-}, true);
-
-console.log('✅ Chunk 57 v2 Part A loaded');
+  console.log('--- DIAGNOSTICS COMPLETE ---');
+};
