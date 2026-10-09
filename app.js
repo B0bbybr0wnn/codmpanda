@@ -23008,9 +23008,10 @@ document.addEventListener('click', function(e) {
 
 console.log('✅ Chunk 56 loaded');
 // ============================================
-// CHUNK 57 — Load liked items + tag card author
+// CHUNK 57 (surgical) — Likes + profile tap + zoom
 // ============================================
 
+// 57a: Load user's liked items into State and paint hearts
 async function __loadLikesAndPaint() {
   var uid = State.user && State.user.uid;
   if (!uid) return;
@@ -23024,61 +23025,75 @@ async function __loadLikesAndPaint() {
       State.likedItems[t] = State.likedItems[t] || {};
       State.likedItems[t][data.itemId] = true;
     });
-
-    document.querySelectorAll('.post-like-btn').forEach(function(btn) {
-      var pid = btn.dataset.id;
-      if (!pid) return;
-      var liked = !!(State.likedItems.post && State.likedItems.post[pid]);
-      var icon = btn.querySelector('i, svg');
-      if (icon) {
-        if (liked) icon.setAttribute('fill', 'currentColor');
-        else icon.removeAttribute('fill');
-      }
-      btn.classList.toggle('text-primary', liked);
-      btn.classList.toggle('text-gray-400', !liked);
-    });
-
-    document.querySelectorAll('.comment-like-btn').forEach(function(btn) {
-      var cid = btn.dataset.id;
-      if (!cid) return;
-      var liked = !!(State.likedItems.comment && State.likedItems.comment[cid]);
-      var icon = btn.querySelector('i, svg');
-      if (icon) {
-        if (liked) icon.setAttribute('fill', 'currentColor');
-        else icon.removeAttribute('fill');
-      }
-      btn.classList.toggle('text-primary', liked);
-      btn.classList.toggle('text-gray-400', !liked);
-    });
+    __paintAllHearts();
   } catch(e) { console.warn('loadLikes failed:', e); }
 }
 
-setTimeout(__loadLikesAndPaint, 2000);
-setTimeout(__loadLikesAndPaint, 4000);
+function __paintAllHearts() {
+  document.querySelectorAll('.post-like-btn').forEach(function(btn) {
+    var pid = btn.dataset.id;
+    if (!pid) return;
+    var liked = !!(State.likedItems && State.likedItems.post && State.likedItems.post[pid]);
+    var icon = btn.querySelector('i, svg');
+    if (icon) {
+      if (liked) icon.setAttribute('fill', 'currentColor');
+      else icon.removeAttribute('fill');
+    }
+    btn.classList.toggle('text-primary', liked);
+    btn.classList.toggle('text-gray-400', !liked);
+  });
+  document.querySelectorAll('.comment-like-btn').forEach(function(btn) {
+    var cid = btn.dataset.id;
+    if (!cid) return;
+    var liked = !!(State.likedItems && State.likedItems.comment && State.likedItems.comment[cid]);
+    var icon = btn.querySelector('i, svg');
+    if (icon) {
+      if (liked) icon.setAttribute('fill', 'currentColor');
+      else icon.removeAttribute('fill');
+    }
+    btn.classList.toggle('text-primary', liked);
+    btn.classList.toggle('text-gray-400', !liked);
+  });
+}
 
+setTimeout(__loadLikesAndPaint, 2000);
+setTimeout(__loadLikesAndPaint, 4500);
 document.addEventListener('click', function(e) {
-  if (e.target.closest('.home-filter-btn')) {
-    setTimeout(__loadLikesAndPaint, 1500);
-  }
+  if (e.target.closest('.home-filter-btn')) setTimeout(__loadLikesAndPaint, 1500);
 }, true);
 
-var _origRenderHPC57 = renderHomePostCard;
-renderHomePostCard = function(post) {
-  var html = _origRenderHPC57(post);
-  if (!post || !post.uid) return html;
-  html = html.replace(
-    /<div class="w-11 h-11 rounded-full[^"]*"/,
-    '<div data-profile-uid="' + post.uid + '" style="cursor:pointer;" class="w-11 h-11 rounded-full'
-  );
-  html = html.replace(
-    /(<div class="font-bold[^"]*"[^>]*)(>)/,
-    '$1 data-profile-uid="' + post.uid + '" style="cursor:pointer;"$2'
-  );
-  return html;
-};
-
+// 57b: Profile tap — works on any [data-uid] inside home cards (avatar OR name)
+//   Uses click delegation at window capture so nothing blocks it.
 window.addEventListener('click', function(e) {
   if (e.target.closest('button')) return;
+  if (document.getElementById('post-detail-overlay')) return;
+
+  var card = e.target.closest('.home-card');
+  if (!card) return;
+
+  // Find author element — either data-uid or a name/avatar div
+  var authorEl = e.target.closest('[data-uid], [data-profile-uid]');
+  if (!authorEl) {
+    // Try looking up: clicked on img inside a rounded-full div, or a bold name
+    var imgEl = e.target.closest('img');
+    if (imgEl) {
+      var av = imgEl.closest('div[class*="rounded-full"], div[class*="w-11"]');
+      if (av) {
+        // Try to find author uid from card attributes
+        var uid = card.dataset.uid;
+        if (uid) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); window.openUserProfile(uid); return; }
+      }
+    }
+  }
+  // If we didn't handle it, do nothing (let card tap open post)
+}, true);
+
+// 57c: Same for inside post detail — avatar tap opens profile
+document.addEventListener('click', function(e) {
+  var ov = document.getElementById('post-detail-overlay');
+  if (!ov) return;
+  if (e.target.closest('button')) return;
+
   var u = e.target.closest('[data-profile-uid]');
   if (!u) return;
   var uid = u.dataset.profileUid;
@@ -23086,13 +23101,79 @@ window.addEventListener('click', function(e) {
   e.preventDefault();
   e.stopPropagation();
   e.stopImmediatePropagation();
-  var ov = document.getElementById('post-detail-overlay');
-  if (ov) { ov.remove(); document.body.style.overflow = ''; }
+  ov.remove();
+  document.body.style.overflow = '';
   setTimeout(function() {
-    if (typeof window.openUserProfile === 'function') window.openUserProfile(uid);
+    window.openUserProfile(uid);
     var sheet = document.getElementById('sheet-container');
     if (sheet) sheet.style.zIndex = '99999';
   }, 30);
 }, true);
 
-console.log('✅ Chunk 57 loaded');
+// 57d: Image zoom
+document.addEventListener('click', function(e) {
+  var img = e.target.closest('img');
+  if (!img) return;
+  if (img.closest('#pd-zoom-overlay')) return;
+  if (img.id === 'pd-zoom-img') return;
+  if (!img.closest('.home-card') && !img.closest('#post-detail-overlay')) return;
+  if (img.width < 100) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'pd-zoom-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.98);display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;';
+  overlay.innerHTML = '<div id="pd-zoom-close" style="position:absolute;top:12px;right:12px;z-index:2;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;cursor:pointer;">✕</div><img id="pd-zoom-img" src="' + img.src + '" style="max-width:100%;max-height:100%;object-fit:contain;transform-origin:center center;transition:transform 0.05s;user-select:none;-webkit-user-drag:none;" />';
+  document.body.appendChild(overlay);
+  document.getElementById('pd-zoom-close').onclick = function() { overlay.remove(); };
+
+  var zi = document.getElementById('pd-zoom-img');
+  var scale = 1, lastScale = 1, posX = 0, posY = 0, lastPosX = 0, lastPosY = 0;
+  var startX = 0, startY = 0, startDist = 0, touchMode = '';
+
+  zi.addEventListener('touchstart', function(ev) {
+    if (ev.touches.length === 2) {
+      touchMode = 'pinch';
+      startDist = Math.hypot(ev.touches[0].pageX - ev.touches[1].pageX, ev.touches[0].pageY - ev.touches[1].pageY);
+      lastScale = scale;
+    } else if (ev.touches.length === 1) {
+      touchMode = 'pan';
+      startX = ev.touches[0].pageX - lastPosX;
+      startY = ev.touches[0].pageY - lastPosY;
+    }
+  }, { passive: true });
+
+  zi.addEventListener('touchmove', function(ev) {
+    if (touchMode === 'pinch' && ev.touches.length === 2) {
+      var d = Math.hypot(ev.touches[0].pageX - ev.touches[1].pageX, ev.touches[0].pageY - ev.touches[1].pageY);
+      scale = Math.min(5, Math.max(1, lastScale * (d / startDist)));
+      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
+    } else if (touchMode === 'pan' && ev.touches.length === 1 && scale > 1) {
+      posX = ev.touches[0].pageX - startX;
+      posY = ev.touches[0].pageY - startY;
+      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
+    }
+  }, { passive: true });
+
+  zi.addEventListener('touchend', function() {
+    lastPosX = posX; lastPosY = posY;
+    if (scale <= 1) { posX = 0; posY = 0; lastPosX = 0; lastPosY = 0; }
+    touchMode = '';
+  }, { passive: true });
+
+  var lastTap = 0;
+  zi.addEventListener('touchend', function() {
+    var now = Date.now();
+    if (now - lastTap < 300) {
+      if (scale > 1) { scale = 1; posX = 0; posY = 0; } else { scale = 2.5; }
+      lastScale = scale;
+      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
+    }
+    lastTap = now;
+  });
+}, true);
+
+console.log('✅ Chunk 57 surgical loaded');
