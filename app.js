@@ -22950,13 +22950,13 @@ function renderMentionPopup(inputEl, users) {
   popup.querySelectorAll('.mention-item').forEach(function(item){
     item.onclick = function(e){
       e.preventDefault(); e.stopPropagation();
-      insertMention(inputEl, item.dataset.ign);
+      window.__pandaInsertMention(inputEl, item.dataset.ign);
       closeMention();
     };
   });
 }
 
-function insertMention(inputEl, ign) {
+window.__pandaInsertMention = function(inputEl, ign) {
   var val = inputEl.value;
   var caret = inputEl.selectionStart || val.length;
   var before = val.slice(0, caret);
@@ -22968,7 +22968,7 @@ function insertMention(inputEl, ign) {
   var newCaret = atIdx + ign.length + 2;
   inputEl.setSelectionRange(newCaret, newCaret);
   inputEl.focus();
-}
+};
 
 async function openMentionFor(inputEl, query) {
   await loadFriendProfiles();
