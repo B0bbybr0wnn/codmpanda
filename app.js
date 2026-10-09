@@ -22810,3 +22810,19 @@ wireHomeCards = function(items) {
 };
 
 console.log('✅ Chunk 54 v2: Post Detail View (clean) loaded');
+window.__peek = async function() {
+  var p = homeCache.feed.filter(function(i){return i.type==='post';})[0];
+  if (!p) return console.log('no posts');
+  var s = await getDocs(query(collection(db,'comments'),where('contentId','==',p.id)));
+  var pd = await getDoc(doc(db,'posts',p.id));
+  console.log('postId:', p.id);
+  console.log('homeCache post.likes:', p.likes);
+  console.log('comments in firestore:', s.size);
+  s.forEach(function(d){var c=d.data();console.log(' →', c.text, '| parent:', c.parentId||'none');});
+  if (pd.exists()) {
+    console.log('FIRESTORE post.likes:', pd.data().likes, '| commentCount:', pd.data().commentCount);
+  } else {
+    console.log('❌ posts/' + p.id + ' NOT FOUND in Firestore');
+  }
+};
+console.log('✅ run __peek()');
