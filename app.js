@@ -22391,14 +22391,27 @@ console.log('✅ Chunk 53: Complete Pro benefits loaded');
 
 /* END OF CHUNK 53 */
 // ============================================
-// CHUNK 54 v2 — Post Detail View (clean rebuild)
+// CHUNK 54-56 (MERGED) — Post Detail + Profile + Mentions
 // ============================================
 
-window.openPostDetail = function(postId) {
+// ---------- Profile tap (capture phase — runs FIRST) ----------
+document.addEventListener('click', function(e) {
+  if (e.target.closest('button')) return;
+  var u = e.target.closest('[data-profile-uid]');
+  if (!u) return;
+  var uid = u.dataset.profileUid;
+  if (!uid) return;
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+  if (typeof window.openUserProfile === 'function') window.openUserProfile(uid);
+}, true);
+
+// ---------- Open Post Detail ----------
+window.openPostDetail = async function(postId) {
   var post = (homeCache && homeCache.feed) ? homeCache.feed.find(function(p) { return p.id === postId; }) : null;
   if (!post) { toast('Post not found', 'error'); return; }
 
-  // Block body scroll while open
   document.body.style.overflow = 'hidden';
 
   var ov = document.createElement('div');
@@ -22406,75 +22419,50 @@ window.openPostDetail = function(postId) {
   ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;overflow-y:auto;-webkit-overflow-scrolling:touch;';
   ov.innerHTML = [
     '<div style="position:sticky;top:0;z-index:10;background:rgba(0,0,0,.95);backdrop-filter:blur(12px);border-bottom:1px solid #222;display:flex;align-items:center;gap:12px;padding:12px 16px;">',
-      '<button id="pd-back" class="btn-press" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:#fff;">',
-        '<i data-lucide="arrow-left" class="w-5 h-5"></i>',
-      '</button>',
+      '<button id="pd-back" class="btn-press" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:#fff;"><i data-lucide="arrow-left" class="w-5 h-5"></i></button>',
       '<div style="font-weight:700;font-size:16px;color:#fff;">Post</div>',
     '</div>',
-
     '<div style="padding:16px 16px 120px;">',
-
-      // Post author row
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">',
-        '<div id="pd-author-avatar" data-uid="' + (post.uid || '') + '" style="width:40px;height:40px;border-radius:50%;background:rgba(255,107,0,.2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;overflow:hidden;flex-shrink:0;cursor:pointer;color:#ff6b00;">',
+        '<div id="pd-author-avatar" data-profile-uid="' + (post.uid || '') + '" style="width:40px;height:40px;border-radius:50%;background:rgba(255,107,0,.2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;overflow:hidden;flex-shrink:0;cursor:pointer;color:#ff6b00;">',
           (post.avatar ? '<img src="' + esc(post.avatar) + '" style="width:100%;height:100%;object-fit:cover;" />' : getInitials(post.ign || '?')),
         '</div>',
         '<div style="flex:1;min-width:0;">',
-          '<div id="pd-author-name" data-uid="' + (post.uid || '') + '" style="font-weight:700;font-size:14px;color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">',
+          '<div id="pd-author-name" data-profile-uid="' + (post.uid || '') + '" style="font-weight:700;font-size:14px;color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">',
             esc(post.ign || 'Unknown'),
             (post.verified ? '<span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#1DA1F2;color:#fff;font-size:9px;font-weight:900;">✓</span>' : ''),
           '</div>',
-          '<div style="font-size:11px;color:#888;margin-top:2px;">' + timeAgo(post.createdAt) + (post.editedAt ? ' · edited' : '') + '</div>',
+          '<div id="pd-author-time" style="font-size:11px;color:#888;margin-top:2px;">' + timeAgo(post.createdAt) + (post.editedAt ? ' · edited' : '') + '</div>',
         '</div>',
-        '<button id="pd-menu" class="btn-press" style="width:32px;height:32px;border-radius:50%;background:transparent;border:none;color:#888;display:flex;align-items:center;justify-content:center;">',
-          '<i data-lucide="more-vertical" class="w-4 h-4"></i>',
-        '</button>',
+        '<button id="pd-menu" class="btn-press" style="width:32px;height:32px;border-radius:50%;background:transparent;border:none;color:#888;display:flex;align-items:center;justify-content:center;"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>',
       '</div>',
-
-      // Post text
       (post.text ? '<div style="font-size:15px;line-height:1.5;color:#e8e8e8;margin-bottom:14px;white-space:pre-wrap;word-break:break-word;">' + esc(post.text) + '</div>' : ''),
-
-      // Post image (full)
       (post.imageUrl ? '<div style="border-radius:16px;overflow:hidden;margin-bottom:14px;border:1px solid #222;"><img src="' + esc(post.imageUrl) + '" style="width:100%;display:block;" /></div>' : ''),
-
-      // Stats row
       '<div style="display:flex;align-items:center;gap:20px;padding:12px 0;border-top:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;">',
-        '<button id="pd-like-btn" class="btn-press" data-id="' + post.id + '" style="background:none;border:none;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:' + (isPostLiked(post.id) ? '#ff6b00' : '#888') + ';">',
-          '<i data-lucide="heart" class="w-5 h-5" ' + (isPostLiked(post.id) ? 'fill="currentColor"' : '') + '></i>',
+        '<button id="pd-like-btn" class="btn-press" style="background:none;border:none;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#888;">',
+          '<i data-lucide="heart" class="w-5 h-5"></i>',
           '<span id="pd-like-count">' + (post.likes || 0) + '</span>',
         '</button>',
         '<div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#888;">',
           '<i data-lucide="message-circle" class="w-5 h-5"></i>',
           '<span id="pd-comment-count">' + (post.commentCount || 0) + '</span>',
         '</div>',
-        '<button id="pd-share-btn" class="btn-press" style="background:none;border:none;margin-left:auto;color:#888;display:flex;align-items:center;">',
-          '<i data-lucide="share-2" class="w-5 h-5"></i>',
-        '</button>',
+        '<button id="pd-share-btn" class="btn-press" style="background:none;border:none;margin-left:auto;color:#888;display:flex;align-items:center;"><i data-lucide="share-2" class="w-5 h-5"></i></button>',
       '</div>',
-
-      // Comments header
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:12px;">',
         '<div style="font-size:12px;font-weight:800;color:#888;text-transform:uppercase;letter-spacing:.5px;">Comments</div>',
         '<div id="pd-comment-count-label" style="font-size:11px;color:#666;"></div>',
       '</div>',
-
-      // Comments list
-      '<div id="pd-comments-list" style="display:flex;flex-direction:column;gap:12px;">',
-        '<div style="text-align:center;padding:20px 0;"><div class="spinner" style="margin:0 auto;"></div></div>',
-      '</div>',
+      '<div id="pd-comments-list" style="display:flex;flex-direction:column;gap:12px;"><div style="text-align:center;padding:20px 0;"><div class="spinner" style="margin:0 auto;"></div></div></div>',
     '</div>',
-
-    // Sticky comment input
     '<div style="position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0a0a0a;border-top:1px solid #222;padding:10px 14px;padding-bottom:calc(10px + env(safe-area-inset-bottom));">',
-      '<div id="pd-reply-indicator" style="display:none;margin-bottom:8px;padding:8px 12px;background:rgba(255,107,0,.1);border:1px solid rgba(255,107,0,.3);border-radius:8px;display:none;align-items:center;justify-content:space-between;">',
+      '<div id="pd-reply-indicator" style="display:none;margin-bottom:8px;padding:8px 12px;background:rgba(255,107,0,.1);border:1px solid rgba(255,107,0,.3);border-radius:8px;align-items:center;justify-content:space-between;">',
         '<div id="pd-reply-text" style="font-size:11px;color:#ff6b00;font-weight:700;"></div>',
         '<button id="pd-reply-cancel" style="background:none;border:none;color:#888;font-size:14px;">✕</button>',
       '</div>',
       '<div style="display:flex;gap:8px;align-items:center;">',
         '<input id="pd-input" type="text" placeholder="Write a comment..." maxlength="300" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:11px 14px;font-size:14px;color:#fff;outline:none;" />',
-        '<button id="pd-send" class="btn-press" style="width:44px;height:44px;border-radius:12px;background:#ff6b00;border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0;">',
-          '<i data-lucide="send" class="w-5 h-5" style="color:#fff;"></i>',
-        '</button>',
+        '<button id="pd-send" class="btn-press" style="width:44px;height:44px;border-radius:12px;background:#ff6b00;border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i data-lucide="send" class="w-5 h-5" style="color:#fff;"></i></button>',
       '</div>',
     '</div>'
   ].join('');
@@ -22482,69 +22470,21 @@ window.openPostDetail = function(postId) {
   document.body.appendChild(ov);
   if (window.lucide) window.lucide.createIcons();
 
-  // ---- Wire back button ----
   document.getElementById('pd-back').onclick = function() {
     ov.remove();
     document.body.style.overflow = '';
   };
 
-  // ---- Author links ----
-  var authorUid = post.uid || '';
-  if (authorUid) {
-    ['pd-author-avatar', 'pd-author-name'].forEach(function(id) {
-      var el = document.getElementById(id);
-      if (el) el.onclick = function() { closeDetail(); openUserProfile(authorUid); };
-    });
-  }
-
-  // ---- Menu (edit/delete) ----
   document.getElementById('pd-menu').onclick = function() {
     if (typeof window.openPostMenu === 'function') window.openPostMenu(post.id);
   };
 
-  // ---- Like button ----
-  var likeBtn = document.getElementById('pd-like-btn');
-  var likeCount = document.getElementById('pd-like-count');
-  likeBtn.onclick = async function() {
-    var wasLiked = isPostLiked(post.id);
-    var nowLiked = !wasLiked;
-    State.likedItems = State.likedItems || {};
-    State.likedItems.post = State.likedItems.post || {};
-    State.likedItems.post[post.id] = nowLiked;
-
-    var currentCount = parseInt(likeCount.textContent) || 0;
-    var newCount = nowLiked ? currentCount + 1 : Math.max(0, currentCount - 1);
-    likeCount.textContent = newCount;
-    likeBtn.style.color = nowLiked ? '#ff6b00' : '#888';
-    var icon = likeBtn.querySelector('i, svg');
-    if (icon) {
-      if (nowLiked) icon.setAttribute('fill', 'currentColor');
-      else icon.removeAttribute('fill');
-    }
-
-    try {
-      await toggleLike('post', post.id, 'likes');
-      post.likes = newCount;
-    } catch (e) {
-      State.likedItems.post[post.id] = wasLiked;
-      likeCount.textContent = currentCount;
-      likeBtn.style.color = wasLiked ? '#ff6b00' : '#888';
-      toast('Failed', 'error');
-    }
-  };
-
-  // ---- Share ----
   document.getElementById('pd-share-btn').onclick = function() {
     if (typeof window.openShareSheet === 'function') {
-      window.openShareSheet({
-        title: 'CODMPanda Post',
-        text: 'Check out this post on CODMPanda!',
-        url: location.origin + '/?post=' + post.id
-      });
+      window.openShareSheet({ title: 'CODMPanda Post', text: 'Check out this post on CODMPanda!', url: location.origin + '/?post=' + post.id });
     }
   };
 
-  // ---- Comment input ----
   var pdInput = document.getElementById('pd-input');
   var pdSend = document.getElementById('pd-send');
   pdSend.onclick = function() { submitPostDetailComment(post.id); };
@@ -22557,56 +22497,74 @@ window.openPostDetail = function(postId) {
     pdInput.focus();
   };
 
-  // ---- Load comments ----
-  loadPostDetailComments(post.id);
+  // Fetch fresh post data (like/comment counts)
+  try {
+    var snap = await getDoc(doc(db, 'posts', postId));
+    if (snap.exists()) {
+      var fresh = snap.data();
 
-  // Close helper stored so nested code can use it
-  window.__closePostDetail = function() {
-    ov.remove();
-    document.body.style.overflow = '';
+      var cntEl = document.getElementById('pd-like-count');
+      if (cntEl && typeof fresh.likes === 'number') cntEl.textContent = fresh.likes;
+
+      var comCnt = document.getElementById('pd-comment-count');
+      if (comCnt && typeof fresh.commentCount === 'number') comCnt.textContent = fresh.commentCount;
+
+      var liked = await hasUserLiked('post', postId);
+      var likeBtn = document.getElementById('pd-like-btn');
+      if (likeBtn) {
+        likeBtn.style.color = liked ? '#ff6b00' : '#888';
+        var ic = likeBtn.querySelector('i, svg');
+        if (ic) { if (liked) ic.setAttribute('fill', 'currentColor'); else ic.removeAttribute('fill'); }
+      }
+    }
+  } catch(e) { console.warn('Fresh fetch failed:', e); }
+
+  // Wire like button
+  var likeBtn = document.getElementById('pd-like-btn');
+  likeBtn.onclick = async function() {
+    var wasLiked = await hasUserLiked('post', postId);
+    var nowLiked = !wasLiked;
+    var cntEl = document.getElementById('pd-like-count');
+    var cur = parseInt(cntEl.textContent) || 0;
+    cntEl.textContent = nowLiked ? cur + 1 : Math.max(0, cur - 1);
+    likeBtn.style.color = nowLiked ? '#ff6b00' : '#888';
+    var ic = likeBtn.querySelector('i, svg');
+    if (ic) { if (nowLiked) ic.setAttribute('fill', 'currentColor'); else ic.removeAttribute('fill'); }
+    try { await toggleLike('post', postId, 'likes'); }
+    catch (e) {
+      cntEl.textContent = cur;
+      likeBtn.style.color = wasLiked ? '#ff6b00' : '#888';
+      toast('Failed', 'error');
+    }
   };
+
+  loadPostDetailComments(postId);
 };
 
-function isPostLiked(postId) {
-  return (State.likedItems && State.likedItems.post && State.likedItems.post[postId]) || false;
-}
-
-
-
-// ---- Load comments in the detail view ----
+// ---------- Load Comments ----------
 window.loadPostDetailComments = async function(postId) {
   var listEl = document.getElementById('pd-comments-list');
   var countLabel = document.getElementById('pd-comment-count-label');
   if (!listEl) return;
 
   try {
-    var snap = await getDocs(query(
-      collection(db, 'comments'),
-      where('contentId', '==', postId),
-      limit(200)
-    ));
-
+    var snap = await getDocs(query(collection(db, 'comments'), where('contentId', '==', postId), limit(200)));
     var all = [];
     snap.forEach(function(d) { all.push(Object.assign({ id: d.id }, d.data())); });
-    all.sort(function(a, b) {
-      return (a.createdAt && a.createdAt.seconds || 0) - (b.createdAt && b.createdAt.seconds || 0);
-    });
+    all.sort(function(a, b) { return (a.createdAt && a.createdAt.seconds || 0) - (b.createdAt && b.createdAt.seconds || 0); });
 
     if (countLabel) countLabel.textContent = all.length + ' comment' + (all.length === 1 ? '' : 's');
 
     if (all.length === 0) {
-      listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;">' +
-        '<div style="font-size:36px;margin-bottom:8px;">💬</div>' +
-        '<div style="font-size:13px;color:#888;">No comments yet</div>' +
-        '<div style="font-size:11px;color:#555;margin-top:4px;">Be the first to reply</div>' +
-      '</div>';
+      listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;"><div style="font-size:36px;margin-bottom:8px;">💬</div><div style="font-size:13px;color:#888;">No comments yet</div><div style="font-size:11px;color:#555;margin-top:4px;">Be the first to reply</div></div>';
       return;
     }
 
-    // Top-level + replies grouped
-    var topLevel = all.filter(function(c) { return !c.parentId; });
+    // Handle orphans — replies whose parent is missing → promote to top-level
+    var ids = {}; all.forEach(function(c){ ids[c.id] = true; });
+    var topLevel = all.filter(function(c){ return !c.parentId || !ids[c.parentId]; });
     var byParent = {};
-    all.filter(function(c) { return c.parentId; }).forEach(function(c) {
+    all.filter(function(c){ return c.parentId && ids[c.parentId]; }).forEach(function(c) {
       if (!byParent[c.parentId]) byParent[c.parentId] = [];
       byParent[c.parentId].push(c);
     });
@@ -22623,54 +22581,42 @@ window.loadPostDetailComments = async function(postId) {
   if (window.lucide) window.lucide.createIcons();
 };
 
-// ---- Render a comment (with or without replies) ----
+// ---------- Render Single Comment ----------
 function renderPdComment(c, replies, depth) {
   var isMine = c.uid === State.user.uid;
   var isLiked = (State.likedItems && State.likedItems.comment && State.likedItems.comment[c.id]) || false;
   var indent = depth > 0 ? 'margin-left:36px;' : '';
 
   var h = '<div class="pd-comment" data-cid="' + c.id + '" style="' + indent + 'display:flex;gap:10px;align-items:flex-start;">';
-
-  // Avatar
-  h += '<div class="pd-user" data-uid="' + (c.uid || '') + '" style="width:32px;height:32px;border-radius:50%;background:rgba(255,107,0,.2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#ff6b00;overflow:hidden;flex-shrink:0;cursor:pointer;">';
+  h += '<div class="pd-user" data-profile-uid="' + (c.uid || '') + '" style="width:32px;height:32px;border-radius:50%;background:rgba(255,107,0,.2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#ff6b00;overflow:hidden;flex-shrink:0;cursor:pointer;">';
   h += c.avatar ? '<img src="' + esc(c.avatar) + '" style="width:100%;height:100%;object-fit:cover;" />' : getInitials(c.ign || '?');
   h += '</div>';
-
-  // Body
   h += '<div style="flex:1;min-width:0;">';
   h += '<div style="background:#141414;border:1px solid #222;border-radius:14px;padding:10px 12px;">';
-  h += '<div class="pd-user" data-uid="' + (c.uid || '') + '" style="font-size:12px;font-weight:700;color:#ff6b00;margin-bottom:3px;cursor:pointer;">';
-  h += esc(c.ign || 'Unknown');
+  h += '<div class="pd-user" data-profile-uid="' + (c.uid || '') + '" style="font-size:12px;font-weight:700;color:#ff6b00;margin-bottom:3px;cursor:pointer;">' + esc(c.ign || 'Unknown');
   if (c.edited) h += ' <span style="font-size:9px;color:#666;font-weight:400;">(edited)</span>';
   h += '</div>';
   h += '<div style="font-size:13px;color:#ddd;line-height:1.4;word-break:break-word;white-space:pre-wrap;">' + esc(c.text) + '</div>';
   h += '</div>';
-
-  // Action row
   h += '<div style="display:flex;align-items:center;gap:14px;margin-top:6px;margin-left:4px;">';
-  h += '<button class="pd-clike" data-cid="' + c.id + '" style="background:none;border:none;padding:0;font-size:11px;font-weight:700;color:' + (isLiked ? '#ff6b00' : '#666') + ';display:flex;align-items:center;gap:4px;cursor:pointer;">';
-  h += '❤️ <span class="pd-clikes">' + (c.likes || 0) + '</span></button>';
+  h += '<button class="pd-clike" data-cid="' + c.id + '" style="background:none;border:none;padding:0;font-size:11px;font-weight:700;color:' + (isLiked ? '#ff6b00' : '#666') + ';display:flex;align-items:center;gap:4px;cursor:pointer;">❤️ <span class="pd-clikes">' + (c.likes || 0) + '</span></button>';
   h += '<button class="pd-creply" data-cid="' + c.id + '" data-ign="' + esc(c.ign || '') + '" style="background:none;border:none;padding:0;font-size:11px;font-weight:700;color:#666;cursor:pointer;">Reply</button>';
   if (isMine) {
     h += '<button class="pd-cedit" data-cid="' + c.id + '" style="background:none;border:none;padding:0;font-size:11px;font-weight:700;color:#ff6b00;cursor:pointer;">Edit</button>';
     h += '<button class="pd-cdel" data-cid="' + c.id + '" style="background:none;border:none;padding:0;font-size:11px;font-weight:700;color:#f44;cursor:pointer;">Delete</button>';
   }
-  h += '</div>';
-  h += '</div>';
-  h += '</div>';
+  h += '</div></div></div>';
 
-  // Replies
   if (replies.length > 0 && depth === 0) {
     h += '<div class="pd-replies-wrap" data-parent="' + c.id + '" style="display:none;margin-top:10px;flex-direction:column;gap:12px;">';
     h += replies.map(function(r) { return renderPdComment(r, [], 1); }).join('');
     h += '</div>';
     h += '<button class="pd-expand" data-cid="' + c.id + '" data-count="' + replies.length + '" style="background:none;border:none;padding:6px 0 0 42px;font-size:11px;font-weight:700;color:#ff6b00;cursor:pointer;text-align:left;">▸ Show ' + replies.length + ' ' + (replies.length === 1 ? 'reply' : 'replies') + '</button>';
   }
-
   return h;
 }
 
-// ---- Wire detail comment interactions ----
+// ---------- Wire Comment Interactions ----------
 function wirePdComments(container, postId) {
   container.querySelectorAll('.pd-clike').forEach(function(btn) {
     btn.onclick = async function() {
@@ -22694,13 +22640,14 @@ function wirePdComments(container, postId) {
   });
 
   container.querySelectorAll('.pd-creply').forEach(function(btn) {
-    btn.onclick = function() {
+    btn.onclick = function(e) {
+      e.preventDefault(); e.stopPropagation();
       var cid = btn.dataset.cid;
       var ign = btn.dataset.ign;
       window.__pdReplyTo = { parentId: cid, ign: ign };
       var ind = document.getElementById('pd-reply-indicator');
       var txt = document.getElementById('pd-reply-text');
-      if (ind) { ind.style.display = 'flex'; }
+      if (ind) ind.style.display = 'flex';
       if (txt) txt.textContent = 'Replying to ' + ign + '...';
       var inp = document.getElementById('pd-input');
       if (inp) { inp.placeholder = 'Reply to ' + ign + '...'; inp.focus(); }
@@ -22719,30 +22666,26 @@ function wirePdComments(container, postId) {
   });
 
   container.querySelectorAll('.pd-cedit').forEach(function(btn) {
-    btn.onclick = function() { if (typeof openEditCommentSheet === 'function') openEditCommentSheet(btn.dataset.cid); };
-  });
-
-  container.querySelectorAll('.pd-cdel').forEach(function(btn) {
-    btn.onclick = function() {
-      confirmDialog('Delete Comment', 'This will remove your comment.', async function() {
-        try {
-          await deleteDoc(doc(db, 'comments', btn.dataset.cid));
-          toast('🗑 Deleted', 'success');
-          await loadPostDetailComments(postId);
-        } catch (e) { toast('Failed', 'error'); }
-      }, 'Delete', true);
+    btn.onclick = function(e) {
+      e.preventDefault(); e.stopPropagation();
+      if (typeof openEditCommentSheet === 'function') openEditCommentSheet(btn.dataset.cid);
     };
   });
 
-  container.querySelectorAll('.pd-user').forEach(function(el) {
-    el.onclick = function() {
-      var uid = el.dataset.uid;
-      if (uid && typeof openUserProfile === 'function') openUserProfile(uid);
+  container.querySelectorAll('.pd-cdel').forEach(function(btn) {
+    btn.onclick = async function(e) {
+      e.preventDefault(); e.stopPropagation();
+      if (!confirm('Delete this comment?')) return;
+      try {
+        await deleteDoc(doc(db, 'comments', btn.dataset.cid));
+        toast('🗑 Deleted', 'success');
+        await loadPostDetailComments(postId);
+      } catch (err) { toast('Failed', 'error'); }
     };
   });
 }
 
-// ---- Submit comment from detail view ----
+// ---------- Submit Comment from detail ----------
 window.submitPostDetailComment = async function(postId) {
   var input = document.getElementById('pd-input');
   if (!input) return;
@@ -22762,27 +22705,21 @@ window.submitPostDetailComment = async function(postId) {
       likes: 0,
       createdAt: serverTimestamp()
     };
-    if (window.__pdReplyTo && window.__pdReplyTo.parentId) {
-      data.parentId = window.__pdReplyTo.parentId;
-    }
+    if (window.__pdReplyTo && window.__pdReplyTo.parentId) data.parentId = window.__pdReplyTo.parentId;
     await addDoc(collection(db, 'comments'), data);
 
-    // Bump post.commentCount
     try {
       var pRef = doc(db, 'posts', postId);
       var pSnap = await getDoc(pRef);
       if (pSnap.exists()) await updateDoc(pRef, { commentCount: increment(1) });
     } catch (e) {}
 
-    // Clear reply state
     window.__pdReplyTo = null;
     var ind = document.getElementById('pd-reply-indicator');
     if (ind) ind.style.display = 'none';
     input.placeholder = 'Write a comment...';
 
-    // Reload comments
     await loadPostDetailComments(postId);
-    // Refresh count in stats row
     var countEl = document.getElementById('pd-comment-count');
     if (countEl) countEl.textContent = (parseInt(countEl.textContent) || 0) + 1;
   } catch (e) {
@@ -22794,147 +22731,38 @@ window.submitPostDetailComment = async function(postId) {
   }
 };
 
-// ---- Override wireHomeCards to add post-body tap ----
-var _origWireHomeCardsDetailV2 = wireHomeCards;
-wireHomeCards = function(items) {
-  _origWireHomeCardsDetailV2(items);
-  var feedEl = document.getElementById('home-feed');
-  if (!feedEl) return;
-  feedEl.querySelectorAll('.home-card[data-type="post"]').forEach(function(card) {
-    card.style.cursor = 'pointer';
-    card.addEventListener('click', function(e) {
-      // Ignore if user tapped a button/link inside
-      if (e.target.closest('button') || e.target.closest('a')) return;
-      var postId = card.dataset.id;
-      if (postId) window.openPostDetail(postId);
-    });
-  });
-};
-
-console.log('✅ Chunk 54 v2: Post Detail View (clean) loaded');
-// ============================================
-// CHUNK 55 — Profile links + Orphan replies + @ Mentions
-// ============================================
-
-// ---------- 55a: Delegated profile tap ----------
-document.addEventListener('click', function(e) {
-  if (e.target.closest('button')) return;
-  var u = e.target.closest('[data-profile-uid]');
-  if (u) {
-    var uid = u.dataset.profileUid;
-    if (uid && typeof window.openUserProfile === 'function') {
-      e.preventDefault();
-      e.stopPropagation();
-      window.openUserProfile(uid);
-    }
-  }
-}, true);
-
-// Patch openPostDetail to add data-profile-uid + fix clicks after open
-var _origOpenPostDetail55 = window.openPostDetail;
-window.openPostDetail = function(postId) {
-  _origOpenPostDetail55(postId);
-  setTimeout(function() {
-    var post = (homeCache && homeCache.feed) ? homeCache.feed.find(function(p){return p.id === postId;}) : null;
-    if (!post) return;
-    var nameEl = document.getElementById('pd-author-name');
-    var avEl = document.getElementById('pd-author-avatar');
-    if (nameEl && post.uid) { nameEl.setAttribute('data-profile-uid', post.uid); nameEl.style.cursor = 'pointer'; }
-    if (avEl && post.uid) { avEl.setAttribute('data-profile-uid', post.uid); avEl.style.cursor = 'pointer'; }
-  }, 50);
-};
-
-// After comments load, tag every .pd-user
-var _origLoadPostDetailComments55 = window.loadPostDetailComments;
-window.loadPostDetailComments = async function(postId) {
-  await _origLoadPostDetailComments55(postId);
-  setTimeout(function() {
-    document.querySelectorAll('#pd-comments-list .pd-user').forEach(function(el) {
-      var uid = el.dataset.uid;
-      if (uid) {
-        el.setAttribute('data-profile-uid', uid);
-        el.style.cursor = 'pointer';
-      }
-    });
-  }, 100);
-};
-
-// ---------- 55b: Orphan replies → promote to top-level ----------
-var _origLoadPostDetailComments55b = window.loadPostDetailComments;
-window.loadPostDetailComments = async function(postId) {
-  await _origLoadPostDetailComments55b(postId);
-  // After normal load, check for orphans and re-render
-  try {
-    var snap = await getDocs(query(collection(db, 'comments'), where('contentId', '==', postId), limit(200)));
-    var all = [];
-    snap.forEach(function(d){ all.push(Object.assign({ id: d.id }, d.data())); });
-    var ids = {}; all.forEach(function(c){ ids[c.id] = true; });
-    var orphans = all.filter(function(c){ return c.parentId && !ids[c.parentId]; });
-    if (!orphans.length) return;
-
-    var topLevel = all.filter(function(c){ return !c.parentId; }).concat(orphans);
-    var byParent = {};
-    all.filter(function(c){ return c.parentId; }).forEach(function(c){
-      if (!byParent[c.parentId]) byParent[c.parentId] = [];
-      byParent[c.parentId].push(c);
-    });
-
-    var listEl = document.getElementById('pd-comments-list');
-    if (!listEl) return;
-    listEl.innerHTML = topLevel.map(function(c){
-      return renderPdComment(c, byParent[c.id] || [], 0);
-    }).join('');
-    wirePdComments(listEl, postId);
-
-    // Re-tag users after re-render
-    setTimeout(function() {
-      document.querySelectorAll('#pd-comments-list .pd-user').forEach(function(el) {
-        var uid = el.dataset.uid;
-        if (uid) { el.setAttribute('data-profile-uid', uid); el.style.cursor = 'pointer'; }
-      });
-    }, 50);
-  } catch(e) { /* silent */ }
-  if (window.lucide) window.lucide.createIcons();
-};
-
-// ---------- 55c: @ Mention autocomplete ----------
+// ---------- @ Mention ----------
 var _mentionPopup = null;
 var _mentionInput = null;
 var _friendsCache = {};
 
-async function loadFriendProfiles() {
+async function _pdLoadFriends() {
   var friends = (State.profile && State.profile.friends) || [];
   var need = friends.filter(function(uid){ return !_friendsCache[uid]; });
   if (!need.length) return;
   try {
     var results = await Promise.all(need.map(async function(uid){
-      try {
-        var s = await getDoc(doc(db, 'users', uid));
-        return s.exists() ? Object.assign({ uid: uid }, s.data()) : null;
-      } catch(e) { return null; }
+      try { var s = await getDoc(doc(db, 'users', uid)); return s.exists() ? Object.assign({ uid: uid }, s.data()) : null; }
+      catch (e) { return null; }
     }));
-    results.forEach(function(u){
-      if (u && u.ign) _friendsCache[u.uid] = { ign: u.ign, avatar: u.avatar || '' };
-    });
+    results.forEach(function(u){ if (u && u.ign) _friendsCache[u.uid] = { ign: u.ign, avatar: u.avatar || '' }; });
     window.__friendsCache = _friendsCache;
-  } catch(e) { /* silent */ }
+  } catch (e) {}
 }
 
-function closeMention() {
+function _pdCloseMention() {
   if (_mentionPopup && _mentionPopup.parentNode) _mentionPopup.parentNode.removeChild(_mentionPopup);
   _mentionPopup = null; _mentionInput = null;
 }
 
-function renderMentionPopup(inputEl, users) {
-  closeMention();
+function _pdRenderMention(inputEl, users) {
+  _pdCloseMention();
   if (!users.length) return;
-
   var popup = document.createElement('div');
   popup.id = 'mention-popup';
   popup.style.cssText = 'position:fixed;left:12px;right:12px;background:#141414;border:1px solid #2a2a2a;border-radius:12px;max-height:220px;overflow-y:auto;z-index:99999;box-shadow:0 8px 24px rgba(0,0,0,.6);';
   var rect = inputEl.getBoundingClientRect();
   popup.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
-
   popup.innerHTML = users.slice(0, 8).map(function(u, i) {
     return '<div class="mention-item" data-ign="' + esc(u.ign || 'user') + '" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid ' + (i < users.length - 1 ? '#1a1a1a' : 'transparent') + ';">' +
       '<div style="width:28px;height:28px;border-radius:50%;background:rgba(255,107,0,.2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#ff6b00;overflow:hidden;">' +
@@ -22943,20 +22771,18 @@ function renderMentionPopup(inputEl, users) {
       '<div style="font-size:13px;font-weight:600;color:#fff;">@' + esc(u.ign || 'user') + '</div>' +
     '</div>';
   }).join('');
-
   document.body.appendChild(popup);
   _mentionPopup = popup; _mentionInput = inputEl;
-
   popup.querySelectorAll('.mention-item').forEach(function(item){
     item.onclick = function(e){
       e.preventDefault(); e.stopPropagation();
-      window.__pandaInsertMention(inputEl, item.dataset.ign);
-      closeMention();
+      _pdInsertMention(inputEl, item.dataset.ign);
+      _pdCloseMention();
     };
   });
 }
 
-window.__pandaInsertMention = function(inputEl, ign) {
+function _pdInsertMention(inputEl, ign) {
   var val = inputEl.value;
   var caret = inputEl.selectionStart || val.length;
   var before = val.slice(0, caret);
@@ -22965,13 +22791,13 @@ window.__pandaInsertMention = function(inputEl, ign) {
   var after = val.slice(caret);
   var newVal = val.slice(0, atIdx) + '@' + ign + ' ' + after;
   inputEl.value = newVal;
-  var newCaret = atIdx + ign.length + 2;
-  inputEl.setSelectionRange(newCaret, newCaret);
+  var nc = atIdx + ign.length + 2;
+  inputEl.setSelectionRange(nc, nc);
   inputEl.focus();
-};
+}
 
-async function openMentionFor(inputEl, query) {
-  await loadFriendProfiles();
+async function _pdOpenMention(inputEl, query) {
+  await _pdLoadFriends();
   var friends = (State.profile && State.profile.friends) || [];
   var results = [];
   friends.forEach(function(uid){
@@ -22980,39 +22806,44 @@ async function openMentionFor(inputEl, query) {
       results.push({ uid: uid, ign: p.ign, avatar: p.avatar });
     }
   });
-  // Always include own name if it matches
   var myIgn = State.profile && State.profile.ign;
   if (myIgn && myIgn.toLowerCase().indexOf(query.toLowerCase()) === 0 && !results.find(function(r){return r.uid === State.user.uid;})) {
     results.unshift({ uid: State.user.uid, ign: myIgn, avatar: State.profile.avatar || '' });
   }
-  renderMentionPopup(inputEl, results);
+  _pdRenderMention(inputEl, results);
 }
 
 document.addEventListener('input', function(e) {
   var t = e.target;
   if (!t || t.tagName !== 'INPUT') return;
   if (t.id !== 'pd-input' && t.id !== 'comment-input') return;
-
   var val = t.value;
   var caret = t.selectionStart || val.length;
   var before = val.slice(0, caret);
   var match = before.match(/@([a-zA-Z0-9_]*)$/);
-
-  if (match) {
-    openMentionFor(t, match[1]);
-  } else {
-    closeMention();
-  }
+  if (match) _pdOpenMention(t, match[1]);
+  else _pdCloseMention();
 }, true);
 
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeMention();
-}, true);
-
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') _pdCloseMention(); }, true);
 document.addEventListener('click', function(e) {
-  if (_mentionPopup && !_mentionPopup.contains(e.target) && e.target !== _mentionInput) {
-    closeMention();
-  }
+  if (_mentionPopup && !_mentionPopup.contains(e.target) && e.target !== _mentionInput) _pdCloseMention();
 }, true);
 
-console.log('✅ Chunk 55: Profile links + orphan replies + @ mentions loaded');
+// ---------- Override wireHomeCards to add post-body tap ----------
+var _origWireHomeCardsDetailFinal = wireHomeCards;
+wireHomeCards = function(items) {
+  _origWireHomeCardsDetailFinal(items);
+  var feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+  feedEl.querySelectorAll('.home-card[data-type="post"]').forEach(function(card) {
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', function(e) {
+      if (e.target.closest('button') || e.target.closest('a') || e.target.closest('[data-profile-uid]')) return;
+      var postId = card.dataset.id;
+      if (postId) window.openPostDetail(postId);
+    });
+  });
+};
+
+console.log('✅ Chunk 54-56 MERGED loaded');
