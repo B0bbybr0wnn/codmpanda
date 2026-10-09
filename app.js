@@ -20172,11 +20172,34 @@ renderHomeFeed = function() {
   }
 
   if (items.length === 0) {
+  var _emptyHTML = '';
+  if (homeFilter === 'all' || homeFilter === 'posts') {
     feedEl.innerHTML = renderHomeEmpty();
     wireHomeEmpty();
     if (window.lucide) window.lucide.createIcons();
     return;
   }
+  if (homeFilter === 'lfg') {
+    _emptyHTML = '<div class="flex flex-col items-center justify-center py-12 px-6 text-center fade-in"><div class="relative mb-5"><div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-gold/10 rounded-full blur-2xl"></div><div class="relative w-20 h-20 rounded-full bg-card border border-border flex items-center justify-center"><i data-lucide="gamepad-2" class="w-8 h-8 text-primary/70"></i></div></div><div class="text-lg font-black mb-2">No lobbies yet</div><div class="text-xs text-gray-500 max-w-[260px] leading-relaxed mb-5">Post a lobby and find your squad</div><button id="empty-lfg-btn" class="btn-press px-5 py-2.5 rounded-xl bg-primary text-white font-bold text-xs">Post Lobby</button></div>';
+  } else if (homeFilter === 'builds') {
+    _emptyHTML = '<div class="flex flex-col items-center justify-center py-12 px-6 text-center fade-in"><div class="relative mb-5"><div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-gold/10 rounded-full blur-2xl"></div><div class="relative w-20 h-20 rounded-full bg-card border border-border flex items-center justify-center"><i data-lucide="wrench" class="w-8 h-8 text-primary/70"></i></div></div><div class="text-lg font-black mb-2">No builds yet</div><div class="text-xs text-gray-500 max-w-[260px] leading-relaxed mb-5">Share a gunsmith, sensitivity, or HUD</div><button id="empty-builds-btn" class="btn-press px-5 py-2.5 rounded-xl bg-primary text-white font-bold text-xs">Share Build</button></div>';
+  } else if (homeFilter === 'clips') {
+    _emptyHTML = '<div class="flex flex-col items-center justify-center py-12 px-6 text-center fade-in"><div class="relative mb-5"><div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-gold/10 rounded-full blur-2xl"></div><div class="relative w-20 h-20 rounded-full bg-card border border-border flex items-center justify-center"><i data-lucide="video" class="w-8 h-8 text-primary/70"></i></div></div><div class="text-lg font-black mb-2">No clips yet</div><div class="text-xs text-gray-500 max-w-[260px] leading-relaxed mb-5">Post your best play — YouTube or TikTok link</div><button id="empty-clips-btn" class="btn-press px-5 py-2.5 rounded-xl bg-primary text-white font-bold text-xs">Post Clip</button></div>';
+  } else if (homeFilter === 'leaks') {
+    _emptyHTML = '<div class="flex flex-col items-center justify-center py-12 px-6 text-center fade-in"><div class="relative mb-5"><div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-gold/10 rounded-full blur-2xl"></div><div class="relative w-20 h-20 rounded-full bg-card border border-border flex items-center justify-center"><i data-lucide="flame" class="w-8 h-8 text-primary/70"></i></div></div><div class="text-lg font-black mb-2">No leaks yet</div><div class="text-xs text-gray-500 max-w-[260px] leading-relaxed mb-5">Check back soon for intel drops</div><button id="empty-leaks-btn" class="btn-press px-5 py-2.5 rounded-xl bg-primary text-white font-bold text-xs">Submit Leak</button></div>';
+  }
+  feedEl.innerHTML = _emptyHTML;
+  var _lfgBtn = document.getElementById('empty-lfg-btn');
+  var _bldBtn = document.getElementById('empty-builds-btn');
+  var _clpBtn = document.getElementById('empty-clips-btn');
+  var _lksBtn = document.getElementById('empty-leaks-btn');
+  if (_lfgBtn) _lfgBtn.onclick = openPostLobbySheet;
+  if (_bldBtn) _bldBtn.onclick = function() { labSubTab = 'vault'; switchTab('lab'); };
+  if (_clpBtn) _clpBtn.onclick = function() { squadSubTab = 'clips'; switchTab('squad'); };
+  if (_lksBtn) _lksBtn.onclick = openSubmitLeakSheet;
+  if (window.lucide) window.lucide.createIcons();
+  return;
+}
 
   feedEl.innerHTML = items.map(item => renderHomeCard(item)).join('');
   wireHomeCards(items);
