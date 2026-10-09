@@ -23008,12 +23008,11 @@ document.addEventListener('click', function(e) {
 
 console.log('✅ Chunk 56 loaded');
 // ============================================
-// CHUNK 57 — Universal like + profile + image zoom
+// ============================================
+// CHUNK 57 v2 — Part A (like handler + zoom)
 // ============================================
 
-// ---------- 57-0: Tag existing like buttons with data-like-type/id ----------
 function __tagLikeButtons() {
-  // Home feed post like buttons (dataset.id = postId)
   document.querySelectorAll('.post-like-btn').forEach(function(btn) {
     if (btn.dataset.likeType) return;
     var id = btn.dataset.id;
@@ -23021,8 +23020,6 @@ function __tagLikeButtons() {
     btn.dataset.likeType = 'post';
     btn.dataset.likeId = id;
   });
-
-  // Comment like buttons
   document.querySelectorAll('.comment-like-btn').forEach(function(btn) {
     if (btn.dataset.likeType) return;
     var id = btn.dataset.id;
@@ -23030,8 +23027,6 @@ function __tagLikeButtons() {
     btn.dataset.likeType = 'comment';
     btn.dataset.likeId = id;
   });
-
-  // Detail comment like buttons
   document.querySelectorAll('.pd-clike').forEach(function(btn) {
     if (btn.dataset.likeType) return;
     var id = btn.dataset.cid;
@@ -23039,22 +23034,11 @@ function __tagLikeButtons() {
     btn.dataset.likeType = 'comment';
     btn.dataset.likeId = id;
   });
-
-  // Vault/clip/leak like buttons (common patterns)
-  document.querySelectorAll('[data-like]').forEach(function(btn) {
-    if (btn.dataset.likeType) return;
-    var t = btn.dataset.like;
-    var id = btn.dataset.id;
-    if (!t || !id) return;
-    btn.dataset.likeType = t;
-    btn.dataset.likeId = id;
-  });
 }
 setTimeout(__tagLikeButtons, 1500);
-setInterval(__tagLikeButtons, 3000);   // re-tag after re-renders
+setInterval(__tagLikeButtons, 3000);
 
-// ---------- 57a: Universal like handler (delegated, capture) ----------
-document.addEventListener('click', async function(e) {
+window.addEventListener('click', async function(e) {
   var btn = e.target.closest('[data-like-type][data-like-id]');
   if (!btn) return;
   if (btn.dataset.likeHandled === '1') return;
@@ -23098,20 +23082,18 @@ document.addEventListener('click', async function(e) {
     var likeSnap = await getDoc(likeRef);
     var coll = type === 'vault' ? 'vaults' : type === 'clip' ? 'clips' : type === 'comment' ? 'comments' : type === 'leak' ? 'leaks' : type === 'post' ? 'posts' : type === 'lobby' ? 'lobbies' : 'vaults';
     var itemRef = doc(db, coll, id);
-
     if (nowLiked) {
       if (!likeSnap.exists()) {
         await setDoc(likeRef, { itemType: type, itemId: id, userId: uid, createdAt: serverTimestamp() });
-        await updateDoc(itemRef, { likes: increment(1) });
+        try { await updateDoc(itemRef, { likes: increment(1) }); } catch(x) {}
       }
     } else {
       if (likeSnap.exists()) {
         await deleteDoc(likeRef);
-        await updateDoc(itemRef, { likes: increment(-1) });
+        try { await updateDoc(itemRef, { likes: increment(-1) }); } catch(x) {}
       }
     }
   } catch (err) {
-    console.warn('Like sync failed:', err);
     State.likedItems[type][id] = wasLiked;
     if (icon) {
       if (wasLiked) icon.setAttribute('fill', 'currentColor');
@@ -23123,11 +23105,9 @@ document.addEventListener('click', async function(e) {
       var cur2 = parseInt(numEl.textContent) || 0;
       numEl.textContent = wasLiked ? cur2 + 1 : Math.max(0, cur2 - 1);
     }
-    toast('Like failed', 'error');
   }
 }, true);
 
-// ---------- 57b: Load user's liked items and paint hearts ----------
 async function __loadLikedItems() {
   var uid = State.user && State.user.uid;
   if (!uid) return;
@@ -23141,26 +23121,30 @@ async function __loadLikedItems() {
       State.likedItems[t] = State.likedItems[t] || {};
       State.likedItems[t][data.itemId] = true;
     });
-    document.querySelectorAll('[data-like-type][data-like-id]').forEach(function(btn) {
-      var t = btn.dataset.likeType;
-      var id = btn.dataset.likeId;
-      var liked = !!(State.likedItems[t] && State.likedItems[t][id]);
-      var icon = btn.querySelector('i, svg');
-      if (icon) {
-        if (liked) icon.setAttribute('fill', 'currentColor');
-        else icon.removeAttribute('fill');
-      }
-      btn.classList.toggle('text-primary', liked);
-      btn.classList.toggle('text-gray-400', !liked);
-    });
+    __paintHearts();
   } catch(e) { console.warn('Liked items load failed:', e); }
 }
+
+function __paintHearts() {
+  document.querySelectorAll('[data-like-type][data-like-id]').forEach(function(btn) {
+    var t = btn.dataset.likeType;
+    var id = btn.dataset.likeId;
+    var liked = !!(State.likedItems[t] && State.likedItems[t][id]);
+    var icon = btn.querySelector('i, svg');
+    if (icon) {
+      if (liked) icon.setAttribute('fill', 'currentColor');
+      else icon.removeAttribute('fill');
+    }
+    btn.classList.toggle('text-primary', liked);
+    btn.classList.toggle('text-gray-400', !liked);
+  });
+}
+
 setTimeout(__loadLikedItems, 2000);
 document.addEventListener('click', function(e) {
   if (e.target.closest('.home-filter-btn')) setTimeout(__loadLikedItems, 1200);
 }, true);
 
-// ---------- 57c: Profile tap — close any overlay first ----------
 document.addEventListener('pointerdown', function(e) {
   if (e.target.closest('button')) return;
   var u = e.target.closest('[data-profile-uid]');
@@ -23168,17 +23152,13 @@ document.addEventListener('pointerdown', function(e) {
   var uid = u.dataset.profileUid;
   if (!uid) return;
   var ov = document.getElementById('post-detail-overlay');
-  if (ov) {
-    ov.remove();
-    document.body.style.overflow = '';
-  }
+  if (ov) { ov.remove(); document.body.style.overflow = ''; }
   setTimeout(function() {
     var sheet = document.getElementById('sheet-container');
     if (sheet) sheet.style.zIndex = '99999';
   }, 40);
 }, true);
 
-// ---------- 57d: Image zoom ----------
 document.addEventListener('click', function(e) {
   var img = e.target.closest('img');
   if (!img) return;
@@ -23194,19 +23174,15 @@ document.addEventListener('click', function(e) {
   var overlay = document.createElement('div');
   overlay.id = 'pd-zoom-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.98);display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;';
-  overlay.innerHTML =
-    '<div id="pd-zoom-close" style="position:absolute;top:12px;right:12px;z-index:2;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;cursor:pointer;">✕</div>' +
-    '<img id="pd-zoom-img" src="' + img.src + '" style="max-width:100%;max-height:100%;object-fit:contain;transform-origin:center center;transition:transform 0.05s;user-select:none;-webkit-user-drag:none;" />';
-
+  overlay.innerHTML = '<div id="pd-zoom-close" style="position:absolute;top:12px;right:12px;z-index:2;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;cursor:pointer;">✕</div><img id="pd-zoom-img" src="' + img.src + '" style="max-width:100%;max-height:100%;object-fit:contain;transform-origin:center center;transition:transform 0.05s;user-select:none;-webkit-user-drag:none;" />';
   document.body.appendChild(overlay);
   document.getElementById('pd-zoom-close').onclick = function() { overlay.remove(); };
 
-  var zoomImg = document.getElementById('pd-zoom-img');
+  var zi = document.getElementById('pd-zoom-img');
   var scale = 1, lastScale = 1, posX = 0, posY = 0, lastPosX = 0, lastPosY = 0;
-  var startX = 0, startY = 0, startDist = 0;
-  var touchMode = '';
+  var startX = 0, startY = 0, startDist = 0, touchMode = '';
 
-  zoomImg.addEventListener('touchstart', function(ev) {
+  zi.addEventListener('touchstart', function(ev) {
     if (ev.touches.length === 2) {
       touchMode = 'pinch';
       startDist = Math.hypot(ev.touches[0].pageX - ev.touches[1].pageX, ev.touches[0].pageY - ev.touches[1].pageY);
@@ -23218,36 +23194,34 @@ document.addEventListener('click', function(e) {
     }
   }, { passive: true });
 
-  zoomImg.addEventListener('touchmove', function(ev) {
+  zi.addEventListener('touchmove', function(ev) {
     if (touchMode === 'pinch' && ev.touches.length === 2) {
       var d = Math.hypot(ev.touches[0].pageX - ev.touches[1].pageX, ev.touches[0].pageY - ev.touches[1].pageY);
       scale = Math.min(5, Math.max(1, lastScale * (d / startDist)));
-      zoomImg.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
+      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
     } else if (touchMode === 'pan' && ev.touches.length === 1 && scale > 1) {
       posX = ev.touches[0].pageX - startX;
       posY = ev.touches[0].pageY - startY;
-      zoomImg.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
+      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
     }
   }, { passive: true });
 
-  zoomImg.addEventListener('touchend', function() {
-    lastPosX = posX;
-    lastPosY = posY;
+  zi.addEventListener('touchend', function() {
+    lastPosX = posX; lastPosY = posY;
     if (scale <= 1) { posX = 0; posY = 0; lastPosX = 0; lastPosY = 0; }
     touchMode = '';
   }, { passive: true });
 
   var lastTap = 0;
-  zoomImg.addEventListener('touchend', function() {
+  zi.addEventListener('touchend', function() {
     var now = Date.now();
     if (now - lastTap < 300) {
-      if (scale > 1) { scale = 1; posX = 0; posY = 0; }
-      else { scale = 2.5; }
+      if (scale > 1) { scale = 1; posX = 0; posY = 0; } else { scale = 2.5; }
       lastScale = scale;
-      zoomImg.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
+      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
     }
     lastTap = now;
   });
 }, true);
 
-console.log('✅ Chunk 57 loaded');
+console.log('✅ Chunk 57 v2 Part A loaded');
