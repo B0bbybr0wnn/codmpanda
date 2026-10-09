@@ -22569,16 +22569,7 @@ function isPostLiked(postId) {
   return (State.likedItems && State.likedItems.post && State.likedItems.post[postId]) || false;
 }
 
-function timeAgo(ts) {
-  if (!ts) return 'just now';
-  var sec = ts.seconds || (ts.toMillis ? ts.toMillis() / 1000 : Date.now() / 1000);
-  var diff = Math.floor(Date.now() / 1000) - sec;
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-  if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
-  return new Date(sec * 1000).toLocaleDateString();
-}
+
 
 // ---- Load comments in the detail view ----
 window.loadPostDetailComments = async function(postId) {
