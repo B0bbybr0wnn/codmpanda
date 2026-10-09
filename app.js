@@ -22388,66 +22388,324 @@ window.getProLobbyShareUrl = getProLobbyShareUrl;
 console.log('✅ Chunk 53: Complete Pro benefits loaded');
 
 /* END OF CHUNK 53 */
-// === DIAGNOSTIC EXPOSURE (remove before launch) ===
-window.__diag = {
-  db, auth,
-  collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, limit, serverTimestamp, onSnapshot,
-  async run() {
-    console.clear();
-    console.log('%c=== CODMPanda Diagnostic ===', 'color:lime;font-size:16px;font-weight:bold');
+// ============================================
+// CHUNK 54 — Post Detail View + Nested Reply Fix
+// ============================================
 
-    console.log('\n[1] Auth:');
-    console.log('  currentUser:', auth?.currentUser?.email || '❌ not signed in');
-    console.log('  uid:', auth?.currentUser?.uid || '—');
+// ---------- 54a: Post Detail View ----------
+window.openPostDetail = function(postId) {
+  var post = homeCache && homeCache.feed ? homeCache.feed.find(function(p) { return p.id === postId; }) : null;
+  if (!post) { toast('Post not found', 'error'); return; }
 
-    console.log('\n[2] Globals:');
-    ['State','SENS_FIELDS','HUD_STYLES','gunDatabase','GUNS'].forEach(k => {
-      console.log('  ' + k + ':', window[k] ? '✅' : '❌');
-    });
+  var overlay = document.createElement('div');
+  overlay.id = 'post-detail-overlay';
+  overlay.className = 'fixed inset-0 z-[100] bg-bg overflow-y-auto';
+  overlay.innerHTML = [
+    '<div class="sticky top-0 z-10 bg-bg/95 backdrop-blur border-b border-border flex items-center gap-3 px-4 py-3">',
+      '<button id="post-detail-back" class="w-9 h-9 rounded-full flex items-center justify-center btn-press"><i data-lucide="arrow-left" class="w-5 h-5"></i></button>',
+      '<div class="font-bold text-base">Post</div>',
+    '</div>',
+    '<div class="px-4 pt-4 pb-32">',
+      '<div id="post-detail-body"></div>',
+      '<div class="mt-4 border-t border-border pt-4">',
+        '<div class="flex items-center justify-between mb-3">',
+          '<div class="text-xs font-bold text-gray-400 uppercase">Comments</div>',
+          '<div id="post-detail-comments-count" class="text-[10px] text-gray-500">Loading...</div>',
+        '</div>',
+        '<div id="post-detail-comments-list" class="space-y-3"></div>',
+      '</div>',
+    '</div>',
+    '<div class="fixed bottom-0 left-0 right-0 z-20 bg-[#0a0a0a] border-t border-border px-4 py-3">',
+      '<div id="post-detail-reply-indicator" class="hidden mb-2 flex items-center justify-between bg-primary/10 border border-primary/30 rounded-lg px-3 py-2">',
+        '<div class="text-[10px] text-primary font-bold">Replying to comment...</div>',
+        '<button id="post-detail-cancel-reply" class="text-[10px] text-gray-400">✕</button>',
+      '</div>',
+      '<div class="flex gap-2">',
+        '<input id="post-detail-comment-input" type="text" placeholder="Write a comment..." maxlength="300" class="flex-1" />',
+        '<button id="post-detail-comment-send" class="btn-press w-11 h-11 rounded-xl bg-primary flex items-center justify-center flex-shrink-0"><i data-lucide="send" class="w-5 h-5 text-white"></i></button>',
+      '</div>',
+    '</div>'
+  ].join('');
+  document.body.appendChild(overlay);
+  if (window.lucide) window.lucide.createIcons();
 
-    console.log('\n[3] Firestore reads:');
-    const cols = ['posts','lobbies','vault','users','clips','leaks','clans','camos','scrims'];
-    for (const c of cols) {
-      try {
-        const s = await getDocs(query(collection(db, c), limit(1)));
-        console.log('  ' + c + ': ✅ (' + s.size + ')');
-      } catch(e) {
-        console.log('  ' + c + ': ❌ ' + (e.code||'') + ' — ' + e.message);
-      }
-    }
+  document.getElementById('post-detail-body').innerHTML = renderHomePostCard(post);
 
-    if (!auth?.currentUser) { console.log('\n⚠️ Not signed in — skipping write tests'); return; }
+  document.getElementById('post-detail-back').onclick = function() { overlay.remove(); };
 
-    const uid = auth.currentUser.uid;
-    console.log('\n[4] Write: users/' + uid);
-    try {
-      await setDoc(doc(db, 'users', uid), { _diag: serverTimestamp() }, { merge: true });
-      console.log('  ✅ write OK');
-    } catch(e) { console.log('  ❌ ' + (e.code||'') + ' — ' + e.message); }
+  loadPostDetailComments(postId);
 
-    console.log('\n[5] Write: posts (new doc)');
-    try {
-      const ref = await addDoc(collection(db, 'posts'), {
-        authorId: uid, authorName: auth.currentUser.displayName || 'test',
-        text: '_diag test', createdAt: serverTimestamp()
-      });
-      console.log('  ✅ addDoc OK — id:', ref.id);
-      await deleteDoc(ref);
-      console.log('  ✅ deleteDoc OK');
-    } catch(e) { console.log('  ❌ ' + (e.code||'') + ' — ' + e.message); }
+  var sendBtn = document.getElementById('post-detail-comment-send');
+  var input = document.getElementById('post-detail-comment-input');
+  if (sendBtn && input) {
+    sendBtn.onclick = function() { sendPostDetailComment(postId); };
+    input.onkeypress = function(e) { if (e.key === 'Enter') sendPostDetailComment(postId); };
+  }
 
-    console.log('\n[6] Write: likes (new doc)');
-    try {
-      const ref = await addDoc(collection(db, 'likes'), {
-        userId: uid, targetId: '_diag', targetType: 'post', createdAt: serverTimestamp()
-      });
-      console.log('  ✅ addDoc OK');
-      await deleteDoc(ref);
-      console.log('  ✅ deleteDoc OK');
-    } catch(e) { console.log('  ❌ ' + (e.code||'') + ' — ' + e.message); }
-
-    console.log('\n%c=== Done — paste output above ===', 'color:lime;font-weight:bold');
+  var cancelReply = document.getElementById('post-detail-cancel-reply');
+  if (cancelReply) {
+    cancelReply.onclick = function() {
+      window.__postDetailReplyTo = null;
+      var ind = document.getElementById('post-detail-reply-indicator');
+      if (ind) ind.classList.add('hidden');
+      var inp = document.getElementById('post-detail-comment-input');
+      if (inp) inp.placeholder = 'Write a comment...';
+    };
   }
 };
-console.log('✅ Diagnostic ready. Run: __diag.run()');
+
+window.loadPostDetailComments = async function(postId) {
+  var listEl = document.getElementById('post-detail-comments-list');
+  var countEl = document.getElementById('post-detail-comments-count');
+  if (!listEl) return;
+
+  try {
+    var snap = await getDocs(query(
+      collection(db, 'comments'),
+      where('contentId', '==', postId),
+      limit(150)
+    ));
+
+    var comments = [];
+    snap.forEach(function(d) { comments.push(Object.assign({ id: d.id }, d.data())); });
+    comments.sort(function(a, b) {
+      return (a.createdAt && a.createdAt.seconds || 0) - (b.createdAt && b.createdAt.seconds || 0);
+    });
+
+    var topLevel = comments.filter(function(c) { return !c.parentId; });
+    var repliesByParent = {};
+    comments.filter(function(c) { return c.parentId; }).forEach(function(c) {
+      if (!repliesByParent[c.parentId]) repliesByParent[c.parentId] = [];
+      repliesByParent[c.parentId].push(c);
+    });
+
+    if (countEl) countEl.textContent = comments.length + ' comment' + (comments.length === 1 ? '' : 's');
+
+    if (topLevel.length === 0) {
+      listEl.innerHTML = '<div class="text-center py-8"><div class="text-3xl mb-2">💬</div><div class="text-xs text-gray-500">No comments yet</div><div class="text-[10px] text-gray-600 mt-1">Be the first to reply</div></div>';
+      return;
+    }
+
+    listEl.innerHTML = topLevel.map(function(c) {
+      return renderPostDetailCommentRow(c, repliesByParent[c.id] || []);
+    }).join('');
+
+    wirePostDetailCommentInteractions(listEl, postId);
+  } catch (e) {
+    console.error('Load detail comments error:', e);
+    listEl.innerHTML = '<div class="text-center py-6 text-red-400 text-xs">Failed to load</div>';
+  }
+  if (window.lucide) window.lucide.createIcons();
+};
+
+function renderPostDetailCommentRow(c, replies) {
+  var isMine = c.uid === State.user.uid;
+  var isLiked = (State.likedItems && State.likedItems.comment && State.likedItems.comment[c.id]) || false;
+  var hasReplies = replies.length > 0;
+
+  var html = '<div class="comment-thread" data-comment-id="' + c.id + '">';
+  html += '<div class="flex items-start gap-2.5">';
+  html += '<div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0 cursor-pointer post-detail-user" data-uid="' + c.uid + '">';
+  html += c.avatar ? '<img src="' + esc(c.avatar) + '" class="w-full h-full object-cover" />' : getInitials(c.ign);
+  html += '</div>';
+  html += '<div class="flex-1 min-w-0">';
+  html += '<div class="bg-cardAlt border border-border rounded-2xl px-3 py-2">';
+  html += '<div class="text-[10px] font-bold text-primary mb-0.5 flex items-center gap-1.5 cursor-pointer post-detail-user" data-uid="' + c.uid + '">' + esc(c.ign) + (c.edited ? '<span class="text-[8px] text-gray-500">(edited)</span>' : '') + '</div>';
+  html += '<div class="text-xs text-gray-200 break-words">' + esc(c.text) + '</div>';
+  html += '</div>';
+  html += '<div class="flex items-center gap-3 mt-1.5 ml-1">';
+  html += '<button class="comment-like-btn text-[10px] ' + (isLiked ? 'text-primary' : 'text-gray-500') + ' font-bold flex items-center gap-1" data-id="' + c.id + '">❤️ <span class="like-num">' + (c.likes || 0) + '</span></button>';
+  html += '<button class="comment-reply-btn text-[10px] text-gray-500 font-bold" data-id="' + c.id + '" data-ign="' + esc(c.ign) + '">Reply</button>';
+  if (isMine) {
+    html += '<button class="comment-edit-btn text-[10px] text-primary font-bold" data-id="' + c.id + '">Edit</button>';
+    html += '<button class="comment-delete-btn text-[10px] text-red-400 font-bold" data-id="' + c.id + '">Delete</button>';
+  }
+  html += '</div>';
+  html += '</div>';
+  html += '</div>';
+
+  if (hasReplies) {
+    html += '<button class="comment-expand-btn text-[10px] text-primary font-bold mt-2 ml-10" data-id="' + c.id + '" data-count="' + replies.length + '">';
+    html += '▸ Show ' + replies.length + ' ' + (replies.length === 1 ? 'reply' : 'replies');
+    html += '</button>';
+    html += '<div class="replies-container hidden ml-10 mt-2 space-y-2" data-parent="' + c.id + '">';
+    html += replies.map(function(r) { return renderPostDetailReplyRow(r); }).join('');
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function renderPostDetailReplyRow(r) {
+  var isMine = r.uid === State.user.uid;
+  var isLiked = (State.likedItems && State.likedItems.comment && State.likedItems.comment[r.id]) || false;
+
+  var html = '<div class="comment-thread" data-comment-id="' + r.id + '">';
+  html += '<div class="flex items-start gap-2.5">';
+  html += '<div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden flex-shrink-0 cursor-pointer post-detail-user" data-uid="' + r.uid + '">';
+  html += r.avatar ? '<img src="' + esc(r.avatar) + '" class="w-full h-full object-cover" />' : getInitials(r.ign);
+  html += '</div>';
+  html += '<div class="flex-1 min-w-0">';
+  html += '<div class="bg-cardAlt border border-border rounded-2xl px-3 py-2">';
+  html += '<div class="text-[10px] font-bold text-primary mb-0.5 flex items-center gap-1.5 cursor-pointer post-detail-user" data-uid="' + r.uid + '">' + esc(r.ign) + (r.edited ? '<span class="text-[8px] text-gray-500">(edited)</span>' : '') + '</div>';
+  html += '<div class="text-xs text-gray-200 break-words">' + esc(r.text) + '</div>';
+  html += '</div>';
+  html += '<div class="flex items-center gap-3 mt-1.5 ml-1">';
+  html += '<button class="comment-like-btn text-[10px] ' + (isLiked ? 'text-primary' : 'text-gray-500') + ' font-bold flex items-center gap-1" data-id="' + r.id + '">❤️ <span class="like-num">' + (r.likes || 0) + '</span></button>';
+  html += '<button class="comment-reply-btn text-[10px] text-gray-500 font-bold" data-id="' + r.id + '" data-ign="' + esc(r.ign) + '">Reply</button>';
+  if (isMine) {
+    html += '<button class="comment-edit-btn text-[10px] text-primary font-bold" data-id="' + r.id + '">Edit</button>';
+    html += '<button class="comment-delete-btn text-[10px] text-red-400 font-bold" data-id="' + r.id + '">Delete</button>';
+  }
+  html += '</div>';
+  html += '</div>';
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+function wirePostDetailCommentInteractions(container, postId) {
+  container.querySelectorAll('.comment-like-btn').forEach(function(btn) {
+    btn.onclick = async function() {
+      var commentId = btn.dataset.id;
+      var wasLiked = (State.likedItems && State.likedItems.comment && State.likedItems.comment[commentId]) || false;
+      var nowLiked = !wasLiked;
+      State.likedItems = State.likedItems || {};
+      State.likedItems.comment = State.likedItems.comment || {};
+      State.likedItems.comment[commentId] = nowLiked;
+      var numEl = btn.querySelector('.like-num');
+      var currentCount = parseInt(numEl.textContent) || 0;
+      numEl.textContent = nowLiked ? currentCount + 1 : Math.max(0, currentCount - 1);
+      btn.classList.toggle('text-primary', nowLiked);
+      btn.classList.toggle('text-gray-500', !nowLiked);
+      try { await toggleLike('comment', commentId, 'likes'); }
+      catch (err) {
+        State.likedItems.comment[commentId] = wasLiked;
+        numEl.textContent = currentCount;
+        btn.classList.toggle('text-primary', wasLiked);
+        btn.classList.toggle('text-gray-500', !wasLiked);
+      }
+    };
+  });
+
+  container.querySelectorAll('.comment-reply-btn').forEach(function(btn) {
+    btn.onclick = function() {
+      var commentId = btn.dataset.id;
+      var commentIgn = btn.dataset.ign;
+      window.__postDetailReplyTo = { parentId: commentId, ign: commentIgn };
+      var ind = document.getElementById('post-detail-reply-indicator');
+      if (ind) {
+        ind.classList.remove('hidden');
+        var txt = ind.querySelector('.text-primary');
+        if (txt) txt.textContent = 'Replying to ' + commentIgn + '...';
+      }
+      var input = document.getElementById('post-detail-comment-input');
+      if (input) { input.placeholder = 'Reply to ' + commentIgn + '...'; input.focus(); }
+    };
+  });
+
+  container.querySelectorAll('.comment-expand-btn').forEach(function(btn) {
+    btn.onclick = function() {
+      var commentId = btn.dataset.id;
+      var repliesContainer = container.querySelector('.replies-container[data-parent="' + commentId + '"]');
+      if (!repliesContainer) return;
+      var isHidden = repliesContainer.classList.contains('hidden');
+      if (isHidden) {
+        repliesContainer.classList.remove('hidden');
+        btn.textContent = '▾ Hide ' + btn.dataset.count + ' ' + (btn.dataset.count === '1' ? 'reply' : 'replies');
+      } else {
+        repliesContainer.classList.add('hidden');
+        btn.textContent = '▸ Show ' + btn.dataset.count + ' ' + (btn.dataset.count === '1' ? 'reply' : 'replies');
+      }
+    };
+  });
+
+  container.querySelectorAll('.comment-edit-btn').forEach(function(btn) {
+    btn.onclick = function() { openEditCommentSheet(btn.dataset.id); };
+  });
+
+  container.querySelectorAll('.comment-delete-btn').forEach(function(btn) {
+    btn.onclick = function() {
+      confirmDialog('Delete Comment', 'This will remove your comment.', async function() {
+        try {
+          await deleteDoc(doc(db, 'comments', btn.dataset.id));
+          toast('🗑 Deleted', 'success');
+          await loadPostDetailComments(postId);
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Delete', true);
+    };
+  });
+
+  container.querySelectorAll('.post-detail-user').forEach(function(el) {
+    el.onclick = function() {
+      var uid = el.dataset.uid;
+      if (uid) openUserProfile(uid);
+    };
+  });
+}
+
+window.sendPostDetailComment = async function(postId) {
+  var input = document.getElementById('post-detail-comment-input');
+  if (!input) return;
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.disabled = true;
+
+  try {
+    var commentData = {
+      contentId: postId,
+      contentType: 'post',
+      uid: State.user.uid,
+      ign: State.profile.ign,
+      avatar: State.profile.avatar || '',
+      text: text,
+      likes: 0,
+      createdAt: serverTimestamp()
+    };
+    if (window.__postDetailReplyTo && window.__postDetailReplyTo.parentId) {
+      commentData.parentId = window.__postDetailReplyTo.parentId;
+    }
+    await addDoc(collection(db, 'comments'), commentData);
+
+    try {
+      var postRef = doc(db, 'posts', postId);
+      var postSnap = await getDoc(postRef);
+      if (postSnap.exists()) {
+        await updateDoc(postRef, { commentCount: increment(1) });
+      }
+    } catch (e) { /* silent */ }
+
+    window.__postDetailReplyTo = null;
+    var ind = document.getElementById('post-detail-reply-indicator');
+    if (ind) ind.classList.add('hidden');
+    input.placeholder = 'Write a comment...';
+
+    await loadPostDetailComments(postId);
+  } catch (e) {
+    console.error('Send detail comment error:', e);
+    toast('Failed: ' + e.message, 'error');
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+};
+
+// ---------- 54b: Override wireHomeCards to add post-body tap ----------
+var _origWireHomeCardsDetail = wireHomeCards;
+wireHomeCards = function(items) {
+  _origWireHomeCardsDetail(items);
+  var feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+  feedEl.querySelectorAll('.home-card[data-type="post"]').forEach(function(card) {
+    card.style.cursor = 'pointer';
+    card.onclick = function(e) {
+      if (e.target.closest('button') || e.target.closest('a')) return;
+      var postId = card.dataset.id;
+      if (postId && typeof window.openPostDetail === 'function') window.openPostDetail(postId);
+    };
+  });
+};
+
+console.log('✅ Chunk 54: Post Detail View + Nested Reply Fix loaded');
