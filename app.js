@@ -22416,7 +22416,7 @@ window.openPostDetail = async function(postId) {
 
   var ov = document.createElement('div');
   ov.id = 'post-detail-overlay';
-  ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;overflow-y:auto;-webkit-overflow-scrolling:touch;';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:40;background:#000;overflow-y:auto;-webkit-overflow-scrolling:touch;';
   ov.innerHTML = [
     '<div style="position:sticky;top:0;z-index:10;background:rgba(0,0,0,.95);backdrop-filter:blur(12px);border-bottom:1px solid #222;display:flex;align-items:center;gap:12px;padding:12px 16px;">',
       '<button id="pd-back" class="btn-press" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:#fff;"><i data-lucide="arrow-left" class="w-5 h-5"></i></button>',
@@ -22673,18 +22673,23 @@ function wirePdComments(container, postId) {
   });
 
   container.querySelectorAll('.pd-cdel').forEach(function(btn) {
-    btn.onclick = async function(e) {
+    btn.onclick = function(e) {
       e.preventDefault(); e.stopPropagation();
-      if (!confirm('Delete this comment?')) return;
-      try {
-        await deleteDoc(doc(db, 'comments', btn.dataset.cid));
-        toast('🗑 Deleted', 'success');
-        await loadPostDetailComments(postId);
-      } catch (err) { toast('Failed', 'error'); }
+      var cid = btn.dataset.cid;
+      confirmDialog('Delete Comment', 'This will remove your comment.', async function() {
+        try {
+          await deleteDoc(doc(db, 'comments', cid));
+          toast('🗑 Deleted', 'success');
+          await loadPostDetailComments(postId);
+          var s = await getDoc(doc(db, 'posts', postId));
+          if (s.exists()) {
+            var cnt = document.getElementById('pd-comment-count');
+            if (cnt) cnt.textContent = s.data().commentCount || 0;
+          }
+        } catch (err) { toast('Failed', 'error'); }
+      }, 'Delete', true);
     };
   });
-}
-
 // ---------- Submit Comment from detail ----------
 window.submitPostDetailComment = async function(postId) {
   var input = document.getElementById('pd-input');
