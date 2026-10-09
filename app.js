@@ -22937,8 +22937,10 @@ if (typeof _origWirePdComments55 === 'function') {
             await loadPostDetailComments(postId);
           } catch (err) { toast('Failed', 'error'); }
         }, 'Delete', true);
-     };
-});
+      };
+    });
+  }
+}
 
 // ---------- 55e: Override openPostComments — 💬 icon opens detail view instead of old sheet ----------
 window.openPostComments = function(postId) {
