@@ -17089,6 +17089,7 @@ async function likeItem(itemType, itemId, countField) {
       : itemType === 'clip' ? 'clips'
       : itemType === 'comment' ? 'comments'
       : itemType === 'leak' ? 'leaks'
+      : itemType === 'post' ? 'posts'
       : 'vaults';
 
     await updateDoc(doc(db, collectionName, itemId), {
@@ -17115,6 +17116,7 @@ async function unlikeItem(itemType, itemId, countField) {
       : itemType === 'clip' ? 'clips'
       : itemType === 'comment' ? 'comments'
       : itemType === 'leak' ? 'leaks'
+      : itemType === 'post' ? 'posts'
       : 'vaults';
 
     await updateDoc(doc(db, collectionName, itemId), {
