@@ -23008,26 +23008,22 @@ document.addEventListener('click', function(e) {
 
 console.log('✅ Chunk 56 loaded');
 /* ============================================================
-   CODMPanda — UI FIX V4
-   - Post-detail profile taps
-   - Like-state synchronization without duplicate writes
-   - Feed repaint after filter changes
-   - Fullscreen pinch/double-tap image zoom
-   - No MutationObserver or additional auth listeners
+   CODMPanda — UI FIX V5
+   Fixes like-state repainting and post-detail profile layering.
+   Preserves existing like handlers and image zoom.
    ============================================================ */
 (function () {
-  if (window.__codmpanda_ui_fix_v4) return;
-  window.__codmpanda_ui_fix_v4 = true;
+  if (window.__codmpanda_ui_fix_v5) return;
+  window.__codmpanda_ui_fix_v5 = true;
 
   // ----------------------------------------------------------
-  // 1. SHARED LIKE STATE
+  // 1. LIKE STATE
   // ----------------------------------------------------------
-  var __pandaLikedV4 = new Set();
-  var __pandaLikesLoadedV4 = false;
-  var __pandaLikesLoadingV4 = false;
-  var __pandaLastTapV4 = new WeakMap();
+  var __pandaLikedV5 = new Set();
+  var __pandaLikesLoadedV5 = false;
+  var __pandaLikesLoadingV5 = false;
 
-  function __pandaGetLikeTypeV4(btn) {
+  function __pandaGetLikeTypeV5(btn) {
     if (btn.matches('.post-like-btn')) return 'post';
     if (btn.matches('.comment-like-btn')) return 'comment';
     if (btn.matches('.lobby-like-btn')) return 'lobby';
@@ -23037,25 +23033,8 @@ console.log('✅ Chunk 56 loaded');
     return null;
   }
 
-  function __pandaPaintButtonV4(btn, type, liked) {
-    btn.classList.toggle('text-primary', liked);
-    btn.classList.toggle('text-gray-400', !liked);
-    btn.classList.toggle('liked', liked);
-    btn.setAttribute('aria-pressed', String(liked));
-
-    var icon = btn.querySelector('i, svg');
-
-    if (icon) {
-      if (liked) {
-        icon.setAttribute('fill', 'currentColor');
-      } else {
-        icon.removeAttribute('fill');
-      }
-    }
-  }
-
   function __pandaPaintLikesV4() {
-    if (!__pandaLikesLoadedV4) return;
+    if (!__pandaLikesLoadedV5) return;
 
     var selectors = [
       '.post-like-btn',
@@ -23068,22 +23047,33 @@ console.log('✅ Chunk 56 loaded');
 
     document.querySelectorAll(selectors).forEach(function (btn) {
       var id = btn.dataset.id;
-      var type = __pandaGetLikeTypeV4(btn);
+      var type = __pandaGetLikeTypeV5(btn);
 
       if (!id || !type) return;
 
-      __pandaPaintButtonV4(
-        btn,
-        type,
-        __pandaLikedV4.has(type + '_' + id)
-      );
+      var liked = __pandaLikedV5.has(type + '_' + id);
+
+      btn.classList.toggle('text-primary', liked);
+      btn.classList.toggle('text-gray-400', !liked);
+      btn.classList.toggle('liked', liked);
+      btn.setAttribute('aria-pressed', String(liked));
+
+      var icon = btn.querySelector('i, svg');
+
+      if (icon) {
+        if (liked) {
+          icon.setAttribute('fill', 'currentColor');
+        } else {
+          icon.removeAttribute('fill');
+        }
+      }
     });
   }
 
-  async function __pandaLoadLikesV4() {
-    if (__pandaLikesLoadingV4 || !auth.currentUser) return;
+  async function __pandaLoadLikesV5() {
+    if (__pandaLikesLoadingV5 || !auth.currentUser) return;
 
-    __pandaLikesLoadingV4 = true;
+    __pandaLikesLoadingV5 = true;
 
     try {
       var snap = await getDocs(
@@ -23093,98 +23083,81 @@ console.log('✅ Chunk 56 loaded');
         )
       );
 
-      __pandaLikedV4.clear();
+      __pandaLikedV5.clear();
 
       snap.forEach(function (entry) {
         var data = entry.data();
 
         if (data.itemType && data.itemId != null) {
-          __pandaLikedV4.add(
+          __pandaLikedV5.add(
             data.itemType + '_' + data.itemId
           );
         }
       });
 
-      __pandaLikesLoadedV4 = true;
+      __pandaLikesLoadedV5 = true;
       __pandaPaintLikesV4();
     } catch (err) {
-      console.error('[CODMPanda] Could not load likes:', err);
+      console.error('[CODMPanda V5] Like loading failed:', err);
     } finally {
-      __pandaLikesLoadingV4 = false;
+      __pandaLikesLoadingV5 = false;
     }
   }
 
   if (auth.currentUser) {
-    __pandaLoadLikesV4();
+    __pandaLoadLikesV5();
   }
 
   // ----------------------------------------------------------
-  // 2. CAPTURE LIKES BEFORE APP HANDLERS
-  // Do not call toggleLike here; the app owns Firestore writes.
+  // 2. REPAINT AFTER EVERY HOME CARD REWIRE
   // ----------------------------------------------------------
+  if (typeof wireHomeCards === 'function') {
+    var _origWireHomeCardsV5 = wireHomeCards;
+
+    wireHomeCards = function () {
+      var result = _origWireHomeCardsV5.apply(this, arguments);
+
+      setTimeout(function () {
+        __pandaPaintLikesV4();
+      }, 100);
+
+      setTimeout(function () {
+        __pandaPaintLikesV4();
+      }, 500);
+
+      return result;
+    };
+  }
+
+  // Initial and filter-triggered repaint.
+  setTimeout(function () {
+    __pandaPaintLikesV4();
+  }, 500);
+
   document.addEventListener('click', function (event) {
     var target = event.target;
-    if (!(target instanceof Element)) return;
 
-    var btn = target.closest(
-      '.post-like-btn, .comment-like-btn, .lobby-like-btn, ' +
-      '.vault-like-btn, .clip-like-btn, .leak-like-btn'
-    );
-
-    if (!btn || !auth.currentUser) return;
-
-    var id = btn.dataset.id;
-    var type = __pandaGetLikeTypeV4(btn);
-
-    if (!id || !type) return;
-
-    var key = type + '_' + id;
-    var wasLiked = __pandaLikedV4.has(key);
-
-    if (wasLiked) {
-      __pandaLikedV4.delete(key);
-    } else {
-      __pandaLikedV4.add(key);
-    }
-
-    __pandaLastTapV4.set(btn, {
-      key: key,
-      wasLiked: wasLiked,
-      at: Date.now()
-    });
-
-    __pandaPaintButtonV4(btn, type, !wasLiked);
-
-    // Deliberately allow the app's existing click handler to run.
-  }, true);
-
-  // ----------------------------------------------------------
-  // 3. REPAINT AFTER HOME FILTER CHANGES
-  // ----------------------------------------------------------
-  document.addEventListener('click', function (event) {
-    var target = event.target;
     if (!(target instanceof Element)) return;
 
     if (target.closest('.home-filter-btn')) {
-      setTimeout(function () {
-        __pandaPaintLikesV4();
-      }, 1500);
+      setTimeout(__pandaPaintLikesV4, 1500);
     }
   }, false);
 
-  window.__codmpandaRefreshLikesV4 = function () {
-    if (!__pandaLikesLoadedV4) {
-      __pandaLoadLikesV4();
+  window.__codmpandaRefreshLikesV5 = function () {
+    if (!__pandaLikesLoadedV5) {
+      __pandaLoadLikesV5();
     } else {
       __pandaPaintLikesV4();
     }
   };
 
   // ----------------------------------------------------------
-  // 4. POST DETAIL PROFILE TAP
+  // 3. POST DETAIL PROFILE LAYERING
   // ----------------------------------------------------------
   document.addEventListener('click', function (event) {
     var target = event.target;
+
     if (!(target instanceof Element)) return;
 
     var profileElement = target.closest(
@@ -23199,325 +23172,32 @@ console.log('✅ Chunk 56 loaded');
     event.preventDefault();
     event.stopImmediatePropagation();
 
-    var overlay = document.getElementById('post-detail-overlay');
-
-    if (overlay) {
-      overlay.remove();
-      document.body.style.overflow = '';
-    }
-
+    // Open the profile before removing the post detail overlay.
     openUserProfile(uid);
 
-    requestAnimationFrame(function () {
-      var sheet = document.getElementById('sheet-container');
+    var sheet = document.getElementById('sheet-container');
 
-      if (sheet) {
-        sheet.style.zIndex = '99999';
-      }
-    });
-  }, true);
-
-  // ----------------------------------------------------------
-  // 5. HOME CARD PROFILE TAP — POSTS AND LOBBIES
-  // ----------------------------------------------------------
-  document.addEventListener('click', function (event) {
-    var target = event.target;
-    if (!(target instanceof Element)) return;
-
-    var card = target.closest('.home-card');
-    if (!card) return;
-
-    if (target.closest(
-      'button, a, input, textarea, [role="button"], ' +
-      '.post-like-btn, .comment-like-btn'
-    )) {
-      return;
+    if (sheet) {
+      sheet.style.zIndex = '99999';
+      sheet.classList.remove('hidden');
     }
 
-    var header = target.closest(
-      '.home-card .flex.items-start.gap-3'
-    );
+    setTimeout(function () {
+      var overlay = document.getElementById('post-detail-overlay');
 
-    if (!header) {
-      var firstChild = card.firstElementChild;
-
-      if (
-        !firstChild ||
-        !firstChild.contains(target) ||
-        !firstChild.querySelector(
-          'img, .font-bold, [class*="font-bold"]'
-        )
-      ) {
-        return;
+      if (overlay) {
+        overlay.remove();
       }
 
-      header = firstChild;
-    }
+      document.body.style.overflow = '';
 
-    if (!header.contains(target)) return;
+      var currentSheet = document.getElementById('sheet-container');
 
-    var feed =
-      typeof homeCache !== 'undefined' &&
-      homeCache &&
-      Array.isArray(homeCache.feed)
-        ? homeCache.feed
-        : [];
-
-    var item = feed.find(function (entry) {
-      return String(entry.id) === String(card.dataset.id);
-    });
-
-    if (!item || !item.uid) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-
-    openUserProfile(item.uid);
-  }, true);
-
-  // ----------------------------------------------------------
-  // 6. FULLSCREEN IMAGE VIEWER
-  // Supports pinch zoom, double-tap zoom, pan, and close.
-  // ----------------------------------------------------------
-  var __pandaZoomV4 = null;
-  var __pandaZoomCleanupV4 = null;
-
-  function __pandaCloseZoomV4() {
-    if (__pandaZoomCleanupV4) {
-      __pandaZoomCleanupV4();
-      __pandaZoomCleanupV4 = null;
-    }
-
-    if (__pandaZoomV4) {
-      __pandaZoomV4.remove();
-      __pandaZoomV4 = null;
-    }
-
-    document.body.style.overflow = '';
-  }
-
-  function __pandaOpenZoomV4(src) {
-    __pandaCloseZoomV4();
-
-    var overlay = document.createElement('div');
-    overlay.id = 'codmpanda-image-zoom-v4';
-
-    overlay.style.cssText =
-      'position:fixed;inset:0;z-index:2147483647;' +
-      'background:rgba(0,0,0,.97);display:flex;' +
-      'align-items:center;justify-content:center;' +
-      'overflow:hidden;touch-action:none;';
-
-    var image = document.createElement('img');
-    image.src = src;
-    image.draggable = false;
-
-    image.style.cssText =
-      'max-width:100%;max-height:100%;width:auto;height:auto;' +
-      'object-fit:contain;transform-origin:center center;' +
-      'will-change:transform;user-select:none;' +
-      'pointer-events:none;';
-
-    var close = document.createElement('button');
-    close.type = 'button';
-    close.textContent = '✕';
-
-    close.setAttribute('aria-label', 'Close image viewer');
-
-    close.style.cssText =
-      'position:absolute;top:18px;right:18px;z-index:2;' +
-      'width:44px;height:44px;border:0;border-radius:50%;' +
-      'background:rgba(50,50,50,.8);color:white;' +
-      'font-size:25px;cursor:pointer;';
-
-    overlay.appendChild(image);
-    overlay.appendChild(close);
-    document.body.appendChild(overlay);
-
-    __pandaZoomV4 = overlay;
-    document.body.style.overflow = 'hidden';
-
-    var scale = 1;
-    var tx = 0;
-    var ty = 0;
-    var startX = 0;
-    var startY = 0;
-    var startTX = 0;
-    var startTY = 0;
-    var pinchStart = 0;
-    var pinchScale = 1;
-    var lastTap = 0;
-    var moved = false;
-    var activePointers = new Map();
-
-    function applyTransform() {
-      image.style.transform =
-        'translate3d(' + tx + 'px,' + ty + 'px,0) scale(' +
-        scale + ')';
-    }
-
-    function distance(a, b) {
-      var dx = b.x - a.x;
-      var dy = b.y - a.y;
-      return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    function point(event) {
-      return { x: event.clientX, y: event.clientY };
-    }
-
-    function onPointerDown(event) {
-      event.preventDefault();
-
-      overlay.setPointerCapture &&
-        overlay.setPointerCapture(event.pointerId);
-
-      activePointers.set(event.pointerId, point(event));
-      moved = false;
-
-      if (activePointers.size === 1) {
-        startX = event.clientX;
-        startY = event.clientY;
-        startTX = tx;
-        startTY = ty;
-      } else if (activePointers.size === 2) {
-        var points = Array.from(activePointers.values());
-        pinchStart = distance(points[0], points[1]);
-        pinchScale = scale;
+      if (currentSheet) {
+        currentSheet.style.zIndex = '99999';
+        currentSheet.classList.remove('hidden');
       }
-    }
-
-    function onPointerMove(event) {
-      if (!activePointers.has(event.pointerId)) return;
-
-      event.preventDefault();
-      activePointers.set(event.pointerId, point(event));
-
-      if (activePointers.size === 2) {
-        var points = Array.from(activePointers.values());
-        var currentDistance = distance(points[0], points[1]);
-
-        if (pinchStart > 0) {
-          scale = Math.max(
-            1,
-            Math.min(5, pinchScale * currentDistance / pinchStart)
-          );
-        }
-
-        moved = true;
-        applyTransform();
-      } else if (activePointers.size === 1 && scale > 1) {
-        tx = startTX + event.clientX - startX;
-        ty = startTY + event.clientY - startY;
-        moved = true;
-        applyTransform();
-      }
-    }
-
-    function onPointerUp(event) {
-      var now = Date.now();
-
-      activePointers.delete(event.pointerId);
-
-      if (
-        !moved &&
-        activePointers.size === 0 &&
-        now - lastTap < 300
-      ) {
-        scale = scale > 1 ? 1 : 2.5;
-        tx = 0;
-        ty = 0;
-        applyTransform();
-        lastTap = 0;
-      } else if (activePointers.size === 0) {
-        lastTap = now;
-      }
-
-      if (activePointers.size === 1) {
-        var remaining = Array.from(activePointers.values())[0];
-        startX = remaining.x;
-        startY = remaining.y;
-        startTX = tx;
-        startTY = ty;
-      }
-    }
-
-    function onWheel(event) {
-      event.preventDefault();
-
-      scale = Math.max(
-        1,
-        Math.min(5, scale + (event.deltaY < 0 ? 0.2 : -0.2))
-      );
-
-      if (scale === 1) {
-        tx = 0;
-        ty = 0;
-      }
-
-      applyTransform();
-    }
-
-    function onClose(event) {
-      event.preventDefault();
-      event.stopPropagation();
-      __pandaCloseZoomV4();
-    }
-
-    function onOverlayClick(event) {
-      if (event.target === overlay) {
-        __pandaCloseZoomV4();
-      }
-    }
-
-    overlay.addEventListener('pointerdown', onPointerDown, { passive: false });
-    overlay.addEventListener('pointermove', onPointerMove, { passive: false });
-    overlay.addEventListener('pointerup', onPointerUp);
-    overlay.addEventListener('pointercancel', onPointerUp);
-    overlay.addEventListener('wheel', onWheel, { passive: false });
-    overlay.addEventListener('click', onOverlayClick);
-    close.addEventListener('click', onClose);
-
-    __pandaZoomCleanupV4 = function () {
-      overlay.removeEventListener('pointerdown', onPointerDown);
-      overlay.removeEventListener('pointermove', onPointerMove);
-      overlay.removeEventListener('pointerup', onPointerUp);
-      overlay.removeEventListener('pointercancel', onPointerUp);
-      overlay.removeEventListener('wheel', onWheel);
-      overlay.removeEventListener('click', onOverlayClick);
-      close.removeEventListener('click', onClose);
-    };
-  }
-
-  document.addEventListener('click', function (event) {
-    var target = event.target;
-    if (!(target instanceof Element)) return;
-
-    // Skip profile/avatar images and any images below 100px wide.
-    var image = target.closest(
-      '#post-detail-overlay img, .home-card img'
-    );
-
-    if (!image || image.closest('#codmpanda-image-zoom-v4')) return;
-
-    if (
-      image.closest('[data-profile-uid]') ||
-      image.closest('.home-card .rounded-full')
-    ) {
-      return;
-    }
-
-    var width = image.getBoundingClientRect().width;
-
-    if (width <= 100) return;
-
-    var src = image.currentSrc || image.src;
-    if (!src) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-
-    __pandaOpenZoomV4(src);
+    }, 100);
   }, true);
 
 })();
