@@ -7031,3 +7031,55 @@ console.log('✅ Chunk 8/8 Part 3/3 loaded — Final helpers');
 // ============================================
 // END OF CHUNK 8/8 — PART 3/3
 // ============================================
+// ============================================
+// CHUNK 9 — Splash lifecycle fix
+// ============================================
+
+// Central splash controller
+function hideSplashDelayed(callback) {
+  var sp = document.getElementById('splash');
+  if (!sp) { if (callback) callback(); return; }
+  if (sp.dataset.hiding === '1') { if (callback) setTimeout(callback, 400); return; }
+  sp.dataset.hiding = '1';
+  sp.style.transition = 'opacity .35s ease';
+  sp.style.opacity = '0';
+  setTimeout(function() {
+    sp.style.display = 'none';
+    if (callback) callback();
+  }, 380);
+}
+
+// Override showAuthGate — hide splash first, then show auth
+var _origShowAuthGateV9 = window.showAuthGate;
+window.showAuthGate = function() {
+  hideSplashDelayed(function() {
+    if (typeof _origShowAuthGateV9 === 'function') _origShowAuthGateV9();
+  });
+};
+
+// Override showMainApp — hide splash first, then show main
+var _origShowMainAppV9 = window.showMainApp;
+window.showMainApp = function() {
+  hideSplashDelayed(function() {
+    if (typeof _origShowMainAppV9 === 'function') _origShowMainAppV9();
+  });
+};
+
+// Override showOnboarding — hide splash first, then show onboarding
+var _origShowOnboardingV9 = window.showOnboarding;
+window.showOnboarding = function() {
+  hideSplashDelayed(function() {
+    if (typeof _origShowOnboardingV9 === 'function') _origShowOnboardingV9();
+  });
+};
+
+// Failsafe: force-hide splash after 3s no matter what
+setTimeout(function() {
+  var sp = document.getElementById('splash');
+  if (sp && sp.style.display !== 'none') {
+    console.warn('⚠️ Splash failsafe triggered after 3s');
+    hideSplashDelayed();
+  }
+}, 3000);
+
+console.log('✅ Chunk 9 loaded — Splash lifecycle');
