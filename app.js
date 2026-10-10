@@ -22392,23 +22392,94 @@ window.getProLobbyShareUrl = getProLobbyShareUrl;
 console.log('✅ Chunk 53: Complete Pro benefits loaded');
 
 /* END OF CHUNK 53 */
-window.__check = async function() {
+// ============================================
+// CHUNK 54 — Load user likes + paint hearts + self-diagnose
+// ============================================
+
+async function __c54LoadLikes() {
   var uid = State.user && State.user.uid;
-  console.log('uid:', uid);
   if (!uid) return;
-  var snap = await getDocs(query(collection(db, 'likes'), where('userId', '==', uid)));
-  console.log('=== Firestore has ' + snap.size + ' like docs ===');
-  var types = {};
-  snap.forEach(function(d) {
-    var t = d.data().itemType || 'unknown';
-    types[t] = (types[t] || 0) + 1;
+  try {
+    var snap = await getDocs(query(collection(db, 'likes'), where('userId', '==', uid)));
+    State.likedItems = State.likedItems || {};
+    snap.forEach(function(d) {
+      var data = d.data();
+      if (data.itemType && data.itemId != null) {
+        State.likedItems[data.itemType] = State.likedItems[data.itemType] || {};
+        State.likedItems[data.itemType][data.itemId] = true;
+      }
+    });
+    __c54PaintHearts();
+  } catch (e) { console.warn('loadLikes error:', e); }
+}
+
+function __c54PaintHearts() {
+  var buttons = document.querySelectorAll('.post-like-btn, .home-like-btn, .comment-like-btn, .vault-like-btn, .clip-like-btn, .leak-like-btn');
+  var painted = 0;
+  buttons.forEach(function(btn) {
+    var type = btn.dataset.type;
+    if (!type) {
+      if (btn.classList.contains('post-like-btn')) type = 'post';
+      else if (btn.classList.contains('comment-like-btn')) type = 'comment';
+      else if (btn.classList.contains('home-like-btn')) type = 'lobby';
+      else if (btn.classList.contains('vault-like-btn')) type = 'vault';
+      else if (btn.classList.contains('clip-like-btn')) type = 'clip';
+      else if (btn.classList.contains('leak-like-btn')) type = 'leak';
+    }
+    var id = btn.dataset.id;
+    if (!type || !id) return;
+
+    var liked = !!(State.likedItems && State.likedItems[type] && State.likedItems[type][id]);
+    var icon = btn.querySelector('i, svg');
+    if (icon) {
+      if (liked) icon.setAttribute('fill', 'currentColor');
+      else icon.removeAttribute('fill');
+    }
+    btn.classList.toggle('text-primary', liked);
+    btn.classList.toggle('text-gray-400', !liked);
+    painted++;
   });
-  console.log('By type:', JSON.stringify(types));
-  console.log('\n=== State.likedItems in app ===');
-  console.log(JSON.stringify(State.likedItems));
-  console.log('\n=== Buttons on page ===');
-  document.querySelectorAll('.post-like-btn, .home-like-btn, .comment-like-btn').forEach(function(b, i) {
-    console.log(i + ':', b.className.split(' ')[0], '| dataset:', JSON.stringify(b.dataset));
+  return painted;
+}
+
+setTimeout(__c54LoadLikes, 1500);
+setTimeout(__c54LoadLikes, 4000);
+document.addEventListener('click', function(e) {
+  if (e.target.closest('.home-filter-btn')) setTimeout(__c54LoadLikes, 1200);
+}, true);
+
+var __c54Ticks = 0;
+var __c54Iv = setInterval(function() {
+  __c54PaintHearts();
+  __c54Ticks++;
+  if (__c54Ticks > 10) clearInterval(__c54Iv);
+}, 2000);
+
+// --- Self-diagnostic: call __fix54() from console ---
+window.__fix54 = function() {
+  console.log('=== CHUNK 54 DIAGNOSTIC ===');
+  console.log('State.likedItems exists:', !!State.likedItems);
+  if (State.likedItems) {
+    console.log('  Keys:', Object.keys(State.likedItems));
+    Object.keys(State.likedItems).forEach(function(k) {
+      console.log('    ' + k + ':', Object.keys(State.likedItems[k]).length, 'items');
+    });
+  }
+  var btns = document.querySelectorAll('.post-like-btn, .home-like-btn');
+  console.log('\nButtons found:', btns.length);
+  btns.forEach(function(b, i) {
+    var icon = b.querySelector('i, svg');
+    console.log('  ' + i + ':', b.dataset.type || b.className.split(' ')[0],
+                '| id:', b.dataset.id,
+                '| fill:', icon ? (icon.getAttribute('fill') || 'none') : 'no icon');
+  });
+  var painted = __c54PaintHearts();
+  console.log('\nPainted ' + painted + ' buttons. Re-run to verify:');
+  btns.forEach(function(b, i) {
+    var icon = b.querySelector('i, svg');
+    console.log('  ' + i + ':', b.dataset.id,
+                '| fill:', icon ? (icon.getAttribute('fill') || 'none') : 'no icon');
   });
 };
-console.log('run __check()');
+
+console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
