@@ -23008,72 +23008,82 @@ document.addEventListener('click', function(e) {
 
 console.log('✅ Chunk 56 loaded');
 /* ============================================================
-   CODMPanda — UI FIX V3
-   Likes + Lobby Likes + Profile Taps
-   Preserves renderHomePostCard and existing image zoom.
+   CODMPanda — UI FIX V4
+   - Post-detail profile taps
+   - Like-state synchronization without duplicate writes
+   - Feed repaint after filter changes
+   - Fullscreen pinch/double-tap image zoom
+   - No MutationObserver or additional auth listeners
    ============================================================ */
 (function () {
-  if (window.__codmpanda_ui_fix_v3) return;
-  window.__codmpanda_ui_fix_v3 = true;
+  if (window.__codmpanda_ui_fix_v4) return;
+  window.__codmpanda_ui_fix_v4 = true;
 
   // ----------------------------------------------------------
-  // 1. LOBBY LIKE FIRESTORE FIX
+  // 1. SHARED LIKE STATE
   // ----------------------------------------------------------
-  var _pandaLikeItemV3 = likeItem;
-  var _pandaUnlikeItemV3 = unlikeItem;
+  var __pandaLikedV4 = new Set();
+  var __pandaLikesLoadedV4 = false;
+  var __pandaLikesLoadingV4 = false;
+  var __pandaLastTapV4 = new WeakMap();
 
-  likeItem = function (itemType, itemId, countField) {
-    if (itemType === 'lobby') {
-      return __pandaLobbyLikeV3(itemId, countField, true);
-    }
-    return _pandaLikeItemV3.apply(this, arguments);
-  };
+  function __pandaGetLikeTypeV4(btn) {
+    if (btn.matches('.post-like-btn')) return 'post';
+    if (btn.matches('.comment-like-btn')) return 'comment';
+    if (btn.matches('.lobby-like-btn')) return 'lobby';
+    if (btn.matches('.vault-like-btn')) return 'vault';
+    if (btn.matches('.clip-like-btn')) return 'clip';
+    if (btn.matches('.leak-like-btn')) return 'leak';
+    return null;
+  }
 
-  unlikeItem = function (itemType, itemId, countField) {
-    if (itemType === 'lobby') {
-      return __pandaLobbyLikeV3(itemId, countField, false);
-    }
-    return _pandaUnlikeItemV3.apply(this, arguments);
-  };
+  function __pandaPaintButtonV4(btn, type, liked) {
+    btn.classList.toggle('text-primary', liked);
+    btn.classList.toggle('text-gray-400', !liked);
+    btn.classList.toggle('liked', liked);
+    btn.setAttribute('aria-pressed', String(liked));
 
-  async function __pandaLobbyLikeV3(itemId, countField, shouldLike) {
-    if (!auth.currentUser) return;
+    var icon = btn.querySelector('i, svg');
 
-    var uid = auth.currentUser.uid;
-    var likeRef = doc(db, 'likes', 'lobby_' + itemId + '_' + uid);
-    var lobbyRef = doc(db, 'lobbies', itemId);
-
-    if (shouldLike) {
-      await setDoc(likeRef, {
-        itemType: 'lobby',
-        itemId: itemId,
-        userId: uid,
-        createdAt: serverTimestamp()
-      });
-
-      await updateDoc(lobbyRef, {
-        [countField || 'likes']: increment(1)
-      });
-    } else {
-      await deleteDoc(likeRef);
-
-      await updateDoc(lobbyRef, {
-        [countField || 'likes']: increment(-1)
-      });
+    if (icon) {
+      if (liked) {
+        icon.setAttribute('fill', 'currentColor');
+      } else {
+        icon.removeAttribute('fill');
+      }
     }
   }
 
-  // ----------------------------------------------------------
-  // 2. LOAD EXISTING LIKES
-  // ----------------------------------------------------------
-  var __pandaLikedV3 = new Set();
-  var __pandaLikesLoadedV3 = false;
-  var __pandaLikesLoadingV3 = false;
+  function __pandaPaintLikesV4() {
+    if (!__pandaLikesLoadedV4) return;
 
-  async function __pandaLoadLikesV3() {
-    if (__pandaLikesLoadingV3 || !auth.currentUser) return;
+    var selectors = [
+      '.post-like-btn',
+      '.comment-like-btn',
+      '.lobby-like-btn',
+      '.vault-like-btn',
+      '.clip-like-btn',
+      '.leak-like-btn'
+    ].join(',');
 
-    __pandaLikesLoadingV3 = true;
+    document.querySelectorAll(selectors).forEach(function (btn) {
+      var id = btn.dataset.id;
+      var type = __pandaGetLikeTypeV4(btn);
+
+      if (!id || !type) return;
+
+      __pandaPaintButtonV4(
+        btn,
+        type,
+        __pandaLikedV4.has(type + '_' + id)
+      );
+    });
+  }
+
+  async function __pandaLoadLikesV4() {
+    if (__pandaLikesLoadingV4 || !auth.currentUser) return;
+
+    __pandaLikesLoadingV4 = true;
 
     try {
       var snap = await getDocs(
@@ -23083,70 +23093,36 @@ console.log('✅ Chunk 56 loaded');
         )
       );
 
-      __pandaLikedV3.clear();
+      __pandaLikedV4.clear();
 
-      snap.forEach(function (d) {
-        var data = d.data();
+      snap.forEach(function (entry) {
+        var data = entry.data();
 
         if (data.itemType && data.itemId != null) {
-          __pandaLikedV3.add(
+          __pandaLikedV4.add(
             data.itemType + '_' + data.itemId
           );
         }
       });
 
-      __pandaLikesLoadedV3 = true;
-      __pandaPaintLikesV3();
+      __pandaLikesLoadedV4 = true;
+      __pandaPaintLikesV4();
     } catch (err) {
-      console.error('[CODMPanda] Like loading failed:', err);
+      console.error('[CODMPanda] Could not load likes:', err);
     } finally {
-      __pandaLikesLoadingV3 = false;
+      __pandaLikesLoadingV4 = false;
     }
   }
 
-  function __pandaPaintLikesV3() {
-    if (!__pandaLikesLoadedV3) return;
-
-    [
-      ['.post-like-btn', 'post'],
-      ['.comment-like-btn', 'comment'],
-      ['.lobby-like-btn', 'lobby'],
-      ['.vault-like-btn', 'vault'],
-      ['.clip-like-btn', 'clip'],
-      ['.leak-like-btn', 'leak']
-    ].forEach(function (entry) {
-      document.querySelectorAll(entry[0]).forEach(function (btn) {
-        var id = btn.dataset.id;
-        if (!id) return;
-
-        var liked = __pandaLikedV3.has(entry[1] + '_' + id);
-
-        btn.classList.toggle('text-primary', liked);
-        btn.classList.toggle('text-gray-400', !liked);
-        btn.classList.toggle('liked', liked);
-        btn.setAttribute('aria-pressed', String(liked));
-
-        var icon = btn.querySelector('i, svg');
-
-        if (icon) {
-          if (liked) {
-            icon.setAttribute('fill', 'currentColor');
-          } else {
-            icon.removeAttribute('fill');
-          }
-        }
-      });
-    });
-  }
-
   if (auth.currentUser) {
-    __pandaLoadLikesV3();
+    __pandaLoadLikesV4();
   }
 
   // ----------------------------------------------------------
-  // 3. LIKE BUTTONS: PERSIST, UPDATE SET AND COUNT
+  // 2. CAPTURE LIKES BEFORE APP HANDLERS
+  // Do not call toggleLike here; the app owns Firestore writes.
   // ----------------------------------------------------------
-  document.addEventListener('click', async function (event) {
+  document.addEventListener('click', function (event) {
     var target = event.target;
     if (!(target instanceof Element)) return;
 
@@ -23155,64 +23131,94 @@ console.log('✅ Chunk 56 loaded');
       '.vault-like-btn, .clip-like-btn, .leak-like-btn'
     );
 
-    if (!btn) return;
+    if (!btn || !auth.currentUser) return;
 
     var id = btn.dataset.id;
-    if (!id) return;
+    var type = __pandaGetLikeTypeV4(btn);
 
-    var type =
-      btn.classList.contains('post-like-btn') ? 'post' :
-      btn.classList.contains('comment-like-btn') ? 'comment' :
-      btn.classList.contains('lobby-like-btn') ? 'lobby' :
-      btn.classList.contains('vault-like-btn') ? 'vault' :
-      btn.classList.contains('clip-like-btn') ? 'clip' :
-      btn.classList.contains('leak-like-btn') ? 'leak' : null;
-
-    if (!type) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (!auth.currentUser) return;
+    if (!id || !type) return;
 
     var key = type + '_' + id;
-    var wasLiked = __pandaLikedV3.has(key);
-    var numEl = btn.querySelector('span');
-    var oldCount = numEl ? parseInt(numEl.textContent, 10) || 0 : 0;
+    var wasLiked = __pandaLikedV4.has(key);
 
     if (wasLiked) {
-      __pandaLikedV3.delete(key);
+      __pandaLikedV4.delete(key);
     } else {
-      __pandaLikedV3.add(key);
+      __pandaLikedV4.add(key);
     }
 
-    if (numEl) {
-      numEl.textContent = String(
-        Math.max(0, oldCount + (wasLiked ? -1 : 1))
-      );
-    }
+    __pandaLastTapV4.set(btn, {
+      key: key,
+      wasLiked: wasLiked,
+      at: Date.now()
+    });
 
-    __pandaPaintLikesV3();
+    __pandaPaintButtonV4(btn, type, !wasLiked);
 
-    try {
-      await toggleLike(type, id, 'likes');
-    } catch (err) {
-      if (wasLiked) {
-        __pandaLikedV3.add(key);
-      } else {
-        __pandaLikedV3.delete(key);
-      }
-
-      if (numEl) numEl.textContent = String(oldCount);
-
-      __pandaPaintLikesV3();
-
-      console.error('[CODMPanda] Like toggle failed:', err);
-    }
+    // Deliberately allow the app's existing click handler to run.
   }, true);
 
   // ----------------------------------------------------------
-  // 4. PROFILE TAPS ON POST AND LOBBY CARDS
+  // 3. REPAINT AFTER HOME FILTER CHANGES
+  // ----------------------------------------------------------
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!(target instanceof Element)) return;
+
+    if (target.closest('.home-filter-btn')) {
+      setTimeout(function () {
+        __pandaPaintLikesV4();
+      }, 1500);
+    }
+  }, false);
+
+  window.__codmpandaRefreshLikesV4 = function () {
+    if (!__pandaLikesLoadedV4) {
+      __pandaLoadLikesV4();
+    } else {
+      __pandaPaintLikesV4();
+    }
+  };
+
+  // ----------------------------------------------------------
+  // 4. POST DETAIL PROFILE TAP
+  // ----------------------------------------------------------
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!(target instanceof Element)) return;
+
+    var profileElement = target.closest(
+      '#post-detail-overlay [data-profile-uid]'
+    );
+
+    if (!profileElement) return;
+
+    var uid = profileElement.dataset.profileUid;
+    if (!uid) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    var overlay = document.getElementById('post-detail-overlay');
+
+    if (overlay) {
+      overlay.remove();
+      document.body.style.overflow = '';
+    }
+
+    openUserProfile(uid);
+
+    requestAnimationFrame(function () {
+      var sheet = document.getElementById('sheet-container');
+
+      if (sheet) {
+        sheet.style.zIndex = '99999';
+      }
+    });
+  }, true);
+
+  // ----------------------------------------------------------
+  // 5. HOME CARD PROFILE TAP — POSTS AND LOBBIES
   // ----------------------------------------------------------
   document.addEventListener('click', function (event) {
     var target = event.target;
@@ -23221,7 +23227,10 @@ console.log('✅ Chunk 56 loaded');
     var card = target.closest('.home-card');
     if (!card) return;
 
-    if (target.closest('button, a, input, textarea, [role="button"]')) {
+    if (target.closest(
+      'button, a, input, textarea, [role="button"], ' +
+      '.post-like-btn, .comment-like-btn'
+    )) {
       return;
     }
 
@@ -23235,7 +23244,9 @@ console.log('✅ Chunk 56 loaded');
       if (
         !firstChild ||
         !firstChild.contains(target) ||
-        !firstChild.querySelector('img, .font-bold, [class*="font-bold"]')
+        !firstChild.querySelector(
+          'img, .font-bold, [class*="font-bold"]'
+        )
       ) {
         return;
       }
@@ -23265,14 +23276,248 @@ console.log('✅ Chunk 56 loaded');
   }, true);
 
   // ----------------------------------------------------------
-  // 5. MANUAL REFRESH FOR DYNAMIC CONTENT
+  // 6. FULLSCREEN IMAGE VIEWER
+  // Supports pinch zoom, double-tap zoom, pan, and close.
   // ----------------------------------------------------------
-  window.__codmpandaRefreshLikesV3 = function () {
-    if (!__pandaLikesLoadedV3) {
-      __pandaLoadLikesV3();
-    } else {
-      __pandaPaintLikesV3();
+  var __pandaZoomV4 = null;
+  var __pandaZoomCleanupV4 = null;
+
+  function __pandaCloseZoomV4() {
+    if (__pandaZoomCleanupV4) {
+      __pandaZoomCleanupV4();
+      __pandaZoomCleanupV4 = null;
     }
-  };
+
+    if (__pandaZoomV4) {
+      __pandaZoomV4.remove();
+      __pandaZoomV4 = null;
+    }
+
+    document.body.style.overflow = '';
+  }
+
+  function __pandaOpenZoomV4(src) {
+    __pandaCloseZoomV4();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'codmpanda-image-zoom-v4';
+
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:2147483647;' +
+      'background:rgba(0,0,0,.97);display:flex;' +
+      'align-items:center;justify-content:center;' +
+      'overflow:hidden;touch-action:none;';
+
+    var image = document.createElement('img');
+    image.src = src;
+    image.draggable = false;
+
+    image.style.cssText =
+      'max-width:100%;max-height:100%;width:auto;height:auto;' +
+      'object-fit:contain;transform-origin:center center;' +
+      'will-change:transform;user-select:none;' +
+      'pointer-events:none;';
+
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = '✕';
+
+    close.setAttribute('aria-label', 'Close image viewer');
+
+    close.style.cssText =
+      'position:absolute;top:18px;right:18px;z-index:2;' +
+      'width:44px;height:44px;border:0;border-radius:50%;' +
+      'background:rgba(50,50,50,.8);color:white;' +
+      'font-size:25px;cursor:pointer;';
+
+    overlay.appendChild(image);
+    overlay.appendChild(close);
+    document.body.appendChild(overlay);
+
+    __pandaZoomV4 = overlay;
+    document.body.style.overflow = 'hidden';
+
+    var scale = 1;
+    var tx = 0;
+    var ty = 0;
+    var startX = 0;
+    var startY = 0;
+    var startTX = 0;
+    var startTY = 0;
+    var pinchStart = 0;
+    var pinchScale = 1;
+    var lastTap = 0;
+    var moved = false;
+    var activePointers = new Map();
+
+    function applyTransform() {
+      image.style.transform =
+        'translate3d(' + tx + 'px,' + ty + 'px,0) scale(' +
+        scale + ')';
+    }
+
+    function distance(a, b) {
+      var dx = b.x - a.x;
+      var dy = b.y - a.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function point(event) {
+      return { x: event.clientX, y: event.clientY };
+    }
+
+    function onPointerDown(event) {
+      event.preventDefault();
+
+      overlay.setPointerCapture &&
+        overlay.setPointerCapture(event.pointerId);
+
+      activePointers.set(event.pointerId, point(event));
+      moved = false;
+
+      if (activePointers.size === 1) {
+        startX = event.clientX;
+        startY = event.clientY;
+        startTX = tx;
+        startTY = ty;
+      } else if (activePointers.size === 2) {
+        var points = Array.from(activePointers.values());
+        pinchStart = distance(points[0], points[1]);
+        pinchScale = scale;
+      }
+    }
+
+    function onPointerMove(event) {
+      if (!activePointers.has(event.pointerId)) return;
+
+      event.preventDefault();
+      activePointers.set(event.pointerId, point(event));
+
+      if (activePointers.size === 2) {
+        var points = Array.from(activePointers.values());
+        var currentDistance = distance(points[0], points[1]);
+
+        if (pinchStart > 0) {
+          scale = Math.max(
+            1,
+            Math.min(5, pinchScale * currentDistance / pinchStart)
+          );
+        }
+
+        moved = true;
+        applyTransform();
+      } else if (activePointers.size === 1 && scale > 1) {
+        tx = startTX + event.clientX - startX;
+        ty = startTY + event.clientY - startY;
+        moved = true;
+        applyTransform();
+      }
+    }
+
+    function onPointerUp(event) {
+      var now = Date.now();
+
+      activePointers.delete(event.pointerId);
+
+      if (
+        !moved &&
+        activePointers.size === 0 &&
+        now - lastTap < 300
+      ) {
+        scale = scale > 1 ? 1 : 2.5;
+        tx = 0;
+        ty = 0;
+        applyTransform();
+        lastTap = 0;
+      } else if (activePointers.size === 0) {
+        lastTap = now;
+      }
+
+      if (activePointers.size === 1) {
+        var remaining = Array.from(activePointers.values())[0];
+        startX = remaining.x;
+        startY = remaining.y;
+        startTX = tx;
+        startTY = ty;
+      }
+    }
+
+    function onWheel(event) {
+      event.preventDefault();
+
+      scale = Math.max(
+        1,
+        Math.min(5, scale + (event.deltaY < 0 ? 0.2 : -0.2))
+      );
+
+      if (scale === 1) {
+        tx = 0;
+        ty = 0;
+      }
+
+      applyTransform();
+    }
+
+    function onClose(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      __pandaCloseZoomV4();
+    }
+
+    function onOverlayClick(event) {
+      if (event.target === overlay) {
+        __pandaCloseZoomV4();
+      }
+    }
+
+    overlay.addEventListener('pointerdown', onPointerDown, { passive: false });
+    overlay.addEventListener('pointermove', onPointerMove, { passive: false });
+    overlay.addEventListener('pointerup', onPointerUp);
+    overlay.addEventListener('pointercancel', onPointerUp);
+    overlay.addEventListener('wheel', onWheel, { passive: false });
+    overlay.addEventListener('click', onOverlayClick);
+    close.addEventListener('click', onClose);
+
+    __pandaZoomCleanupV4 = function () {
+      overlay.removeEventListener('pointerdown', onPointerDown);
+      overlay.removeEventListener('pointermove', onPointerMove);
+      overlay.removeEventListener('pointerup', onPointerUp);
+      overlay.removeEventListener('pointercancel', onPointerUp);
+      overlay.removeEventListener('wheel', onWheel);
+      overlay.removeEventListener('click', onOverlayClick);
+      close.removeEventListener('click', onClose);
+    };
+  }
+
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!(target instanceof Element)) return;
+
+    // Skip profile/avatar images and any images below 100px wide.
+    var image = target.closest(
+      '#post-detail-overlay img, .home-card img'
+    );
+
+    if (!image || image.closest('#codmpanda-image-zoom-v4')) return;
+
+    if (
+      image.closest('[data-profile-uid]') ||
+      image.closest('.home-card .rounded-full')
+    ) {
+      return;
+    }
+
+    var width = image.getBoundingClientRect().width;
+
+    if (width <= 100) return;
+
+    var src = image.currentSrc || image.src;
+    if (!src) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    __pandaOpenZoomV4(src);
+  }, true);
 
 })();
