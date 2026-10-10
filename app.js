@@ -22392,3 +22392,23 @@ window.getProLobbyShareUrl = getProLobbyShareUrl;
 console.log('✅ Chunk 53: Complete Pro benefits loaded');
 
 /* END OF CHUNK 53 */
+window.__check = async function() {
+  var uid = State.user && State.user.uid;
+  console.log('uid:', uid);
+  if (!uid) return;
+  var snap = await getDocs(query(collection(db, 'likes'), where('userId', '==', uid)));
+  console.log('=== Firestore has ' + snap.size + ' like docs ===');
+  var types = {};
+  snap.forEach(function(d) {
+    var t = d.data().itemType || 'unknown';
+    types[t] = (types[t] || 0) + 1;
+  });
+  console.log('By type:', JSON.stringify(types));
+  console.log('\n=== State.likedItems in app ===');
+  console.log(JSON.stringify(State.likedItems));
+  console.log('\n=== Buttons on page ===');
+  document.querySelectorAll('.post-like-btn, .home-like-btn, .comment-like-btn').forEach(function(b, i) {
+    console.log(i + ':', b.className.split(' ')[0], '| dataset:', JSON.stringify(b.dataset));
+  });
+};
+console.log('run __check()');
