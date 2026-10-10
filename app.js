@@ -22392,3 +22392,132 @@ window.getProLobbyShareUrl = getProLobbyShareUrl;
 console.log('✅ Chunk 53: Complete Pro benefits loaded');
 
 /* END OF CHUNK 53 */
+// ============================================
+// CHUNK 54 — Final UI additions
+// ============================================
+
+// --- 54a: Load user's liked items on boot + paint hearts ---
+async function __c54LoadLikes() {
+  var uid = State.user && State.user.uid;
+  if (!uid) return;
+  try {
+    var snap = await getDocs(query(collection(db, 'likes'), where('userId', '==', uid)));
+    State.likedItems = State.likedItems || {};
+    snap.forEach(function(d) {
+      var data = d.data();
+      if (data.itemType && data.itemId != null) {
+        State.likedItems[data.itemType] = State.likedItems[data.itemType] || {};
+        State.likedItems[data.itemType][data.itemId] = true;
+      }
+    });
+    __c54PaintHearts();
+  } catch (e) { console.warn('loadLikes', e); }
+}
+
+function __c54PaintHearts() {
+  document.querySelectorAll('.post-like-btn, .home-like-btn, .comment-like-btn, .vault-like-btn, .clip-like-btn, .leak-like-btn').forEach(function(btn) {
+    var type = btn.dataset.type || (btn.classList.contains('post-like-btn') ? 'post' : btn.classList.contains('home-like-btn') ? (btn.dataset.type || 'lobby') : null);
+    var id = btn.dataset.id;
+    if (!type || !id) return;
+    var liked = !!(State.likedItems && State.likedItems[type] && State.likedItems[type][id]);
+    var icon = btn.querySelector('i, svg');
+    if (icon) {
+      if (liked) icon.setAttribute('fill', 'currentColor');
+      else icon.removeAttribute('fill');
+    }
+    btn.classList.toggle('text-primary', liked);
+    btn.classList.toggle('text-gray-400', !liked);
+  });
+}
+
+setTimeout(__c54LoadLikes, 2000);
+setTimeout(__c54LoadLikes, 5000);
+document.addEventListener('click', function(e) {
+  if (e.target.closest('.home-filter-btn')) setTimeout(__c54LoadLikes, 1500);
+}, true);
+
+// --- 54b: Profile tap on home cards ---
+document.addEventListener('click', function(e) {
+  var target = e.target;
+  if (!(target instanceof Element)) return;
+  if (target.closest('button, a, input, textarea')) return;
+  if (document.getElementById('post-detail-overlay')) return;
+
+  var card = target.closest('.home-card');
+  if (!card) return;
+  if (card.dataset.type !== 'post' && card.dataset.type !== 'lobby') return;
+
+  var header = card.querySelector(':scope > div.flex.items-center.gap-2, :scope > div.flex.items-start.gap-3');
+  if (!header || !header.contains(target)) return;
+  if (header.querySelector('.text-\\[10px\\].text-gray-500') === target) return;
+
+  var feed = (typeof homeCache !== 'undefined' && homeCache && Array.isArray(homeCache.feed)) ? homeCache.feed : [];
+  var item = feed.find(function(it) { return String(it.id) === String(card.dataset.id); });
+  if (!item || !item.uid) return;
+
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (typeof window.openUserProfile === 'function') window.openUserProfile(item.uid);
+}, true);
+
+// --- 54c: Image zoom ---
+document.addEventListener('click', function(e) {
+  var img = e.target.closest('img');
+  if (!img || img.width < 120) return;
+  if (img.closest('#c54-zoom')) return;
+  if (img.closest('[data-profile-uid], .rounded-full')) return;
+  if (!img.closest('.home-card')) return;
+
+  e.preventDefault();
+  e.stopImmediatePropagation();
+
+  var src = img.currentSrc || img.src;
+  if (!src) return;
+
+  var ov = document.createElement('div');
+  ov.id = 'c54-zoom';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.97);display:flex;align-items:center;justify-content:center;touch-action:none;';
+  var im = document.createElement('img');
+  im.src = src;
+  im.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;transform-origin:center center;user-select:none;';
+  var cl = document.createElement('button');
+  cl.textContent = '✕';
+  cl.style.cssText = 'position:absolute;top:18px;right:18px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;font-size:22px;border:0;cursor:pointer;';
+  ov.appendChild(im); ov.appendChild(cl);
+  document.body.appendChild(ov);
+
+  var scale = 1, tx = 0, ty = 0, sx = 0, sy = 0, stx = 0, sty = 0, pd = 0, ps = 1, ptrs = new Map(), lastTap = 0;
+  function apply() { im.style.transform = 'translate3d(' + tx + 'px,' + ty + 'px,0) scale(' + scale + ')'; }
+  function dist(a, b) { return Math.hypot(b.x - a.x, b.y - a.y); }
+
+  ov.addEventListener('pointerdown', function(ev) {
+    ov.setPointerCapture && ov.setPointerCapture(ev.pointerId);
+    ptrs.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (ptrs.size === 1) { sx = ev.clientX; sy = ev.clientY; stx = tx; sty = ty; }
+    else if (ptrs.size === 2) { var p = Array.from(ptrs.values()); pd = dist(p[0], p[1]); ps = scale; }
+  });
+  ov.addEventListener('pointermove', function(ev) {
+    if (!ptrs.has(ev.pointerId)) return;
+    ptrs.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (ptrs.size === 2) {
+      var p = Array.from(ptrs.values());
+      var d = dist(p[0], p[1]);
+      if (pd) scale = Math.min(5, Math.max(1, ps * d / pd));
+      apply();
+    } else if (ptrs.size === 1 && scale > 1) {
+      tx = stx + ev.clientX - sx; ty = sty + ev.clientY - sy; apply();
+    }
+  });
+  ov.addEventListener('pointerup', function(ev) {
+    ptrs.delete(ev.pointerId);
+    var now = Date.now();
+    if (ptrs.size === 0) {
+      if (now - lastTap < 300) { scale = scale > 1 ? 1 : 2.5; tx = 0; ty = 0; apply(); lastTap = 0; }
+      else lastTap = now;
+    }
+  });
+  cl.onclick = function() { ov.remove(); document.body.style.overflow = ''; };
+  document.body.style.overflow = 'hidden';
+}, true);
+
+console.log('✅ Chunk 54 loaded');
