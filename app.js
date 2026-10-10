@@ -23007,173 +23007,272 @@ document.addEventListener('click', function(e) {
 }, true);
 
 console.log('✅ Chunk 56 loaded');
-// ============================================
-// CHUNK 57 (surgical) — Likes + profile tap + zoom
-// ============================================
+/* ============================================================
+   CODMPanda — UI FIX V3
+   Likes + Lobby Likes + Profile Taps
+   Preserves renderHomePostCard and existing image zoom.
+   ============================================================ */
+(function () {
+  if (window.__codmpanda_ui_fix_v3) return;
+  window.__codmpanda_ui_fix_v3 = true;
 
-// 57a: Load user's liked items into State and paint hearts
-async function __loadLikesAndPaint() {
-  var uid = State.user && State.user.uid;
-  if (!uid) return;
-  try {
-    var snap = await getDocs(query(collection(db, 'likes'), where('userId', '==', uid)));
-    State.likedItems = State.likedItems || {};
-    snap.forEach(function(d) {
-      var data = d.data();
-      var t = data.itemType;
-      if (!t) return;
-      State.likedItems[t] = State.likedItems[t] || {};
-      State.likedItems[t][data.itemId] = true;
-    });
-    __paintAllHearts();
-  } catch(e) { console.warn('loadLikes failed:', e); }
-}
+  // ----------------------------------------------------------
+  // 1. LOBBY LIKE FIRESTORE FIX
+  // ----------------------------------------------------------
+  var _pandaLikeItemV3 = likeItem;
+  var _pandaUnlikeItemV3 = unlikeItem;
 
-function __paintAllHearts() {
-  document.querySelectorAll('.post-like-btn').forEach(function(btn) {
-    var pid = btn.dataset.id;
-    if (!pid) return;
-    var liked = !!(State.likedItems && State.likedItems.post && State.likedItems.post[pid]);
-    var icon = btn.querySelector('i, svg');
-    if (icon) {
-      if (liked) icon.setAttribute('fill', 'currentColor');
-      else icon.removeAttribute('fill');
+  likeItem = function (itemType, itemId, countField) {
+    if (itemType === 'lobby') {
+      return __pandaLobbyLikeV3(itemId, countField, true);
     }
-    btn.classList.toggle('text-primary', liked);
-    btn.classList.toggle('text-gray-400', !liked);
-  });
-  document.querySelectorAll('.comment-like-btn').forEach(function(btn) {
-    var cid = btn.dataset.id;
-    if (!cid) return;
-    var liked = !!(State.likedItems && State.likedItems.comment && State.likedItems.comment[cid]);
-    var icon = btn.querySelector('i, svg');
-    if (icon) {
-      if (liked) icon.setAttribute('fill', 'currentColor');
-      else icon.removeAttribute('fill');
+    return _pandaLikeItemV3.apply(this, arguments);
+  };
+
+  unlikeItem = function (itemType, itemId, countField) {
+    if (itemType === 'lobby') {
+      return __pandaLobbyLikeV3(itemId, countField, false);
     }
-    btn.classList.toggle('text-primary', liked);
-    btn.classList.toggle('text-gray-400', !liked);
-  });
-}
+    return _pandaUnlikeItemV3.apply(this, arguments);
+  };
 
-setTimeout(__loadLikesAndPaint, 2000);
-setTimeout(__loadLikesAndPaint, 4500);
-document.addEventListener('click', function(e) {
-  if (e.target.closest('.home-filter-btn')) setTimeout(__loadLikesAndPaint, 1500);
-}, true);
+  async function __pandaLobbyLikeV3(itemId, countField, shouldLike) {
+    if (!auth.currentUser) return;
 
-// 57b: Profile tap — works on any [data-uid] inside home cards (avatar OR name)
-//   Uses click delegation at window capture so nothing blocks it.
-window.addEventListener('click', function(e) {
-  if (e.target.closest('button')) return;
-  if (document.getElementById('post-detail-overlay')) return;
+    var uid = auth.currentUser.uid;
+    var likeRef = doc(db, 'likes', 'lobby_' + itemId + '_' + uid);
+    var lobbyRef = doc(db, 'lobbies', itemId);
 
-  var card = e.target.closest('.home-card');
-  if (!card) return;
+    if (shouldLike) {
+      await setDoc(likeRef, {
+        itemType: 'lobby',
+        itemId: itemId,
+        userId: uid,
+        createdAt: serverTimestamp()
+      });
 
-  // Find author element — either data-uid or a name/avatar div
-  var authorEl = e.target.closest('[data-uid], [data-profile-uid]');
-  if (!authorEl) {
-    // Try looking up: clicked on img inside a rounded-full div, or a bold name
-    var imgEl = e.target.closest('img');
-    if (imgEl) {
-      var av = imgEl.closest('div[class*="rounded-full"], div[class*="w-11"]');
-      if (av) {
-        // Try to find author uid from card attributes
-        var uid = card.dataset.uid;
-        if (uid) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); window.openUserProfile(uid); return; }
-      }
+      await updateDoc(lobbyRef, {
+        [countField || 'likes']: increment(1)
+      });
+    } else {
+      await deleteDoc(likeRef);
+
+      await updateDoc(lobbyRef, {
+        [countField || 'likes']: increment(-1)
+      });
     }
   }
-  // If we didn't handle it, do nothing (let card tap open post)
-}, true);
 
-// 57c: Same for inside post detail — avatar tap opens profile
-document.addEventListener('click', function(e) {
-  var ov = document.getElementById('post-detail-overlay');
-  if (!ov) return;
-  if (e.target.closest('button')) return;
+  // ----------------------------------------------------------
+  // 2. LOAD EXISTING LIKES
+  // ----------------------------------------------------------
+  var __pandaLikedV3 = new Set();
+  var __pandaLikesLoadedV3 = false;
+  var __pandaLikesLoadingV3 = false;
 
-  var u = e.target.closest('[data-profile-uid]');
-  if (!u) return;
-  var uid = u.dataset.profileUid;
-  if (!uid) return;
-  e.preventDefault();
-  e.stopPropagation();
-  e.stopImmediatePropagation();
-  ov.remove();
-  document.body.style.overflow = '';
-  setTimeout(function() {
-    window.openUserProfile(uid);
-    var sheet = document.getElementById('sheet-container');
-    if (sheet) sheet.style.zIndex = '99999';
-  }, 30);
-}, true);
+  async function __pandaLoadLikesV3() {
+    if (__pandaLikesLoadingV3 || !auth.currentUser) return;
 
-// 57d: Image zoom
-document.addEventListener('click', function(e) {
-  var img = e.target.closest('img');
-  if (!img) return;
-  if (img.closest('#pd-zoom-overlay')) return;
-  if (img.id === 'pd-zoom-img') return;
-  if (!img.closest('.home-card') && !img.closest('#post-detail-overlay')) return;
-  if (img.width < 100) return;
+    __pandaLikesLoadingV3 = true;
 
-  e.preventDefault();
-  e.stopPropagation();
-  e.stopImmediatePropagation();
+    try {
+      var snap = await getDocs(
+        query(
+          collection(db, 'likes'),
+          where('userId', '==', auth.currentUser.uid)
+        )
+      );
 
-  var overlay = document.createElement('div');
-  overlay.id = 'pd-zoom-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.98);display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;';
-  overlay.innerHTML = '<div id="pd-zoom-close" style="position:absolute;top:12px;right:12px;z-index:2;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;cursor:pointer;">✕</div><img id="pd-zoom-img" src="' + img.src + '" style="max-width:100%;max-height:100%;object-fit:contain;transform-origin:center center;transition:transform 0.05s;user-select:none;-webkit-user-drag:none;" />';
-  document.body.appendChild(overlay);
-  document.getElementById('pd-zoom-close').onclick = function() { overlay.remove(); };
+      __pandaLikedV3.clear();
 
-  var zi = document.getElementById('pd-zoom-img');
-  var scale = 1, lastScale = 1, posX = 0, posY = 0, lastPosX = 0, lastPosY = 0;
-  var startX = 0, startY = 0, startDist = 0, touchMode = '';
+      snap.forEach(function (d) {
+        var data = d.data();
 
-  zi.addEventListener('touchstart', function(ev) {
-    if (ev.touches.length === 2) {
-      touchMode = 'pinch';
-      startDist = Math.hypot(ev.touches[0].pageX - ev.touches[1].pageX, ev.touches[0].pageY - ev.touches[1].pageY);
-      lastScale = scale;
-    } else if (ev.touches.length === 1) {
-      touchMode = 'pan';
-      startX = ev.touches[0].pageX - lastPosX;
-      startY = ev.touches[0].pageY - lastPosY;
+        if (data.itemType && data.itemId != null) {
+          __pandaLikedV3.add(
+            data.itemType + '_' + data.itemId
+          );
+        }
+      });
+
+      __pandaLikesLoadedV3 = true;
+      __pandaPaintLikesV3();
+    } catch (err) {
+      console.error('[CODMPanda] Like loading failed:', err);
+    } finally {
+      __pandaLikesLoadingV3 = false;
     }
-  }, { passive: true });
+  }
 
-  zi.addEventListener('touchmove', function(ev) {
-    if (touchMode === 'pinch' && ev.touches.length === 2) {
-      var d = Math.hypot(ev.touches[0].pageX - ev.touches[1].pageX, ev.touches[0].pageY - ev.touches[1].pageY);
-      scale = Math.min(5, Math.max(1, lastScale * (d / startDist)));
-      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
-    } else if (touchMode === 'pan' && ev.touches.length === 1 && scale > 1) {
-      posX = ev.touches[0].pageX - startX;
-      posY = ev.touches[0].pageY - startY;
-      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
+  function __pandaPaintLikesV3() {
+    if (!__pandaLikesLoadedV3) return;
+
+    [
+      ['.post-like-btn', 'post'],
+      ['.comment-like-btn', 'comment'],
+      ['.lobby-like-btn', 'lobby'],
+      ['.vault-like-btn', 'vault'],
+      ['.clip-like-btn', 'clip'],
+      ['.leak-like-btn', 'leak']
+    ].forEach(function (entry) {
+      document.querySelectorAll(entry[0]).forEach(function (btn) {
+        var id = btn.dataset.id;
+        if (!id) return;
+
+        var liked = __pandaLikedV3.has(entry[1] + '_' + id);
+
+        btn.classList.toggle('text-primary', liked);
+        btn.classList.toggle('text-gray-400', !liked);
+        btn.classList.toggle('liked', liked);
+        btn.setAttribute('aria-pressed', String(liked));
+
+        var icon = btn.querySelector('i, svg');
+
+        if (icon) {
+          if (liked) {
+            icon.setAttribute('fill', 'currentColor');
+          } else {
+            icon.removeAttribute('fill');
+          }
+        }
+      });
+    });
+  }
+
+  if (auth.currentUser) {
+    __pandaLoadLikesV3();
+  }
+
+  // ----------------------------------------------------------
+  // 3. LIKE BUTTONS: PERSIST, UPDATE SET AND COUNT
+  // ----------------------------------------------------------
+  document.addEventListener('click', async function (event) {
+    var target = event.target;
+    if (!(target instanceof Element)) return;
+
+    var btn = target.closest(
+      '.post-like-btn, .comment-like-btn, .lobby-like-btn, ' +
+      '.vault-like-btn, .clip-like-btn, .leak-like-btn'
+    );
+
+    if (!btn) return;
+
+    var id = btn.dataset.id;
+    if (!id) return;
+
+    var type =
+      btn.classList.contains('post-like-btn') ? 'post' :
+      btn.classList.contains('comment-like-btn') ? 'comment' :
+      btn.classList.contains('lobby-like-btn') ? 'lobby' :
+      btn.classList.contains('vault-like-btn') ? 'vault' :
+      btn.classList.contains('clip-like-btn') ? 'clip' :
+      btn.classList.contains('leak-like-btn') ? 'leak' : null;
+
+    if (!type) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!auth.currentUser) return;
+
+    var key = type + '_' + id;
+    var wasLiked = __pandaLikedV3.has(key);
+    var numEl = btn.querySelector('span');
+    var oldCount = numEl ? parseInt(numEl.textContent, 10) || 0 : 0;
+
+    if (wasLiked) {
+      __pandaLikedV3.delete(key);
+    } else {
+      __pandaLikedV3.add(key);
     }
-  }, { passive: true });
 
-  zi.addEventListener('touchend', function() {
-    lastPosX = posX; lastPosY = posY;
-    if (scale <= 1) { posX = 0; posY = 0; lastPosX = 0; lastPosY = 0; }
-    touchMode = '';
-  }, { passive: true });
-
-  var lastTap = 0;
-  zi.addEventListener('touchend', function() {
-    var now = Date.now();
-    if (now - lastTap < 300) {
-      if (scale > 1) { scale = 1; posX = 0; posY = 0; } else { scale = 2.5; }
-      lastScale = scale;
-      zi.style.transform = 'translate(' + posX + 'px,' + posY + 'px) scale(' + scale + ')';
+    if (numEl) {
+      numEl.textContent = String(
+        Math.max(0, oldCount + (wasLiked ? -1 : 1))
+      );
     }
-    lastTap = now;
-  });
-}, true);
 
-console.log('✅ Chunk 57 surgical loaded');
+    __pandaPaintLikesV3();
+
+    try {
+      await toggleLike(type, id, 'likes');
+    } catch (err) {
+      if (wasLiked) {
+        __pandaLikedV3.add(key);
+      } else {
+        __pandaLikedV3.delete(key);
+      }
+
+      if (numEl) numEl.textContent = String(oldCount);
+
+      __pandaPaintLikesV3();
+
+      console.error('[CODMPanda] Like toggle failed:', err);
+    }
+  }, true);
+
+  // ----------------------------------------------------------
+  // 4. PROFILE TAPS ON POST AND LOBBY CARDS
+  // ----------------------------------------------------------
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!(target instanceof Element)) return;
+
+    var card = target.closest('.home-card');
+    if (!card) return;
+
+    if (target.closest('button, a, input, textarea, [role="button"]')) {
+      return;
+    }
+
+    var header = target.closest(
+      '.home-card .flex.items-start.gap-3'
+    );
+
+    if (!header) {
+      var firstChild = card.firstElementChild;
+
+      if (
+        !firstChild ||
+        !firstChild.contains(target) ||
+        !firstChild.querySelector('img, .font-bold, [class*="font-bold"]')
+      ) {
+        return;
+      }
+
+      header = firstChild;
+    }
+
+    if (!header.contains(target)) return;
+
+    var feed =
+      typeof homeCache !== 'undefined' &&
+      homeCache &&
+      Array.isArray(homeCache.feed)
+        ? homeCache.feed
+        : [];
+
+    var item = feed.find(function (entry) {
+      return String(entry.id) === String(card.dataset.id);
+    });
+
+    if (!item || !item.uid) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    openUserProfile(item.uid);
+  }, true);
+
+  // ----------------------------------------------------------
+  // 5. MANUAL REFRESH FOR DYNAMIC CONTENT
+  // ----------------------------------------------------------
+  window.__codmpandaRefreshLikesV3 = function () {
+    if (!__pandaLikesLoadedV3) {
+      __pandaLoadLikesV3();
+    } else {
+      __pandaPaintLikesV3();
+    }
+  };
+
+})();
