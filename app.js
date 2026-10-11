@@ -1024,7 +1024,7 @@ async function ensureUserProfile(user) {
   var referralCode = 'PANDA' + user.uid.slice(0, 6).toUpperCase();
   var baseProfile = {
     uid: user.uid,
-    ign: user.displayName || (user.email ? user.email.split('@')[0] : 'PandaPlayer'),
+    ign: user.displayName || '',
     email: user.email || '',
     avatar: user.photoURL || '',
     rank: 'Rookie',
@@ -1102,7 +1102,7 @@ onAuthStateChanged(auth, async function(user) {
     // Load liked items into State
     await loadUserLikes(user.uid);
 
-    if (!profile.onboardingDone) {
+    if (!profile.onboardingDone || !profile.ign || profile.ign === 'Panda' || profile.ign === 'PandaPlayer') {
       showOnboarding();
     } else {
       showMainApp();
@@ -1230,9 +1230,9 @@ function renderNavBar() {
 function renderTopBar() {
   var top = document.getElementById('top-bar');
   if (!top) return;
-  var ign = (State.profile && State.profile.ign) || 'Panda';
-  var rank = (State.profile && State.profile.rank) || 'Rookie';
-  var region = (State.profile && State.profile.region) || 'Africa';
+  var ign = (State.profile && State.profile.ign) || '';
+  var rank = (State.profile && State.profile.rank) || '';
+  var region = (State.profile && State.profile.region) || '';
   var avatar = (State.profile && State.profile.avatar) || '';
   var isPro = State.profile && State.profile.isPro;
   var verified = State.profile && State.profile.verified;
@@ -1433,7 +1433,7 @@ function renderProfileForm() {
   var ignInput = document.getElementById('pf-ign');
   if (ignInput && State.user && State.user.displayName) {
     ignInput.value = State.user.displayName.split(' ')[0];
-  }
+}
 
   document.getElementById('pf-save').onclick = async function() {
     var ign = document.getElementById('pf-ign').value.trim();
