@@ -45,6 +45,16 @@ tailwind.config = {
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
+<!-- Eruda mobile console (only loads with ?debug=1) -->
+<script>
+if (location.search.includes('debug=1')) {
+  var _erudaScript = document.createElement('script');
+  _erudaScript.src = 'https://cdn.jsdelivr.net/npm/eruda';
+  _erudaScript.onload = function() { eruda.init(); };
+  document.head.appendChild(_erudaScript);
+}
+</script>
+
 <style>
 * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 html, body {
@@ -90,7 +100,7 @@ select {
 .btn-press { transition: transform .1s ease; }
 .btn-press:active { transform: scale(.96); }
 
-.tab-btn { 
+.tab-btn {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -286,7 +296,6 @@ input, textarea { touch-action: auto; }
   <!-- MAIN APP -->
   <div id="main-app" style="display:none;min-height:100vh;padding-bottom:calc(68px + env(safe-area-inset-bottom, 0px));">
 
-    <!-- Top bar (wired by app.js) -->
     <div id="top-bar" style="position:sticky;top:0;z-index:30;background:rgba(5,5,5,.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid #1a1a1a;padding:12px 16px;padding-top:calc(env(safe-area-inset-top,0px) + 12px);display:flex;align-items:center;gap:10px;">
       <img src="/icon-192.png" alt="Panda" style="width:36px;height:36px;border-radius:10px;flex-shrink:0;" />
       <div style="flex:1;min-width:0;">
@@ -303,13 +312,10 @@ input, textarea { touch-action: auto; }
       </button>
     </div>
 
-    <!-- Content area (rendered by app.js) -->
     <div id="content" style="padding-top:4px;"></div>
 
-    <!-- Ad banner (hidden for Pro) -->
     <div id="ad-banner" style="position:fixed;bottom:calc(68px + env(safe-area-inset-bottom, 0px));left:0;right:0;background:#141414;border-top:1px solid #222;padding:8px 16px;text-align:center;font-size:10px;color:#666;z-index:25;display:none;">Ad space — upgrade to Pro to remove</div>
 
-    <!-- Bottom navigation (6 tabs) -->
     <div id="bottom-nav" style="position:fixed;bottom:0;left:0;right:0;z-index:30;background:rgba(5,5,5,.98);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid #1a1a1a;padding-bottom:env(safe-area-inset-bottom,0px);display:flex;height:68px;">
       <button class="tab-btn tab-active" data-tab="home">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -339,7 +345,6 @@ input, textarea { touch-action: auto; }
 
   </div>
 
-  <!-- Global containers -->
   <div id="toast-container" style="position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;width:calc(100% - 32px);max-width:400px;"></div>
   <div id="modal-container" style="position:fixed;inset:0;z-index:9000;display:none;"></div>
   <div id="sheet-container" style="position:fixed;inset:0;z-index:9000;display:none;"></div>
@@ -350,7 +355,6 @@ input, textarea { touch-action: auto; }
 
 <script>
 window.addEventListener('load', function() {
-  // Google Identity Services init (backup wiring — app.js also handles it)
   function initGIS() {
     if (typeof google === 'undefined' || !google.accounts) {
       setTimeout(initGIS, 300);
@@ -373,7 +377,6 @@ window.addEventListener('load', function() {
   }
   initGIS();
 
-  // Wire sign-in button (fallback — app.js also wires it)
   var signBtn = document.getElementById('google-signin-btn');
   if (signBtn) {
     signBtn.addEventListener('click', function() {
@@ -383,14 +386,12 @@ window.addEventListener('load', function() {
     });
   }
 
-  // Register service worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(function(e) {
       console.warn('Service Worker failed:', e);
     });
   }
 
-  // Hide splash after 2 seconds max (app.js also hides on auth ready)
   setTimeout(function() {
     var splash = document.getElementById('splash');
     if (splash && splash.style.display !== 'none') {
