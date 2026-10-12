@@ -1,3 +1,31 @@
+# ============================================
+# CODMPanda Notification Worker
+# ============================================
+# ⚙️ Handles: FCM push sends + daily cron notifications
+# ============================================
+
 name = "codmpanda-notify"
 main = "worker.js"
 compatibility_date = "2024-10-01"
+
+# ============================================
+# CRON TRIGGERS
+# ============================================
+# Daily notification — 7 PM UTC every day
+# 7 PM UTC = 8 PM WAT (Nigeria) = 9 PM SAST = 10 PM EAT
+[triggers]
+crons = ["0 19 * * *"]
+
+# ============================================
+# OBSERVABILITY (see cron logs in Cloudflare dashboard)
+# ============================================
+[observability]
+enabled = true
+
+# ============================================
+# SECRETS (set via dashboard or CLI, NOT here)
+# ============================================
+# FIREBASE_SERVICE_ACCOUNT_JSON  ← already set ✅
+#
+# To set via CLI (optional):
+#   wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
