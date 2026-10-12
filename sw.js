@@ -1,11 +1,15 @@
-/* CODMPanda Service Worker v1.0.0
+/* CODMPanda Service Worker v2.0.0
    Cache-first for app shell, network-first for Firebase calls */
 
-const CACHE_NAME = 'codmpanda-v1.0.0';
+const CACHE_NAME = 'codmpanda-v2.0.0';
 const APP_SHELL = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/app.js',
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/hero-panda.jpg'
 ];
 
 // CDN assets we want cached for offline use
