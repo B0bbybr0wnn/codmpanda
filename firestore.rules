@@ -1,251 +1,349 @@
 rules_version = '2';
 
+// ============================================
+// CODMPanda Firestore Security Rules
+// ============================================
+// Philosophy: 
+//  - Authenticated users can read most things
+//  - Users can only write their own content
+//  - Admin (ADMIN_UID) can do anything
+//  - Banned users are locked out of writes
+// ============================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+    
     function isSignedIn() {
       return request.auth != null;
     }
-
-    function isOwner(uid) {
-      return isSignedIn() && request.auth.uid == uid;
-    }
-
+    
     function isAdmin() {
       return isSignedIn() && request.auth.uid == 'ItqEYihqxYW4HGm7i8bBYky8XNw1';
     }
-
-    // ---------- USERS ----------
-    match /users/{uid} {
-      allow read: if isSignedIn();
-      allow create: if isOwner(uid)
-                    && request.resource.data.isPro == false
-                    && request.resource.data.ign is string
-                    && request.resource.data.ign.size() >= 2
-                    && request.resource.data.ign.size() <= 24;
-      allow update: if isSignedIn() && (
-        isAdmin() ||
-        (isOwner(uid) && (
-          request.resource.data.isPro == resource.data.isPro
-          && request.resource.data.proExpiry == resource.data.proExpiry
-        )) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAvg', 'ratingCount', 'ratingTags']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends', 'friendRequests', 'friendRequestsSent']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentParty']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tournamentWins']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['themeStyle', 'avatarFrame']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActiveDate', 'activeStreak']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verified', 'verifiedAt'])
-      );
-      allow delete: if isOwner(uid) || isAdmin();
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isNotBanned() {
+      return !exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+        || !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.banned;
     }
 
-    // ---------- LOBBIES ----------
+    // ============================================
+    // USERS
+    // ============================================
+    match /users/{userId} {
+      // Anyone signed in can read profiles (privacy handled client-side)
+      allow read: if isSignedIn();
+      
+      // Users can create their own profile
+      allow create: if isOwner(userId);
+      
+      // Users can update their own profile — but cannot escalate to admin or unban themselves
+      allow update: if isOwner(userId) 
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned', 'banReason', 'bannedAt', 'bannedBy'])
+        || isAdmin();
+      
+      // Only admin can delete users
+      allow delete: if isAdmin();
+    }
+
+    // ============================================
+    // LOBBIES (LFG board)
+    // ============================================
     match /lobbies/{lobbyId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn()
-                    && request.resource.data.uid == request.auth.uid
-                    && request.resource.data.players >= 1
-                    && request.resource.data.players <= 5;
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isNotBanned();
+      
+      // Owner can update their own lobby; anyone signed in can increment player count
+      allow update: if isSignedIn() && (
+        resource.data.uid == request.auth.uid 
+        || isAdmin()
+      );
+      
+      allow delete: if isSignedIn() && (
+        resource.data.uid == request.auth.uid 
+        || isAdmin()
+      );
     }
 
-    // ---------- VAULTS ----------
+    // ============================================
+    // VAULTS (Gunsmith / Sens / HUD)
+    // ============================================
     match /vaults/{vaultId} {
-      allow read: if true;
-      allow create: if isSignedIn()
-                    && request.resource.data.uid == request.auth.uid
-                    && request.resource.data.likes == 0
-                    && request.resource.data.type in ['gunsmith', 'sens', 'hud'];
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isNotBanned();
       allow update: if isSignedIn() && (
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']))
-        || (resource.data.uid == request.auth.uid)
+        resource.data.uid == request.auth.uid 
         || isAdmin()
       );
-      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
-    }
-
-    // ---------- CAMOS ----------
-    match /camos/{uid} {
-      allow read: if isSignedIn();
-      allow write: if isOwner(uid);
-    }
-
-    // ---------- POSTS ----------
-    match /posts/{postId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
-                    && request.resource.data.uid == request.auth.uid
-                    && request.resource.data.text is string
-                    && request.resource.data.text.size() >= 2;
-      allow update: if isSignedIn() && (
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'commentCount']))
-        || (resource.data.uid == request.auth.uid)
+      allow delete: if isSignedIn() && (
+        resource.data.uid == request.auth.uid 
         || isAdmin()
       );
-      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
-    // ---------- CLANS ----------
+    // ============================================
+    // CAMOS (per-user camo tracker)
+    // ============================================
+    match /camos/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // ============================================
+    // CLANS
+    // ============================================
     match /clans/{clanId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn()
-                    && request.resource.data.ownerUid == request.auth.uid
-                    && request.resource.data.name is string
-                    && request.resource.data.name.size() >= 3
-                    && request.resource.data.name.size() <= 30
-                    && request.resource.data.members is list
-                    && request.resource.data.members.size() == 1;
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
-    }
-
-    // ---------- SCRIMS ----------
-    match /scrims/{scrimId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
-                    && request.resource.data.uid == request.auth.uid
-                    && request.resource.data.text is string
-                    && request.resource.data.text.size() <= 500;
-      allow update, delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
-    }
-
-    // ---------- CLIPS ----------
-    match /clips/{clipId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
-                    && request.resource.data.uid == request.auth.uid
-                    && request.resource.data.youtubeUrl is string
-                    && request.resource.data.likes == 0;
+      allow create: if isSignedIn() && isNotBanned();
+      
+      // Owner or admin can edit clan details; anyone can join (via arrayUnion on members)
       allow update: if isSignedIn() && (
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']))
-        || (resource.data.uid == request.auth.uid)
+        resource.data.ownerUid == request.auth.uid 
         || isAdmin()
       );
-      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      
+      allow delete: if isSignedIn() && (
+        resource.data.ownerUid == request.auth.uid 
+        || isAdmin()
+      );
     }
 
-    // ---------- LEAKS ----------
+    // ============================================
+    // SCRIMS
+    // ============================================
+    match /scrims/{scrimId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isNotBanned();
+      allow update, delete: if isSignedIn() && (
+        resource.data.uid == request.auth.uid 
+        || isAdmin()
+      );
+    }
+
+    // ============================================
+    // CLIPS
+    // ============================================
+    match /clips/{clipId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isNotBanned();
+      allow update, delete: if isSignedIn() && (
+        resource.data.uid == request.auth.uid 
+        || isAdmin()
+      );
+    }
+
+    // ============================================
+    // LEAKS
+    // ============================================
     match /leaks/{leakId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isAdmin();
+      
+      // Users can submit leaks (they go live immediately)
+      allow create: if isSignedIn() && isNotBanned();
+      
+      // Owner can edit their own within reason; admin can always
+      allow update, delete: if isSignedIn() && (
+        resource.data.uid == request.auth.uid 
+        || isAdmin()
+      );
     }
 
-    // ---------- SUBMISSIONS ----------
-    match /leak_submissions/{subId} {
-      allow create: if isSignedIn()
-                    && request.resource.data.submitterUid == request.auth.uid
-                    && request.resource.data.status == 'pending';
-      allow read, update, delete: if isAdmin();
+    // ============================================
+    // POSTS (home feed text posts)
+    // ============================================
+    match /posts/{postId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isNotBanned();
+      allow update, delete: if isSignedIn() && (
+        resource.data.uid == request.auth.uid 
+        || isAdmin()
+      );
     }
 
-    match /vault_submissions/{subId} {
-      allow create: if isSignedIn()
-                    && request.resource.data.submitterUid == request.auth.uid
-                    && request.resource.data.status == 'pending';
-      allow read, update, delete: if isAdmin();
+    // ============================================
+    // COMMENTS (on posts, vaults, clips, leaks, lobbies)
+    // ============================================
+    match /comments/{commentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isNotBanned();
+      allow update, delete: if isSignedIn() && (
+        resource.data.uid == request.auth.uid 
+        || isAdmin()
+      );
     }
 
-    match /clip_submissions/{subId} {
-      allow create: if isSignedIn()
-                    && request.resource.data.submitterUid == request.auth.uid
-                    && request.resource.data.status == 'pending';
-      allow read, update, delete: if isAdmin();
+    // ============================================
+    // LIKES / REACTIONS
+    // Doc ID format: {contentType}_{contentId}_{userId}
+    // ============================================
+    match /likes/{likeId} {
+      allow read: if isSignedIn();
+      
+      // Users can only create/delete their own reactions
+      // Enforce userId field matches auth uid
+      allow create: if isSignedIn() 
+        && isNotBanned() 
+        && request.resource.data.userId == request.auth.uid;
+      
+      allow delete: if isSignedIn() 
+        && resource.data.userId == request.auth.uid;
+      
+      // No updates — reactions are create/delete only
+      allow update: if false;
     }
 
-    // ---------- REPORTS ----------
+    // ============================================
+    // NOTIFICATIONS (in-app)
+    // ============================================
+    match /notifications/{notifId} {
+      // Users can only read their own notifications
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Anyone signed in can create notifications for others (system messages)
+      allow create: if isSignedIn();
+      
+      // Users can mark their own as read
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Users can delete their own; admin can delete any
+      allow delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid 
+        || isAdmin()
+      );
+    }
+
+    // ============================================
+    // MESSAGES (DMs)
+    // ============================================
+    match /messages/{messageId} {
+      // Users can read messages they sent or received
+      allow read: if isSignedIn() && (
+        resource.data.fromUid == request.auth.uid 
+        || resource.data.toUid == request.auth.uid
+      );
+      
+      // Users can only send from themselves
+      allow create: if isSignedIn() 
+        && isNotBanned() 
+        && request.resource.data.fromUid == request.auth.uid;
+      
+      // Senders can edit/delete their own messages
+      allow update, delete: if isSignedIn() && (
+        resource.data.fromUid == request.auth.uid 
+        || isAdmin()
+      );
+    }
+
+    // ============================================
+    // REPORTS (user-submitted)
+    // ============================================
     match /reports/{reportId} {
-      allow read, create: if isSignedIn();
+      // Only admin can read reports
+      allow read: if isAdmin();
+      
+      // Anyone signed in can submit a report
+      allow create: if isSignedIn() && isNotBanned();
+      
+      // Only admin can update (resolve) or delete
       allow update, delete: if isAdmin();
     }
 
-    // ---------- TIER VOTES ----------
-    match /tierVotes/{uid} {
+    // ============================================
+    // TOURNAMENTS
+    // ============================================
+    match /tournaments/{tournamentId} {
       allow read: if isSignedIn();
-      allow write: if isOwner(uid);
+      allow create: if isSignedIn() && isNotBanned();
+      
+      // Creator can update; anyone can register (via arrayUnion on teams)
+      allow update: if isSignedIn() && (
+        resource.data.creatorUid == request.auth.uid 
+        || isAdmin()
+      );
+      
+      allow delete: if isSignedIn() && (
+        resource.data.creatorUid == request.auth.uid 
+        || isAdmin()
+      );
     }
 
-    // ---------- RATINGS ----------
-    match /ratings/{ratingId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
-      allow update, delete: if isAdmin();
-    }
-
-    // ---------- CLAN WARS ----------
+    // ============================================
+    // CLAN WARS LOG (points tracking)
+    // ============================================
     match /clanWarsLog/{logId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
 
+    // ============================================
+    // CLAN WARS HISTORY (weekly champions)
+    // ============================================
     match /clanWarsHistory/{historyId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
-    // ---------- TOURNAMENTS ----------
-    match /tournaments/{tournamentId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.creatorUid == request.auth.uid;
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (resource.data.creatorUid == request.auth.uid || isAdmin());
-    }
-
-    match /tournamentHistory/{historyId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
-    }
-
-    // ---------- MESSAGES (DMs) ----------
-    match /messages/{messageId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.fromUid == request.auth.uid;
-      allow delete: if isSignedIn() && (resource.data.fromUid == request.auth.uid || isAdmin());
-    }
-
-    // ---------- PARTIES ----------
-    match /parties/{partyId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.leaderUid == request.auth.uid;
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (resource.data.leaderUid == request.auth.uid || isAdmin());
-    }
-
-    // ---------- NOTIFICATIONS ----------
-    match /notifications/{notifId} {
-      allow read: if isSignedIn() && request.auth.uid == resource.data.userId;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && request.auth.uid == resource.data.userId;
-      allow delete: if isSignedIn() && request.auth.uid == resource.data.userId;
-    }
-
-    // ---------- COMMENTS ----------
-    match /comments/{commentId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
-                    && request.resource.data.uid == request.auth.uid
-                    && request.resource.data.text is string
-                    && request.resource.data.text.size() <= 300;
-      allow update: if isSignedIn() && (
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']))
-        || (resource.data.uid == request.auth.uid)
+    // ============================================
+    // SUBMISSIONS (legacy — kept for backward compat)
+    // ============================================
+    match /vault_submissions/{subId} {
+      allow read: if isSignedIn() && (
+        resource.data.submitterUid == request.auth.uid 
         || isAdmin()
       );
-      allow delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isNotBanned();
+      allow update, delete: if isAdmin();
     }
 
-    // ---------- LIKES ----------
-    match /likes/{likeId} {
+    match /leak_submissions/{subId} {
+      allow read: if isSignedIn() && (
+        resource.data.submitterUid == request.auth.uid 
+        || isAdmin()
+      );
+      allow create: if isSignedIn() && isNotBanned();
+      allow update, delete: if isAdmin();
+    }
+
+    match /clip_submissions/{subId} {
+      allow read: if isSignedIn() && (
+        resource.data.submitterUid == request.auth.uid 
+        || isAdmin()
+      );
+      allow create: if isSignedIn() && isNotBanned();
+      allow update, delete: if isAdmin();
+    }
+
+    // ============================================
+    // PARTIES (voice room groups)
+    // ============================================
+    match /parties/{partyId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow update: if false;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (
+        resource.data.leaderUid == request.auth.uid 
+        || isAdmin()
+      );
     }
 
-    // ---------- DEFAULT DENY ----------
+    // ============================================
+    // TIER VOTES (community tier list)
+    // ============================================
+    match /tierVotes/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // ============================================
+    // DEFAULT DENY
+    // ============================================
     match /{document=**} {
       allow read, write: if false;
     }
