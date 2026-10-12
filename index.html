@@ -45,15 +45,9 @@ tailwind.config = {
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-<!-- Eruda mobile console (only loads with ?debug=1) -->
-<script>
-if (location.search.includes('debug=1')) {
-  var _erudaScript = document.createElement('script');
-  _erudaScript.src = 'https://cdn.jsdelivr.net/npm/eruda';
-  _erudaScript.onload = function() { eruda.init(); };
-  document.head.appendChild(_erudaScript);
-}
-</script>
+<!-- Eruda mobile console -->
+<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+<script>eruda.init();</script>
 
 <style>
 * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
@@ -402,5 +396,5 @@ window.addEventListener('load', function() {
 });
 </script>
 
-</body>
+</body>                                                                                                                           
 </html>
