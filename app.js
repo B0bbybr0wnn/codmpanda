@@ -6826,12 +6826,12 @@ window.openEditVaultModal = openEditVaultModal;
 // END OF CHUNK 13/24
 // ============================================
 // ============================================
-// CHUNK 14/24 — Gunsmith Builder
-// ⚙️ UPDATE HERE: attachment pools, per-gun loadouts, gun images
+// CHUNK 14a/24 — Gunsmith Builder (Data + Picker + Canvas)
+// ⚙️ UPDATE HERE: slots, stat config, base stats, attachment pools
 // ============================================
 
 // ============================================
-// GUNSMITH SLOTS — ORDER MATTERS
+// GUNSMITH SLOTS
 // ============================================
 const GUNSMITH_SLOTS = [
   { key: 'muzzle',      label: 'Muzzle',      icon: 'shield' },
@@ -6846,7 +6846,7 @@ const GUNSMITH_SLOTS = [
 ];
 
 // ============================================
-// STAT CONFIG — BARS + COLORS
+// STAT CONFIG
 // ============================================
 const STAT_CONFIG = [
   { key: 'accuracy', label: 'Accuracy',  color: '#00BFFF' },
@@ -6858,7 +6858,7 @@ const STAT_CONFIG = [
 ];
 
 // ============================================
-// GUN CATEGORY META (for icons + colors)
+// GUN CATEGORY META
 // ============================================
 const GUN_CATEGORY_META = {
   'Assault Rifle': { icon: 'crosshair', color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)' },
@@ -6882,7 +6882,53 @@ function getGunMeta(gunName) {
 }
 
 // ============================================
-// BASE STATS — APPROXIMATE (0-100)
+// 3D GUN MODEL MAP (for Chunk 25)
+// ============================================
+const GUN_MODEL_MAP = {
+  'AK117': 'modern_tactical_carbine.glb',
+  'M4': 'modern_tactical_carbine.glb',
+  'M13': 'modern_tactical_carbine.glb',
+  'Kilo 141': 'modern_tactical_carbine.glb',
+  'Grau 5.56': 'modern_tactical_carbine.glb',
+  'AK-47': 'wood_furniture_assault_rifle.glb',
+  'ASM10': 'wood_furniture_assault_rifle.glb',
+  'DR-H': 'wood_furniture_assault_rifle.glb',
+  'RUS-79U': 'wood_furniture_assault_rifle.glb',
+  'Type 25': 'wood_furniture_assault_rifle.glb',
+  'Fennec': 'compact_submachine_gun.glb',
+  'QQ9': 'compact_submachine_gun.glb',
+  'MP5': 'compact_submachine_gun.glb',
+  'Cordite': 'compact_submachine_gun.glb',
+  'MX9': 'compact_submachine_gun.glb',
+  'LAPA': 'compact_submachine_gun.glb',
+  'PP19 Bizon': 'drum_magazine_submachine_gun.glb',
+  'PPSh-41': 'drum_magazine_submachine_gun.glb',
+  'DL Q33': 'bolt_action_sniper_rifle.glb',
+  'Locus': 'bolt_action_sniper_rifle.glb',
+  'Arctic .50': 'bolt_action_sniper_rifle.glb',
+  'Koshka': 'bolt_action_sniper_rifle.glb',
+  'Outlaw': 'lever_action_rifle.glb',
+  'RPD': 'belt_fed_light_machine_gun.glb',
+  'Holger 26': 'belt_fed_light_machine_gun.glb',
+  'Chopper': 'handheld_minigun.glb',
+  'BY15': 'pump_action_shotgun.glb',
+  'KRM 262': 'pump_action_shotgun.glb',
+  'J358': 'six_shot_revolver.glb',
+  'MW11': 'compact_polymer_pistol.glb',
+  '.50 GS': 'compact_polymer_pistol.glb',
+  'Shorty': 'sawed_off_double_barrel.glb',
+  'Crossbow': 'lever_action_rifle.glb',
+  'FHJ-18': 'rocket_launcher.glb',
+  'SMRS': 'rocket_launcher.glb',
+  'Thumper': 'revolving_grenade_launcher.glb'
+};
+
+function getGunModel(gunName) {
+  return GUN_MODEL_MAP[gunName] || 'modern_tactical_carbine.glb';
+}
+
+// ============================================
+// BASE STATS
 // ============================================
 const GUN_BASE_STATS = {
   'AK117': { accuracy: 65, damage: 70, range: 60, fireRate: 78, mobility: 68, control: 55 },
@@ -6900,7 +6946,7 @@ function getGunBaseStats(gunName) {
 }
 
 // ============================================
-// ATTACHMENT POOLS — GENERIC FALLBACK
+// ATTACHMENT POOLS (GENERIC FALLBACK)
 // ============================================
 const ATTACHMENT_POOLS = {
   muzzle: [
@@ -6969,22 +7015,81 @@ const ATTACHMENT_POOLS = {
 };
 
 // ============================================
-// GUN-SPECIFIC LOADOUTS (add your real data here later)
+// GUN-SPECIFIC ATTACHMENTS
 // ============================================
-const GUN_LOADOUTS = {
-  // Example structure (add real data when ready):
-  // 'AK117': {
-  //   image: '/guns/ak117.png',
-  //   slots: {
-  //     muzzle: ['Muzzle Brake', 'Tactical Suppressor'],
-  //     barrel: ['MIP Light Barrel', 'RTC Light Barrel'],
-  //     ...
-  //   }
-  // }
+const GUN_SPECIFIC_ATTACHMENTS = {
+  'AK117': {
+    muzzle: ['Muzzle Brake', 'Tactical Suppressor', 'Monolithic Suppressor', 'Flash Guard'],
+    barrel: ['MIP Light Barrel (Short)', 'MIP Extended Light Barrel', 'RTC Light Barrel', 'OWC Marksman'],
+    optic: ['Red Dot Sight', 'Holographic Sight', '3x Tactical Scope'],
+    stock: ['MIP Strike Stock', 'YKM Light Stock', 'No Stock', 'MIP Light Stock'],
+    laser: ['OWC Laser - Tactical', 'OWC Laser - Light', 'MIP Laser 5mW'],
+    underbarrel: ['Foregrip', 'Light Foregrip', 'Merc Foregrip', 'Tactical Foregrip A'],
+    ammunition: ['Extended Mag', 'Fast Mag', 'Extended Mag A'],
+    rearGrip: ['Rubberized Grip Tape', 'Stippled Grip Tape', 'Granulated Grip Tape'],
+    perk: ['Sleight of Hand', 'Fast Switch', 'Toughness']
+  },
+  'Fennec': {
+    muzzle: ['Muzzle Brake', 'Monolithic Suppressor', 'Compensator', 'Flash Guard'],
+    barrel: ['RTC Light Barrel', 'MIP Custom Long Barrel', 'Reinforced Heavy Barrel'],
+    optic: ['Red Dot Sight', 'Holographic Sight', 'Classic Holographic'],
+    stock: ['No Stock', 'YKM Light Stock', 'MIP Strike Stock', 'RTC Steady Stock'],
+    laser: ['OWC Laser - Tactical', 'MIP Laser 5mW', 'Aim Assist Laser'],
+    underbarrel: ['Light Foregrip', 'Merc Foregrip', 'Tactical Foregrip A'],
+    ammunition: ['Extended Mag', 'Fast Mag', 'Large Extended Mag'],
+    rearGrip: ['Rubberized Grip Tape', 'Stippled Grip Tape', 'Skeletonized Rear Grip'],
+    perk: ['Sleight of Hand', 'Fast Switch', 'Ammo Increase']
+  },
+  'DL Q33': {
+    muzzle: ['Muzzle Brake', 'Monolithic Suppressor', 'Tactical Suppressor'],
+    barrel: ['OWC Marksman', 'MIP Custom Long Barrel', 'Light Extended Barrel'],
+    optic: ['3x Tactical Scope', '4x Tactical Scope', '6x Tactical Scope'],
+    stock: ['OWC Skeleton Stock', 'RTC Steady Stock', 'MIP Strike Stock'],
+    laser: ['OWC Laser - Tactical', 'OWC Laser - Light'],
+    underbarrel: ['Ranger Foregrip', 'Operator Foregrip', 'Light Foregrip'],
+    ammunition: ['Extended Mag', 'Fast Mag', 'Extended Mag A'],
+    rearGrip: ['Rubberized Grip Tape', 'Stippled Grip Tape'],
+    perk: ['Fast Switch', 'Sleight of Hand', 'Ammo Increase']
+  },
+  'QQ9': {
+    muzzle: ['Muzzle Brake', 'Monolithic Suppressor', 'Tactical Suppressor'],
+    barrel: ['RTC Light Barrel', 'MIP Extended Light Barrel', 'OWC Marksman'],
+    optic: ['Red Dot Sight', 'Holographic Sight'],
+    stock: ['No Stock', 'MIP Strike Stock', 'YKM Light Stock'],
+    laser: ['OWC Laser - Tactical', 'OWC Laser - Light'],
+    underbarrel: ['Light Foregrip', 'Merc Foregrip', 'Tactical Foregrip A'],
+    ammunition: ['Extended Mag', 'Fast Mag', 'Extended Mag A'],
+    rearGrip: ['Rubberized Grip Tape', 'Stippled Grip Tape'],
+    perk: ['Sleight of Hand', 'Fast Switch', 'Toughness']
+  },
+  'AK-47': {
+    muzzle: ['Muzzle Brake', 'Monolithic Suppressor', 'Compensator'],
+    barrel: ['OWC Marksman', 'MIP Custom Long Barrel', 'RTC Light Barrel'],
+    optic: ['Red Dot Sight', '3x Tactical Scope', 'Holographic Sight'],
+    stock: ['RTC Steady Stock', 'MIP Strike Stock', 'No Stock'],
+    laser: ['OWC Laser - Tactical', 'MIP Laser 5mW'],
+    underbarrel: ['Ranger Foregrip', 'Merc Foregrip', 'Operator Foregrip'],
+    ammunition: ['Extended Mag', 'Fast Mag', 'Extended Mag A'],
+    rearGrip: ['Rubberized Grip Tape', 'Stippled Grip Tape', 'Granulated Grip Tape'],
+    perk: ['Sleight of Hand', 'Toughness', 'Fast Switch']
+  }
 };
 
+function getAttachmentsForSlot(gunName, slotKey) {
+  const gunSpecific = GUN_SPECIFIC_ATTACHMENTS[gunName];
+  if (gunSpecific && gunSpecific[slotKey]) {
+    const names = gunSpecific[slotKey];
+    const masterPool = ATTACHMENT_POOLS[slotKey] || [];
+    return names.map(name => {
+      const found = masterPool.find(a => a.name === name);
+      return found || { name, effects: {} };
+    });
+  }
+  return ATTACHMENT_POOLS[slotKey] || [];
+}
+
 // ============================================
-// PRESET BUILDS (per-gun recommendations)
+// PRESET BUILDS
 // ============================================
 const PRESET_BUILDS = {
   'Fennec': [
@@ -7002,23 +7107,7 @@ const PRESET_BUILDS = {
 };
 
 // ============================================
-// GET ATTACHMENTS FOR SLOT (gun-specific first, fallback to generic)
-// ============================================
-function getAttachmentsForSlot(gunName, slotKey) {
-  const gunSpecific = GUN_LOADOUTS[gunName];
-  if (gunSpecific && gunSpecific.slots && gunSpecific.slots[slotKey]) {
-    const names = gunSpecific.slots[slotKey];
-    const masterPool = ATTACHMENT_POOLS[slotKey] || [];
-    return names.map(name => {
-      const found = masterPool.find(a => a.name === name);
-      return found || { name, effects: {} };
-    });
-  }
-  return ATTACHMENT_POOLS[slotKey] || [];
-}
-
-// ============================================
-// CALCULATE FINAL STATS
+// STATS CALC
 // ============================================
 function calculateFinalStats(gunName, selectedAttachments) {
   const base = { ...getGunBaseStats(gunName) };
@@ -7040,9 +7129,6 @@ function calculateFinalStats(gunName, selectedAttachments) {
   return { base, modifiers, final };
 }
 
-// ============================================
-// BUILD SCORER
-// ============================================
 function scoreBuild(final) {
   const weights = { accuracy: 1.0, damage: 1.2, range: 1.0, fireRate: 0.8, mobility: 1.0, control: 1.0 };
   let total = 0;
@@ -7207,7 +7293,7 @@ function renderGunPicker(body) {
 }
 
 // ============================================
-// LOADOUT CANVAS (main builder view)
+// LOADOUT CANVAS
 // ============================================
 function renderLoadoutCanvas(body) {
   const gun = BuilderState.selectedGun;
@@ -7275,6 +7361,9 @@ function renderLoadoutCanvas(body) {
     ` : ''}
 
     <div class="space-y-2">
+      <button id="open-3d-btn" class="btn-press w-full py-3.5 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold flex items-center justify-center gap-2">
+        <i data-lucide="gamepad-2" class="w-4 h-4"></i> 3D Preview
+      </button>
       <button id="builder-save-btn" class="btn-press w-full py-3.5 rounded-xl bg-primary font-black text-sm glow-primary flex items-center justify-center gap-2 text-white">
         <i data-lucide="save" class="w-4 h-4"></i> Save to Vault
       </button>
@@ -7283,8 +7372,14 @@ function renderLoadoutCanvas(body) {
       </button>
     </div>
 
-    <div class="text-[10px] text-gray-600 text-center mt-4">
-      Stats are approximate — based on community-sourced data
+    <div class="bg-gradient-to-br from-gold/10 to-transparent border border-gold/30 rounded-2xl p-3 mt-4">
+      <div class="flex items-start gap-2">
+        <span style="font-size: 18px;">🎮</span>
+        <div class="flex-1">
+          <div class="text-[11px] font-black text-gold mb-1">REAL CODM 3D MODELS COMING SOON</div>
+          <div class="text-[10px] text-gray-400 leading-relaxed">Authentic models with full attachment support in development. 👑 Pro users get early access.</div>
+        </div>
+      </div>
     </div>
   `;
 
@@ -7292,6 +7387,14 @@ function renderLoadoutCanvas(body) {
     BuilderState.selectedGun = null;
     BuilderState.selectedAttachments = {};
     renderBuilderBody();
+  };
+
+  document.getElementById('open-3d-btn').onclick = () => {
+    if (typeof open3DPreview === 'function') {
+      open3DPreview(BuilderState.selectedGun, BuilderState.selectedAttachments);
+    } else {
+      toast('3D preview loading...', 'info', 1500);
+    }
   };
 
   body.querySelectorAll('.slot-btn').forEach(btn => {
@@ -7390,6 +7493,38 @@ function renderStatBars(base, final, modifiers) {
 }
 
 // ============================================
+// EXPORT 14a
+// ============================================
+window.GUNSMITH_SLOTS = GUNSMITH_SLOTS;
+window.STAT_CONFIG = STAT_CONFIG;
+window.GUN_CATEGORY_META = GUN_CATEGORY_META;
+window.GUN_MODEL_MAP = GUN_MODEL_MAP;
+window.GUN_BASE_STATS = GUN_BASE_STATS;
+window.ATTACHMENT_POOLS = ATTACHMENT_POOLS;
+window.GUN_SPECIFIC_ATTACHMENTS = GUN_SPECIFIC_ATTACHMENTS;
+window.PRESET_BUILDS = PRESET_BUILDS;
+window.BuilderState = BuilderState;
+window.getGunMeta = getGunMeta;
+window.getGunModel = getGunModel;
+window.getGunBaseStats = getGunBaseStats;
+window.getAttachmentsForSlot = getAttachmentsForSlot;
+window.calculateFinalStats = calculateFinalStats;
+window.scoreBuild = scoreBuild;
+window.openGunsmithBuilder = openGunsmithBuilder;
+window.renderBuilderBody = renderBuilderBody;
+window.renderGunPicker = renderGunPicker;
+window.renderLoadoutCanvas = renderLoadoutCanvas;
+window.renderStatBars = renderStatBars;
+
+// ============================================
+// END OF CHUNK 14a/24
+// ============================================
+// ============================================
+// CHUNK 14b/24 — Gunsmith Builder (Picker + Save + Share)
+// ⚙️ UPDATE HERE: attachment picker, save logic, share text
+// ============================================
+
+// ============================================
 // ATTACHMENT PICKER
 // ============================================
 function openAttachmentPicker(slotKey) {
@@ -7478,15 +7613,50 @@ function applyPreset(preset) {
 }
 
 // ============================================
+// FREE USER GUN LIMIT (10 guns max)
+// ============================================
+const FREE_GUN_LIMIT = 10;
+
+async function checkGunLimit() {
+  if (isPro()) return true;
+  try {
+    const snap = await getDoc(doc(db, 'users', State.user.uid));
+    if (!snap.exists()) return true;
+    const data = snap.data();
+    const usedGuns = data.savedGunPositions || [];
+    return usedGuns.length < FREE_GUN_LIMIT;
+  } catch (e) {
+    return true;
+  }
+}
+
+async function registerGunUse(gunName) {
+  if (isPro()) return;
+  try {
+    const userRef = doc(db, 'users', State.user.uid);
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) return;
+    const data = snap.data();
+    const usedGuns = data.savedGunPositions || [];
+    if (!usedGuns.includes(gunName)) {
+      usedGuns.push(gunName);
+      await updateDoc(userRef, { savedGunPositions: usedGuns });
+    }
+  } catch (e) { /* silent */ }
+}
+
+// ============================================
 // SAVE BUILD TO VAULT
 // ============================================
 async function saveBuildToVault() {
   const gun = BuilderState.selectedGun;
   const attachedCount = Object.keys(BuilderState.selectedAttachments).length;
 
-  if (attachedCount === 0) { toast('Add at least one attachment', 'warning'); return; }
+  if (attachedCount === 0) {
+    toast('Add at least one attachment', 'warning');
+    return;
+  }
 
-  // Free tier limit
   if (!isPro()) {
     try {
       const snap = await getDocs(query(collection(db, 'vaults'), where('uid', '==', State.user.uid)));
@@ -7528,7 +7698,6 @@ async function saveBuildToVault() {
 
     toast('Build saved to Vault!', 'success', 2500);
 
-    // Success sheet
     openSheet(`
       <div class="text-center space-y-4 py-4">
         <div style="font-size: 56px;">🎉</div>
@@ -7599,26 +7768,19 @@ function shareBuild() {
 }
 
 // ============================================
-// EXPORT
+// EXPORT 14b
 // ============================================
-window.GUNSMITH_SLOTS = GUNSMITH_SLOTS;
-window.STAT_CONFIG = STAT_CONFIG;
-window.GUN_BASE_STATS = GUN_BASE_STATS;
-window.ATTACHMENT_POOLS = ATTACHMENT_POOLS;
-window.GUN_LOADOUTS = GUN_LOADOUTS;
-window.PRESET_BUILDS = PRESET_BUILDS;
-window.getGunMeta = getGunMeta;
-window.getGunBaseStats = getGunBaseStats;
-window.getAttachmentsForSlot = getAttachmentsForSlot;
-window.calculateFinalStats = calculateFinalStats;
-window.scoreBuild = scoreBuild;
-window.openGunsmithBuilder = openGunsmithBuilder;
 window.openAttachmentPicker = openAttachmentPicker;
+window.applyPreset = applyPreset;
 window.saveBuildToVault = saveBuildToVault;
 window.shareBuild = shareBuild;
+window.generateGunsmithCode = generateGunsmithCode;
+window.checkGunLimit = checkGunLimit;
+window.registerGunUse = registerGunUse;
+window.FREE_GUN_LIMIT = FREE_GUN_LIMIT;
 
 // ============================================
-// END OF CHUNK 14/24
+// END OF CHUNK 14b/24
 // ============================================
 // ============================================
 // CHUNK 15/24 — Camo Tracker
