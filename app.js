@@ -13558,3 +13558,921 @@ console.log('%c✅ CODMPanda loaded — 24/24 chunks complete', 'color:#FFD700;f
 // ============================================
 // 🎉 APP COMPLETE 🎉
 // ============================================
+// ============================================
+// CHUNK 25a/24 — 3D Gunsmith Preview (Core Viewer)
+// ⚙️ UPDATE HERE: model loading, camera, gestures
+// ============================================
+
+// ============================================
+// 3D PREVIEW STATE
+// ============================================
+const Preview3DState = {
+  gunName: null,
+  attachments: {},
+  activeSlot: null,
+  three: null,
+  scene: null,
+  camera: null,
+  renderer: null,
+  gunModel: null,
+  attachmentMeshes: {},
+  controls: { theta: 0, phi: 0.25, dist: 4.4, target: { x: 0, y: 0, z: 0 } },
+  loaded: false,
+  dragged: false,
+  lastTouchDist: 0,
+  pointerX: 0,
+  pointerY: 0
+};
+
+// ============================================
+// CDN LOADER (Three.js)
+// ============================================
+const THREE_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+const GLTF_LOADER_CDN = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/GLTFLoader.js';
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[src="' + src + '"]')) {
+      resolve();
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+// ============================================
+// MODEL URL RESOLVER
+// ============================================
+// Tries jsDelivr first (fast). Falls back to raw GitHub.
+const GITHUB_USER = 'B0bbybr0wn';
+const GITHUB_REPO = 'codmpanda';
+const GITHUB_BRANCH = 'main';
+
+function getModelUrls(filename) {
+  return [
+    'https://cdn.jsdelivr.net/gh/' + GITHUB_USER + '/' + GITHUB_REPO + '@' + GITHUB_BRANCH + '/' + filename,
+    'https://raw.githubusercontent.com/' + GITHUB_USER + '/' + GITHUB_REPO + '/' + GITHUB_BRANCH + '/' + filename
+  ];
+}
+
+// ============================================
+// OPEN 3D PREVIEW
+// ============================================
+async function open3DPreview(gunName, attachments) {
+  if (!gunName) {
+    toast('Pick a gun first', 'warning');
+    return;
+  }
+
+  Preview3DState.gunName = gunName;
+  Preview3DState.attachments = attachments || {};
+  Preview3DState.activeSlot = null;
+  Preview3DState.attachmentMeshes = {};
+
+  // Full-screen overlay
+  let overlay = document.getElementById('preview3d-overlay');
+  if (overlay) overlay.remove();
+
+  overlay = document.createElement('div');
+  overlay.id = 'preview3d-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:600;background:#050505;display:flex;flex-direction:column;';
+
+  overlay.innerHTML = `
+    <div style="padding-top:calc(env(safe-area-inset-top,0px) + 12px);padding-bottom:12px;padding-left:16px;padding-right:16px;border-bottom:1px solid #1a1a1a;display:flex;align-items:center;gap:12px;flex-shrink:0;">
+      <button id="p3d-close-btn" class="btn-press" style="width:40px;height:40px;border-radius:12px;background:#111;border:1px solid #222;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      </button>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:15px;font-weight:800;color:#fff;">${esc(gunName)}</div>
+        <div style="font-size:10px;color:#666;">3D Preview</div>
+      </div>
+      <div id="p3d-status" style="font-size:10px;color:#FF6B00;font-weight:700;">Loading...</div>
+    </div>
+
+    <div id="p3d-viewer" style="flex:1;position:relative;touch-action:none;background:radial-gradient(ellipse at 50% 40%, #1a2634 0%, #050505 70%);">
+      <div id="p3d-loading" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+        <div class="spinner"></div>
+        <div style="font-size:11px;color:#666;">Loading 3D model...</div>
+      </div>
+    </div>
+
+    <div style="padding:12px 16px calc(env(safe-area-inset-bottom,0px) + 12px) 16px;border-top:1px solid #1a1a1a;background:#050505;flex-shrink:0;">
+      <div id="p3d-slots" style="display:flex;gap:8px;overflow-x:auto;margin-bottom:10px;" class="no-scrollbar">
+        ${GUNSMITH_SLOTS.map(slot => {
+          const picked = Preview3DState.attachments[slot.key];
+          return `
+            <button class="p3d-slot-btn chip ${picked ? 'active' : ''}" data-slot="${slot.key}" style="flex-shrink:0;">
+              ${slot.label}${picked ? ' ✓' : ''}
+            </button>
+          `;
+        }).join('')}
+      </div>
+      <div id="p3d-hint" style="font-size:10px;color:#666;text-align:center;">
+        Drag to rotate · Pinch to zoom
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Wire close
+  document.getElementById('p3d-close-btn').onclick = close3DPreview;
+
+  // Wire slots
+  overlay.querySelectorAll('.p3d-slot-btn').forEach(btn => {
+    btn.onclick = () => {
+      Preview3DState.activeSlot = btn.dataset.slot;
+      openAttachmentPicker(btn.dataset.slot);
+    };
+  });
+
+  // Start loading Three.js
+  try {
+    await loadScript(THREE_CDN);
+    await loadScript(GLTF_LOADER_CDN);
+  } catch (e) {
+    document.getElementById('p3d-status').textContent = 'Failed to load 3D';
+    console.error('Three.js load error:', e);
+    return;
+  }
+
+  init3DScene(gunName);
+}
+
+// ============================================
+// CLOSE 3D PREVIEW
+// ============================================
+function close3DPreview() {
+  if (Preview3DState.renderer) {
+    try {
+      Preview3DState.renderer.dispose();
+    } catch (e) {}
+  }
+
+  const overlay = document.getElementById('preview3d-overlay');
+  if (overlay) overlay.remove();
+
+  Preview3DState.three = null;
+  Preview3DState.scene = null;
+  Preview3DState.camera = null;
+  Preview3DState.renderer = null;
+  Preview3DState.gunModel = null;
+  Preview3DState.attachmentMeshes = {};
+  Preview3DState.loaded = false;
+}
+
+// ============================================
+// INIT 3D SCENE
+// ============================================
+async function init3DScene(gunName) {
+  const container = document.getElementById('p3d-viewer');
+  if (!container || !window.THREE) return;
+
+  const THREE = window.THREE;
+
+  // Scene
+  const scene = new THREE.Scene();
+  scene.background = null;
+
+  // Camera
+  const camera = new THREE.PerspectiveCamera(38, container.clientWidth / container.clientHeight, 0.01, 100);
+  camera.position.set(2.5, 1.55, 3.5);
+
+  // Renderer
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
+  renderer.setSize(container.clientWidth, container.clientHeight, false);
+  if (renderer.outputEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding;
+  container.appendChild(renderer.domElement);
+
+  // Lights
+  scene.add(new THREE.HemisphereLight(0xd8f2ff, 0x202733, 2.0));
+  const key = new THREE.DirectionalLight(0xffffff, 2.6);
+  key.position.set(2, 4, 3);
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(0x45dfff, 1.6);
+  rim.position.set(-3, 1, -3);
+  scene.add(rim);
+
+  // Floor grid
+  const floor = new THREE.GridHelper(8, 24, 0x294554, 0x172a35);
+  floor.position.y = -0.65;
+  scene.add(floor);
+
+  Preview3DState.three = THREE;
+  Preview3DState.scene = scene;
+  Preview3DState.camera = camera;
+  Preview3DState.renderer = renderer;
+
+  // Load model
+  loadGunModel(gunName);
+
+  // Wire gestures
+  setup3DGestures(renderer.domElement, container);
+
+  // Resize handler
+  const onResize = () => {
+    if (!container || !renderer) return;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+  window.addEventListener('resize', onResize);
+
+  // Animation loop
+  function animate() {
+    if (!Preview3DState.renderer) return;
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+
+// ============================================
+// LOAD GUN MODEL (jsDelivr → raw fallback)
+// ============================================
+async function loadGunModel(gunName) {
+  const filename = getGunModel(gunName);
+  const urls = getModelUrls(filename);
+
+  const statusEl = document.getElementById('p3d-status');
+  const loadingEl = document.getElementById('p3d-loading');
+
+  const THREE = Preview3DState.three;
+  const loader = new THREE.GLTFLoader();
+
+  let loaded = false;
+  for (const url of urls) {
+    try {
+      await new Promise((resolve, reject) => {
+        loader.load(url,
+          (gltf) => {
+            installGunModel(gltf.scene);
+            if (statusEl) statusEl.textContent = 'Ready';
+            if (loadingEl) loadingEl.style.display = 'none';
+            loaded = true;
+            resolve();
+          },
+          undefined,
+          (err) => {
+            console.warn('Failed to load from:', url, err);
+            reject(err);
+          }
+        );
+      });
+      if (loaded) break;
+    } catch (e) {
+      console.warn('Model URL failed, trying next...');
+    }
+  }
+
+  if (!loaded) {
+    if (statusEl) statusEl.textContent = 'Model not found';
+    if (loadingEl) loadingEl.innerHTML = '<div style="font-size:12px;color:#f44;text-align:center;padding:20px;">Model not available<br><span style="color:#666;font-size:10px;">Check your connection</span></div>';
+  }
+}
+
+// ============================================
+// INSTALL GUN MODEL INTO SCENE
+// ============================================
+function installGunModel(obj) {
+  const THREE = Preview3DState.three;
+  const scene = Preview3DState.scene;
+  if (!scene) return;
+
+  // Normalize
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  obj.position.sub(center);
+  const max = Math.max(size.x, size.y, size.z) || 1;
+  obj.scale.setScalar(2.5 / max);
+
+  scene.add(obj);
+  Preview3DState.gunModel = obj;
+  Preview3DState.loaded = true;
+
+  // Apply finish
+  applyFinishToModel(obj, false);
+}
+
+// ============================================
+// APPLY FINISH TO MODEL
+// ============================================
+function applyFinishToModel(obj, mythic) {
+  if (!obj) return;
+  const THREE = Preview3DState.three;
+  obj.traverse(o => {
+    if (o.isMesh && o.material) {
+      o.material = o.material.clone();
+      if (mythic) {
+        o.material.emissive = new THREE.Color(0x00bde5);
+        o.material.emissiveIntensity = 0.45;
+        o.material.metalness = 0.75;
+        o.material.roughness = 0.25;
+      } else {
+        o.material.emissive = new THREE.Color(0x000000);
+        o.material.emissiveIntensity = 0;
+      }
+    }
+  });
+}
+
+// ============================================
+// 3D GESTURES (rotate + zoom)
+// ============================================
+function setup3DGestures(canvas, container) {
+  let drag = false;
+
+  canvas.addEventListener('pointerdown', (e) => {
+    drag = true;
+    Preview3DState.pointerX = e.clientX;
+    Preview3DState.pointerY = e.clientY;
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - Preview3DState.pointerX;
+    const dy = e.clientY - Preview3DState.pointerY;
+    Preview3DState.controls.theta -= dx * 0.009;
+    Preview3DState.controls.phi += dy * 0.008;
+    Preview3DState.controls.phi = Math.max(-0.9, Math.min(1.1, Preview3DState.controls.phi));
+    Preview3DState.pointerX = e.clientX;
+    Preview3DState.pointerY = e.clientY;
+    update3DCamera();
+  });
+
+  canvas.addEventListener('pointerup', () => { drag = false; });
+  canvas.addEventListener('pointercancel', () => { drag = false; });
+
+  // Wheel zoom (desktop)
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    Preview3DState.controls.dist = Math.max(2.2, Math.min(9, Preview3DState.controls.dist + e.deltaY * 0.005));
+    update3DCamera();
+  }, { passive: false });
+
+  // Pinch zoom
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (Preview3DState.lastTouchDist) {
+        const diff = dist - Preview3DState.lastTouchDist;
+        Preview3DState.controls.dist = Math.max(2.2, Math.min(9, Preview3DState.controls.dist - diff * 0.012));
+        update3DCamera();
+      }
+      Preview3DState.lastTouchDist = dist;
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', () => {
+    Preview3DState.lastTouchDist = 0;
+  });
+}
+
+// ============================================
+// UPDATE 3D CAMERA FROM CONTROLS
+// ============================================
+function update3DCamera() {
+  const { theta, phi, dist, target } = Preview3DState.controls;
+  const cam = Preview3DState.camera;
+  if (!cam) return;
+
+  cam.position.set(
+    target.x + dist * Math.sin(theta) * Math.cos(phi),
+    target.y + dist * Math.sin(phi),
+    target.z + dist * Math.cos(theta) * Math.cos(phi)
+  );
+  cam.lookAt(target.x, target.y, target.z);
+}
+
+// ============================================
+// EXPORT 25a
+// ============================================
+window.Preview3DState = Preview3DState;
+window.open3DPreview = open3DPreview;
+window.close3DPreview = close3DPreview;
+window.init3DScene = init3DScene;
+window.loadGunModel = loadGunModel;
+window.installGunModel = installGunModel;
+window.setup3DGestures = setup3DGestures;
+window.update3DCamera = update3DCamera;
+window.applyFinishToModel = applyFinishToModel;
+window.loadScript = loadScript;
+window.getModelUrls = getModelUrls;
+
+// ============================================
+// END OF CHUNK 25a/24
+// ============================================
+// ============================================
+// CHUNK 25b/24 — 3D Gunsmith Preview (Drag + Save)
+// ⚙️ UPDATE HERE: attachment positions, drag sensitivity, save rules
+// ============================================
+
+// ============================================
+// REAL ATTACHMENT 3D MODELS (embedded OBJ data)
+// ============================================
+const REAL_ATTACHMENT_OBJS = {
+  "Reflex Sight": `# Blender v2.81 (sub 16) OBJ File: 'Low Poly assets.blend'
+mtllib Reflex_Sight.mtl
+o Reflex_Sight_Cube.028
+v -0.021588 -0.011407 0.042829
+v -0.021588 -0.011407 -0.050206
+v 0.021588 -0.011407 0.042829
+v 0.021588 -0.011407 -0.050206
+v -0.021588 -0.011407 0.021575
+v -0.020101 0.047497 0.021736
+v 0.021588 -0.011407 0.021575
+v 0.020101 0.047497 0.021736
+v -0.021588 0.015293 -0.050206
+v 0.021588 0.015293 -0.050206
+v 0.021588 0.015293 0.025270
+v -0.021588 0.015293 0.025270
+v -0.020101 0.015293 0.042390
+v -0.020101 0.047554 0.032798
+v 0.020101 0.047554 0.032798
+v 0.020101 0.015293 0.042390
+v -0.021588 0.015293 0.042829
+v -0.021588 0.048975 0.032359
+v 0.021588 0.048975 0.032359
+v -0.021588 0.048975 0.021575
+v 0.021588 0.048975 0.021575
+v 0.021588 0.015293 0.042829
+v 0.020101 0.015293 0.025109
+v -0.020101 0.015293 0.025109
+v 0.020101 0.015293 0.030690
+v 0.020101 0.015293 0.033598
+v -0.020101 0.015293 0.030690
+v -0.020101 0.015293 0.033598
+v 0.020101 0.047535 0.028544
+v 0.020101 0.047516 0.026682
+v -0.020101 0.047535 0.028544
+v -0.020101 0.047516 0.026682
+vn 1.0000 0.0000 0.0000
+vn 0.0000 -1.0000 0.0000
+vn 0.0000 1.0000 0.0000
+vn -1.0000 0.0000 0.0000
+vn 0.0000 0.0000 1.0000
+vn 0.0000 0.0000 -1.0000
+usemtl Dark_Gray
+s off
+f 11//1 21//1 19//1 22//1
+f 5//2 7//2 3//2 1//2
+f 21//3 20//3 18//3 19//3
+f 2//2 4//2 7//2 5//2
+f 17//4 18//4 20//4 12//4
+f 1//4 17//4 12//4 5//4
+f 4//1 10//1 11//1 7//1
+f 3//5 22//5 17//5 1//5
+f 7//1 11//1 22//1 3//1
+f 2//6 9//6 10//6 4//6
+f 5//4 12//4 9//4 2//4
+f 17//3 22//3 11//3 10//3 9//3 12//3
+`,
+  "Muzzle Brake": `# Muzzle
+o Muzzle
+v -0.05 -0.05 0.2
+v 0.05 -0.05 0.2
+v -0.05 0.05 0.2
+v 0.05 0.05 0.2
+v -0.05 -0.05 0.1
+v 0.05 -0.05 0.1
+v -0.05 0.05 0.1
+v 0.05 0.05 0.1
+f 1 2 4 3
+f 5 7 8 6
+f 1 3 7 5
+f 2 6 8 4
+f 1 5 6 2
+f 3 4 8 7
+`,
+  "Suppressor": `# Suppressor
+o Suppressor
+v -0.04 -0.04 0.3
+v 0.04 -0.04 0.3
+v -0.04 0.04 0.3
+v 0.04 0.04 0.3
+v -0.04 -0.04 -0.3
+v 0.04 -0.04 -0.3
+v -0.04 0.04 -0.3
+v 0.04 0.04 -0.3
+f 1 2 4 3
+f 5 7 8 6
+f 1 3 7 5
+f 2 6 8 4
+f 1 5 6 2
+f 3 4 8 7
+`,
+  "Vertical Grip": `# Vertical Grip
+o Grip
+v -0.02 -0.15 0.02
+v 0.02 -0.15 0.02
+v -0.02 -0.15 -0.02
+v 0.02 -0.15 -0.02
+v -0.02 0.05 0.02
+v 0.02 0.05 0.02
+v -0.02 0.05 -0.02
+v 0.02 0.05 -0.02
+f 1 2 4 3
+f 5 7 8 6
+f 1 3 7 5
+f 2 6 8 4
+f 1 5 6 2
+f 3 4 8 7
+`
+};
+
+// Rough default mount positions per slot (in normalized gun-space)
+const DEFAULT_MOUNT_POSITIONS = {
+  optic:       { x: -0.03, y:  0.22, z:  0.00, rotY: 0 },
+  muzzle:      { x: -1.18, y:  0.00, z:  0.00, rotY: 0 },
+  barrel:      { x: -0.60, y:  0.05, z:  0.00, rotY: 0 },
+  stock:       { x:  0.80, y:  0.00, z:  0.00, rotY: 0 },
+  laser:       { x: -0.35, y:  0.02, z:  0.15, rotY: 0 },
+  underbarrel: { x: -0.18, y: -0.20, z:  0.02, rotY: 0 },
+  ammunition:  { x:  0.05, y: -0.15, z:  0.00, rotY: 0 },
+  rearGrip:    { x:  0.45, y: -0.15, z:  0.00, rotY: 0 },
+  perk:        { x:  0.00, y:  0.00, z:  0.00, rotY: 0 }
+};
+
+// Attachment name → which 3D model to use (simple mapping)
+function getAttachmentModel(name) {
+  if (!name) return null;
+  const n = name.toLowerCase();
+  if (n.includes('red dot') || n.includes('holographic')) return REAL_ATTACHMENT_OBJS["Reflex Sight"];
+  if (n.includes('muzzle') || n.includes('compensator') || n.includes('flash')) return REAL_ATTACHMENT_OBJS["Muzzle Brake"];
+  if (n.includes('suppressor')) return REAL_ATTACHMENT_OBJS["Suppressor"];
+  if (n.includes('foregrip') || n.includes('grip')) return REAL_ATTACHMENT_OBJS["Vertical Grip"];
+  return null;
+}
+
+// ============================================
+// POSITION MANAGER (Firestore private per-user)
+// ============================================
+async function loadUserPositions(gunName) {
+  if (!State.user) return {};
+  try {
+    const ref = doc(db, 'users', State.user.uid, 'gunPositions', gunName);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      return snap.data().positions || {};
+    }
+  } catch (e) {
+    console.warn('Load positions error:', e);
+  }
+  return {};
+}
+
+async function saveUserPositions(gunName, positions) {
+  if (!State.user) return;
+  try {
+    const ref = doc(db, 'users', State.user.uid, 'gunPositions', gunName);
+    await setDoc(ref, {
+      positions,
+      gunName,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    toast('Positions saved!', 'success');
+  } catch (e) {
+    console.error('Save positions error:', e);
+    toast('Failed to save: ' + e.message, 'error');
+  }
+}
+
+async function trackFreeGunUsage(gunName) {
+  if (isPro()) return true;
+  try {
+    const userRef = doc(db, 'users', State.user.uid);
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) return true;
+    const data = snap.data();
+    const usedGuns = data.savedGunPositions || [];
+    if (usedGuns.includes(gunName)) return true;
+    if (usedGuns.length >= FREE_GUN_LIMIT) {
+      showProPaywall('Free users can tune up to ' + FREE_GUN_LIMIT + ' guns. Go Pro for unlimited.');
+      return false;
+    }
+    usedGuns.push(gunName);
+    await updateDoc(userRef, { savedGunPositions: usedGuns });
+    return true;
+  } catch (e) {
+    console.warn('Track gun error:', e);
+    return true;
+  }
+}
+
+// ============================================
+// ADD ATTACHMENT MESH TO 3D SCENE
+// ============================================
+function addAttachmentToScene(slotKey, attachmentName) {
+  const THREE = Preview3DState.three;
+  const scene = Preview3DState.scene;
+  if (!THREE || !scene) return;
+
+  // Remove existing
+  removeAttachmentFromScene(slotKey);
+
+  // Get model data
+  const objData = getAttachmentModel(attachmentName);
+  if (!objData || !THREE.OBJLoader) {
+    // No model available — store slot as "exists" so save system knows
+    Preview3DState.attachmentMeshes[slotKey] = { name: attachmentName, mesh: null };
+    return;
+  }
+
+  try {
+    const obj = new THREE.OBJLoader().parse(objData);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x8a9aa6,
+      metalness: 0.58,
+      roughness: 0.38
+    });
+    obj.traverse(c => {
+      if (c.isMesh) {
+        c.material = mat;
+        c.castShadow = true;
+        c.receiveShadow = true;
+      }
+    });
+
+    // Normalize size
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    obj.position.sub(center);
+
+    // Scale to sensible size
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const scale = 0.25 / maxDim;
+    obj.scale.setScalar(scale);
+
+    // Apply saved or default position
+    const savedPos = Preview3DState.attachments['__pos_' + slotKey] || DEFAULT_MOUNT_POSITIONS[slotKey] || { x: 0, y: 0, z: 0, rotY: 0 };
+    obj.position.set(savedPos.x, savedPos.y, savedPos.z);
+    obj.rotation.y = savedPos.rotY || 0;
+
+    obj.userData.slotKey = slotKey;
+    obj.userData.isAttachment = true;
+    obj.userData.attachmentName = attachmentName;
+
+    scene.add(obj);
+    Preview3DState.attachmentMeshes[slotKey] = { name: attachmentName, mesh: obj };
+
+    // Make draggable
+    makeAttachmentDraggable(obj);
+  } catch (e) {
+    console.error('Add attachment error:', e);
+  }
+}
+
+function removeAttachmentFromScene(slotKey) {
+  const entry = Preview3DState.attachmentMeshes[slotKey];
+  if (entry && entry.mesh && Preview3DState.scene) {
+    Preview3DState.scene.remove(entry.mesh);
+    entry.mesh.traverse(c => {
+      if (c.geometry) c.geometry.dispose();
+      if (c.material && c.material.dispose) c.material.dispose();
+    });
+  }
+  delete Preview3DState.attachmentMeshes[slotKey];
+}
+
+// ============================================
+// DRAG ATTACHMENT IN 3D SPACE
+// ============================================
+function makeAttachmentDraggable(mesh) {
+  const THREE = Preview3DState.three;
+  if (!THREE || !mesh) return;
+
+  // We do XY drag on screen → simplified 3D drag
+  // Better UX than raycasting for mobile
+  let isDragging = false;
+  let lastX = 0;
+  let lastY = 0;
+
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  const canvas = Preview3DState.renderer.domElement;
+
+  // Attach tap detection
+  canvas.addEventListener('pointerdown', (e) => {
+    if (Preview3DState.activeSlot && mesh.userData.slotKey === Preview3DState.activeSlot) {
+      isDragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      Preview3DState.dragged = true;
+    }
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    // Convert screen pixels → world units
+    const scale = 0.01;
+    mesh.position.x += dx * scale;
+    mesh.position.y -= dy * scale;
+
+    // Save draft position
+    Preview3DState.attachments['__pos_' + mesh.userData.slotKey] = {
+      x: mesh.position.x,
+      y: mesh.position.y,
+      z: mesh.position.z,
+      rotY: mesh.rotation.y
+    };
+
+    // Show save button
+    showSaveButton();
+  });
+
+  canvas.addEventListener('pointerup', () => {
+    isDragging = false;
+  });
+}
+
+// ============================================
+// SAVE BUTTON (appears after drag)
+// ============================================
+function showSaveButton() {
+  let btn = document.getElementById('p3d-save-btn');
+  if (btn) return;
+
+  const footer = document.querySelector('#preview3d-overlay > div:last-child');
+  if (!footer) return;
+
+  btn = document.createElement('button');
+  btn.id = 'p3d-save-btn';
+  btn.className = 'btn-press';
+  btn.style.cssText = 'width:100%;padding:12px;margin-top:8px;border-radius:12px;background:#FF6B00;border:none;color:#fff;font-weight:900;font-size:13px;cursor:pointer;';
+  btn.textContent = '💾 Save Position';
+  btn.onclick = savePositionsFromPreview;
+  footer.appendChild(btn);
+}
+
+async function savePositionsFromPreview() {
+  const gunName = Preview3DState.gunName;
+
+  // Check free limit
+  const allowed = await trackFreeGunUsage(gunName);
+  if (!allowed) return;
+
+  // Collect position data
+  const positions = {};
+  Object.entries(Preview3DState.attachments).forEach(([key, val]) => {
+    if (key.startsWith('__pos_')) {
+      const slotKey = key.replace('__pos_', '');
+      positions[slotKey] = val;
+    }
+  });
+
+  await saveUserPositions(gunName, positions);
+
+  const btn = document.getElementById('p3d-save-btn');
+  if (btn) btn.remove();
+}
+
+// ============================================
+// PATCH: When user picks attachment in 3D preview, update the mesh
+// ============================================
+const _origOpenAttachmentPicker25b = openAttachmentPicker;
+openAttachmentPicker = function(slotKey) {
+  // If we're in 3D preview, use special flow
+  if (document.getElementById('preview3d-overlay')) {
+    return open3DAttachmentPicker(slotKey);
+  }
+  return _origOpenAttachmentPicker25b(slotKey);
+};
+
+async function open3DAttachmentPicker(slotKey) {
+  const slot = GUNSMITH_SLOTS.find(s => s.key === slotKey);
+  if (!slot) return;
+
+  const gun = Preview3DState.gunName;
+  const attachments = getAttachmentsForSlot(gun, slotKey);
+  const current = Preview3DState.attachments[slotKey];
+
+  if (attachments.length === 0) {
+    toast('No attachments for this slot', 'info');
+    return;
+  }
+
+  openSheet(`
+    <div class="space-y-2 max-h-[60vh] overflow-y-auto">
+      <div class="flex items-center gap-2 mb-3">
+        <i data-lucide="${slot.icon}" class="w-5 h-5 text-primary"></i>
+        <div class="text-xs text-gray-400 font-bold uppercase">${slot.label}</div>
+      </div>
+
+      ${current ? `
+        <button class="pick3d-remove w-full text-left px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/40 text-red-400 font-bold text-sm mb-2">
+          ✕ Remove
+        </button>
+      ` : ''}
+
+      ${attachments.map((att, i) => {
+        const isSelected = current && current.name === att.name;
+        return `
+          <button class="pick3d-attach w-full text-left px-4 py-3 rounded-xl ${isSelected ? 'bg-primary/15 border border-primary' : 'bg-card border border-border'} font-semibold text-sm" data-index="${i}">
+            <span class="${isSelected ? 'text-primary' : 'text-white'}">${esc(att.name)}</span>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `, slot.label);
+
+  document.querySelectorAll('.pick3d-attach').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.index);
+      Preview3DState.attachments[slotKey] = attachments[idx];
+      closeSheet();
+      addAttachmentToScene(slotKey, attachments[idx].name);
+      refresh3DSlotButtons();
+    };
+  });
+
+  const removeBtn = document.querySelector('.pick3d-remove');
+  if (removeBtn) {
+    removeBtn.onclick = () => {
+      delete Preview3DState.attachments[slotKey];
+      delete Preview3DState.attachments['__pos_' + slotKey];
+      closeSheet();
+      removeAttachmentFromScene(slotKey);
+      refresh3DSlotButtons();
+    };
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function refresh3DSlotButtons() {
+  const overlay = document.getElementById('preview3d-overlay');
+  if (!overlay) return;
+  overlay.querySelectorAll('.p3d-slot-btn').forEach(btn => {
+    const slot = btn.dataset.slot;
+    const picked = Preview3DState.attachments[slot];
+    const baseLabel = GUNSMITH_SLOTS.find(s => s.key === slot)?.label || slot;
+    btn.textContent = baseLabel + (picked ? ' ✓' : '');
+    btn.classList.toggle('active', !!picked);
+  });
+}
+
+// ============================================
+// PATCH open3DPreview — install positions + attachments
+// ============================================
+const _origOpen3DPreview25b = open3DPreview;
+open3DPreview = async function(gunName, attachments) {
+  await _origOpen3DPreview25b(gunName, attachments);
+
+  // Wait for scene to initialize
+  setTimeout(async () => {
+    // Load saved positions
+    const savedPositions = await loadUserPositions(gunName);
+    Object.entries(savedPositions).forEach(([slotKey, pos]) => {
+      Preview3DState.attachments['__pos_' + slotKey] = pos;
+    });
+
+    // Add attachment meshes
+    Object.entries(Preview3DState.attachments).forEach(([slotKey, att]) => {
+      if (slotKey.startsWith('__pos_')) return;
+      if (att && att.name) {
+        addAttachmentToScene(slotKey, att.name);
+      }
+    });
+
+    refresh3DSlotButtons();
+  }, 800);
+};
+
+// ============================================
+// EXPORT 25b
+// ============================================
+window.REAL_ATTACHMENT_OBJS = REAL_ATTACHMENT_OBJS;
+window.DEFAULT_MOUNT_POSITIONS = DEFAULT_MOUNT_POSITIONS;
+window.getAttachmentModel = getAttachmentModel;
+window.loadUserPositions = loadUserPositions;
+window.saveUserPositions = saveUserPositions;
+window.addAttachmentToScene = addAttachmentToScene;
+window.removeAttachmentFromScene = removeAttachmentFromScene;
+window.makeAttachmentDraggable = makeAttachmentDraggable;
+window.savePositionsFromPreview = savePositionsFromPreview;
+window.refresh3DSlotButtons = refresh3DSlotButtons;
+
+// ============================================
+// END OF CHUNK 25b/24
+// ============================================
+// 🎉 APP + 3D GUNSMITH COMPLETE 🎉
+// ============================================
