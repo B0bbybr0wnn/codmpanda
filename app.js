@@ -1591,45 +1591,7 @@ async function loadLikedItems() {
   }
 }
 
-// ============================================
-// DEEP LINKS
-// ============================================
-function handleDeepLinks() {
-  const params = new URLSearchParams(location.search);
-  const tab = params.get('tab');
-  const vault = params.get('vault');
-  const post = params.get('post');
-  const lobby = params.get('lobby');
 
-  if (tab && ['home', 'play', 'lab', 'squad', 'intel', 'you'].includes(tab)) {
-    setTimeout(() => switchTab(tab), 500);
-  }
-
-  if (vault) {
-    setTimeout(async () => {
-      try {
-        const snap = await getDoc(doc(db, 'vaults', vault));
-        if (snap.exists() && typeof openVaultDetail === 'function') {
-          const data = { id: snap.id, ...snap.data() };
-          State.cache.vaults = State.cache.vaults || [];
-          if (!State.cache.vaults.find(v => v.id === data.id)) State.cache.vaults.push(data);
-          openVaultDetail(vault);
-        }
-      } catch (e) { /* silent */ }
-    }, 800);
-  }
-
-  if (post) {
-    setTimeout(async () => {
-      try {
-        const snap = await getDoc(doc(db, 'posts', post));
-        if (snap.exists() && typeof openPostDetail === 'function') {
-          openPostDetail(post);
-        }
-      } catch (e) { /* silent */ }
-    }, 800);
-  }
-}
 
 // ============================================
 // REFERRAL TRACKING
