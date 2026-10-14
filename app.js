@@ -613,10 +613,11 @@ onAuthStateChanged(auth, async (user) => {
 
 // ---------- SCREENS ----------
 function showAuthGate() {
-  document.getElementById('auth-gate').classList.remove('hidden');
-  document.getElementById('auth-gate').classList.add('flex');
-  document.getElementById('onboarding').classList.add('hidden');
-  document.getElementById('main-app').classList.add('hidden');
+  var splash = document.getElementById('splash');
+  if (splash) splash.style.display = 'none';
+  document.getElementById('auth-gate').style.display = 'flex';
+  document.getElementById('onboarding').style.display = 'none';
+  document.getElementById('main-app').style.display = 'none';
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -630,14 +631,14 @@ const ONBOARDING_SLIDES = [
 ];
 
 function showOnboarding() {
-  document.getElementById('auth-gate').classList.add('hidden');
-  document.getElementById('main-app').classList.add('hidden');
-  document.getElementById('onboarding').classList.remove('hidden');
-  document.getElementById('onboarding').classList.add('flex');
+  var splash = document.getElementById('splash');
+  if (splash) splash.style.display = 'none';
+  document.getElementById('auth-gate').style.display = 'none';
+  document.getElementById('main-app').style.display = 'none';
+  document.getElementById('onboarding').style.display = 'flex';
   onboardingStep = 0;
   renderOnboarding();
 }
-
 function renderOnboarding() {
   const container = document.getElementById('onboarding-content');
 
