@@ -350,6 +350,26 @@ input, textarea { touch-action: auto; }
 <script type="module" src="/app.js"></script>
 
 <script>
+  // Fallback: hide splash after 3 seconds no matter what
+  setTimeout(function() {
+    var splash = document.getElementById('splash');
+    if (splash && !splash.classList.contains('hidden')) {
+      splash.classList.add('hidden');
+      splash.style.display = 'none';
+    }
+  }, 3000);
+
+  // Also hide splash when auth gate shows
+  var observer = new MutationObserver(function() {
+    var authGate = document.getElementById('auth-gate');
+    var splash = document.getElementById('splash');
+    if (authGate && splash && authGate.style.display !== 'none' && authGate.style.display !== '') {
+      splash.classList.add('hidden');
+      splash.style.display = 'none';
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(function(e) {
       console.warn('Service Worker failed:', e);
