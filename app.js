@@ -1592,35 +1592,7 @@ async function loadLikedItems() {
 }
 
 
-
-// ============================================
-// REFERRAL TRACKING
-// ============================================
-async function trackReferral() {
-  const params = new URLSearchParams(location.search);
-  const ref = params.get('ref');
-  if (!ref || !State.user || ref === State.user.uid) return;
-
-  const key = 'codmpanda_ref_tracked_' + ref;
-  if (localStorage.getItem(key)) return;
-  localStorage.setItem(key, '1');
-
-  try {
-    await updateDoc(doc(db, 'users', ref), { invites: increment(1) });
-    const refSnap = await getDoc(doc(db, 'users', ref));
-    if (refSnap.exists()) {
-      const currentInvites = refSnap.data().invites || 0;
-      if (currentInvites > 0 && currentInvites % 3 === 0) {
-        await updateDoc(doc(db, 'users', ref), {
-          isPro: true,
-          proExpiry: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000)
-        });
-      }
-    }
-  } catch (e) { /* silent */ }
-}
-
-// ============================================
+// ========================================
 // EXPORT
 // ============================================
 window.handleSignIn = handleSignIn;
