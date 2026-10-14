@@ -723,9 +723,11 @@ function renderOnboarding() {
 
 // ---------- MAIN APP ----------
 function showMainApp() {
-  document.getElementById('auth-gate').classList.add('hidden');
-  document.getElementById('onboarding').classList.add('hidden');
-  document.getElementById('main-app').classList.remove('hidden');
+  var splash = document.getElementById('splash');
+  if (splash) splash.style.display = 'none';
+  document.getElementById('auth-gate').style.display = 'none';
+  document.getElementById('onboarding').style.display = 'none';
+  document.getElementById('main-app').style.display = 'block';
 
   const subtitle = document.getElementById('top-bar-subtitle');
   if (subtitle && State.profile) {
