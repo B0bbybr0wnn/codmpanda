@@ -348,29 +348,6 @@ input, textarea { touch-action: auto; }
 <script type="module" src="/app.js"></script>
 
 <script>
-window.addEventListener('load', function() {
-  function initGIS() {
-    if (typeof google === 'undefined' || !google.accounts) {
-      setTimeout(initGIS, 300);
-      return;
-    }
-    try {
-      google.accounts.id.initialize({
-        client_id: '604146891375-ae5bhcm2nd2f59f0npp3en6setthjg1s.apps.googleusercontent.com',
-        callback: function(resp) {
-          if (typeof window.handleGISResponse === 'function') {
-            window.handleGISResponse(resp);
-          }
-        },
-        auto_select: false,
-        cancel_on_tap_outside: true
-      });
-    } catch (e) {
-      console.warn('GIS init error:', e);
-    }
-  }
-  initGIS();
-
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(function(e) {
       console.warn('Service Worker failed:', e);
