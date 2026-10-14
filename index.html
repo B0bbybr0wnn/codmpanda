@@ -371,15 +371,6 @@ window.addEventListener('load', function() {
   }
   initGIS();
 
-  var signBtn = document.getElementById('google-signin-btn');
-  if (signBtn) {
-    signBtn.addEventListener('click', function() {
-      if (typeof window.handleSignIn === 'function') {
-        window.handleSignIn();
-      }
-    });
-  }
-
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(function(e) {
       console.warn('Service Worker failed:', e);
