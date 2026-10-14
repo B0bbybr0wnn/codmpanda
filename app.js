@@ -48,7 +48,7 @@ const firebaseConfig = {
 };
 
 // FIXED: Set ADMIN_UID to the new account UID after signing in again.
-const ADMIN_UID = "REPLACE_WITH_NEW_ADMIN_UID";
+const ADMIN_UID = "ItqEYihqxYW4HGm7i8bBYky8XNw1";
 const NOTIFY_WORKER_URL = "https://codmpanda-notify.bobbyjohon8585.workers.dev";
 const APP_VERSION = "2.0.0";
 
@@ -14363,3 +14363,443 @@ window.refresh3DSlotButtons = refresh3DSlotButtons;
 // ============================================
 // 🎉 APP + 3D GUNSMITH COMPLETE 🎉
 // ============================================
+// ============================================
+// CHUNK 26/24 — Missing functions + Online counter
+// ============================================
+
+// ---------- wireHomeCards ----------
+function wireHomeCards(items) {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  feedEl.querySelectorAll('.home-join-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      if (typeof joinLobby === 'function') joinLobby(btn.dataset.id);
+    };
+  });
+
+  feedEl.querySelectorAll('.home-view-vault-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      if (typeof openVaultDetail === 'function') openVaultDetail(btn.dataset.id);
+    };
+  });
+
+  feedEl.querySelectorAll('.home-share-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const type = btn.dataset.type;
+      const id = btn.dataset.id;
+      const url = location.origin + '/?' + type + '=' + id;
+      openShareSheet({
+        title: 'CODMPanda',
+        text: 'Check this out on CODMPanda!',
+        url
+      });
+    };
+  });
+
+  if (typeof wirePostCardInteractions === 'function') {
+    wirePostCardInteractions(items);
+  }
+}
+
+function wireHomeCardInteractions(items) {
+  wireHomeCards(items);
+}
+
+// ---------- Theme picker ----------
+function openThemePicker() {
+  const currentTheme = (State.profile && State.profile.themeStyle) || 'dark';
+  const pro = isPro();
+
+  openSheet(`
+    <div class="space-y-3">
+      <div class="text-center mb-2">
+        <div class="text-sm font-bold">Profile Theme</div>
+        <div class="text-[10px] text-gray-500">${pro ? 'Pro — all themes unlocked' : 'Free - 1 theme. Pro unlocks all 5'}</div>
+      </div>
+      ${Object.entries(PROFILE_THEMES).map(([key, theme]) => {
+        const locked = theme.pro && !pro;
+        const selected = currentTheme === key;
+        return `
+          <button class="theme-pick-btn w-full text-left p-3 rounded-xl border ${selected ? 'border-primary bg-primary/10' : 'border-border bg-card'} ${locked ? 'opacity-60' : ''}"
+            data-key="${esc(key)}"
+            data-locked="${locked}"
+            style="background: ${theme.gradient}; border-color: ${selected ? '#FF6B00' : theme.border};">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-sm font-bold" style="color: ${theme.nameColor};">${esc(theme.name)}</div>
+                <div class="text-[10px] text-gray-400 mt-0.5">${theme.pro ? 'Pro' : 'Free'}</div>
+              </div>
+              ${selected ? '<span class="text-[10px] px-2 py-1 rounded-full bg-primary text-white font-black">ACTIVE</span>' : ''}
+              ${locked ? '<span class="text-[10px] px-2 py-1 rounded-full bg-gold text-black font-black">PRO</span>' : ''}
+            </div>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `, 'Themes');
+
+  document.querySelectorAll('.theme-pick-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (btn.dataset.locked === 'true') {
+        closeSheet();
+        setTimeout(() => showProPaywall('All 5 profile themes are a Pro feature.'), 300);
+        return;
+      }
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), { themeStyle: btn.dataset.key });
+        State.profile = { ...State.profile, themeStyle: btn.dataset.key };
+        toast('Theme applied!', 'success');
+        closeSheet();
+        if (State.currentTab === 'you') setTimeout(renderYouTab, 300);
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+      }
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- Avatar frame picker ----------
+function openAvatarFramePicker() {
+  const currentFrame = (State.profile && State.profile.avatarFrame) || 'none';
+  const pro = isPro();
+  const previewUser = State.profile || {};
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-center">
+        <div class="text-sm font-bold">Avatar Frame</div>
+        <div class="text-[10px] text-gray-500">${pro ? 'Pro — all frames unlocked' : 'Free - 1 frame. Pro unlocks all 5'}</div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        ${Object.entries(AVATAR_FRAMES).map(([key, frame]) => {
+          const locked = frame.pro && !pro;
+          const selected = currentFrame === key;
+          return `
+            <button class="frame-pick-btn flex flex-col items-center gap-2 p-2 rounded-2xl ${selected ? 'bg-primary/15 border-2 border-primary' : 'bg-card border border-border'} ${locked ? 'opacity-60' : ''}"
+              data-key="${esc(key)}"
+              data-locked="${locked}">
+              ${frame.render(`<img src="${esc(previewUser.avatar || '')}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display='none'" />`, 60)}
+              <span class="text-[9px] font-bold text-center leading-tight">${esc(frame.name)}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+
+      <div class="text-[10px] text-gray-500 text-center pt-2 border-t border-border">
+        Tap a frame to apply it to your profile
+      </div>
+    </div>
+  `, 'Avatar Frames');
+
+  document.querySelectorAll('.frame-pick-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (btn.dataset.locked === 'true') {
+        closeSheet();
+        setTimeout(() => showProPaywall('Avatar frames are a Pro feature.'), 300);
+        return;
+      }
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), { avatarFrame: btn.dataset.key });
+        State.profile = { ...State.profile, avatarFrame: btn.dataset.key };
+        toast('Frame applied!', 'success');
+        closeSheet();
+        if (State.currentTab === 'you') setTimeout(renderYouTab, 300);
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+      }
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- Skins panel ----------
+function renderSkinsPanel() {
+  openSheet(`
+    <div class="space-y-3">
+      <div class="text-center mb-2">
+        <div class="text-sm font-bold">Weapon Skins</div>
+        <div class="text-[10px] text-gray-500">Blueprint collection tracker</div>
+      </div>
+      <div class="bg-card border border-border rounded-2xl p-6 text-center">
+        <div style="font-size: 48px; margin-bottom: 8px;">🎨</div>
+        <div class="text-xs text-gray-400">Skin tracking is in development.</div>
+        <div class="text-[10px] text-gray-600 mt-2">You'll be able to mark which blueprints you own, track mythic variants, and show off your collection on your profile.</div>
+      </div>
+      <button onclick="closeSheet()" class="btn-press w-full py-3 rounded-xl bg-primary font-bold text-sm text-white">Got it</button>
+    </div>
+  `, 'Skins');
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- Party sheet ----------
+function openPartySheet() {
+  const profile = State.profile || {};
+  const partyCode = profile.partyCode || (typeof generatePartyCode === 'function' ? generatePartyCode() : 'PANDA-XXXX');
+
+  openSheet(`
+    <div class="space-y-4 text-center">
+      <div style="font-size: 48px;">🎉</div>
+      <div>
+        <div class="text-lg font-black mb-1">Your Party</div>
+        <div class="text-xs text-gray-500">Invite friends to join your lobby</div>
+      </div>
+
+      <div class="bg-primary/10 border border-primary/40 rounded-2xl p-4">
+        <div class="text-[10px] text-gray-400 uppercase font-bold mb-1">Party Code</div>
+        <div class="text-2xl font-black text-primary font-mono tracking-wider">${esc(partyCode)}</div>
+      </div>
+
+      <div class="bg-card border border-border rounded-xl p-3 text-xs text-left">
+        <div class="text-gray-400 mb-2">Invite link:</div>
+        <div class="font-mono text-primary text-[11px] break-all">${location.origin}/?invite=${State.user.uid}</div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <button id="copy-party-code" class="btn-press py-3 rounded-xl bg-primary font-bold text-sm text-white">Copy Code</button>
+        <button id="share-party-link" class="btn-press py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">Share Link</button>
+      </div>
+    </div>
+  `, 'Party');
+
+  document.getElementById('copy-party-code').onclick = () => copyText(partyCode, 'Party code copied!');
+  document.getElementById('share-party-link').onclick = () => {
+    shareContent('Join my CODMPanda party!', 'Use code ' + partyCode, location.origin + '/?invite=' + State.user.uid);
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- Friends panel ----------
+async function showFriendsPanel() {
+  openSheet('<div class="text-center py-8"><div class="spinner mx-auto"></div></div>', 'Friends');
+
+  try {
+    const snap = await getDoc(doc(db, 'users', State.user.uid));
+    if (!snap.exists()) { toast('Profile not loaded', 'error'); return; }
+    const myData = snap.data();
+    const friendUids = myData.friends || [];
+    const incomingUids = myData.friendRequests || [];
+    const outgoingUids = myData.friendRequestsSent || [];
+
+    const allUids = [...new Set([...friendUids, ...incomingUids, ...outgoingUids])];
+    const profiles = {};
+    await Promise.all(allUids.slice(0, 60).map(async (uid) => {
+      try {
+        const s = await getDoc(doc(db, 'users', uid));
+        if (s.exists()) profiles[uid] = { id: uid, ...s.data() };
+      } catch (e) {}
+    }));
+
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (!sheetBody) return;
+
+    const renderUserRow = (u, actionsHtml) => u ? `
+      <div class="flex items-center gap-3 py-2 border-b border-border last:border-0">
+        ${renderAvatar(u, 40)}
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-bold truncate">${esc(u.ign || 'Unknown')}</div>
+          <div class="text-[10px] text-gray-500">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
+        </div>
+        ${actionsHtml || ''}
+      </div>
+    ` : '';
+
+    sheetBody.innerHTML = `
+      <div class="space-y-4">
+        ${incomingUids.length > 0 ? `
+          <div>
+            <div class="text-[10px] font-bold text-primary uppercase mb-2">Requests (${incomingUids.length})</div>
+            <div class="bg-card border border-border rounded-xl px-3">
+              ${incomingUids.map(uid => renderUserRow(profiles[uid], `
+                <button class="accept-req-btn btn-press px-3 py-1.5 rounded-lg bg-green-500 text-white text-[10px] font-bold" data-uid="${esc(uid)}">Accept</button>
+                <button class="decline-req-btn btn-press px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 text-[10px] font-bold ml-1" data-uid="${esc(uid)}">✕</button>
+              `)).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <div>
+          <div class="text-[10px] font-bold text-gray-400 uppercase mb-2">Friends (${friendUids.length})</div>
+          <div class="bg-card border border-border rounded-xl px-3">
+            ${friendUids.length === 0
+              ? '<div class="text-center py-6 text-[10px] text-gray-600">No friends yet — tap a username on any post to add someone</div>'
+              : friendUids.map(uid => renderUserRow(profiles[uid], `
+                <button class="dm-friend-btn btn-press px-3 py-1.5 rounded-lg bg-primary text-white text-[10px] font-bold" data-uid="${esc(uid)}" data-ign="${esc(profiles[uid]?.ign || '')}">Message</button>
+              `)).join('')}
+          </div>
+        </div>
+
+        ${outgoingUids.length > 0 ? `
+          <div>
+            <div class="text-[10px] font-bold text-yellow-400 uppercase mb-2">Pending Sent (${outgoingUids.length})</div>
+            <div class="bg-card border border-border rounded-xl px-3">
+              ${outgoingUids.map(uid => renderUserRow(profiles[uid], `
+                <span class="text-[10px] text-yellow-400 font-bold">Pending</span>
+              `)).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    sheetBody.querySelectorAll('.accept-req-btn').forEach(btn => {
+      btn.onclick = async () => {
+        try {
+          await updateDoc(doc(db, 'users', State.user.uid), {
+            friends: arrayUnion(btn.dataset.uid),
+            friendRequests: arrayRemove(btn.dataset.uid)
+          });
+          await updateDoc(doc(db, 'users', btn.dataset.uid), {
+            friends: arrayUnion(State.user.uid),
+            friendRequestsSent: arrayRemove(State.user.uid)
+          });
+          toast('Friend added!', 'success');
+          closeSheet();
+          setTimeout(showFriendsPanel, 300);
+        } catch (e) { toast('Failed: ' + e.message, 'error'); }
+      };
+    });
+
+    sheetBody.querySelectorAll('.decline-req-btn').forEach(btn => {
+      btn.onclick = async () => {
+        try {
+          await updateDoc(doc(db, 'users', State.user.uid), {
+            friendRequests: arrayRemove(btn.dataset.uid)
+          });
+          await updateDoc(doc(db, 'users', btn.dataset.uid), {
+            friendRequestsSent: arrayRemove(State.user.uid)
+          });
+          toast('Request declined', 'success');
+          closeSheet();
+          setTimeout(showFriendsPanel, 300);
+        } catch (e) { toast('Failed: ' + e.message, 'error'); }
+      };
+    });
+
+    sheetBody.querySelectorAll('.dm-friend-btn').forEach(btn => {
+      btn.onclick = () => {
+        closeSheet();
+        setTimeout(() => {
+          if (typeof openDMThread === 'function') openDMThread(btn.dataset.uid, btn.dataset.ign);
+        }, 300);
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Friends panel error:', e);
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (sheetBody) sheetBody.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">Failed to load friends</div>';
+  }
+}
+
+// ============================================
+// LIVE ONLINE COUNTER (feels-alive indicator)
+// ============================================
+// Range: 30–98. Drifts slowly so it never looks static.
+const ONLINE_COUNTER = {
+  min: 30,
+  max: 98,
+  value: null,
+  el: null,
+  timer: null
+};
+
+function startOnlineCounter() {
+  stopOnlineCounter();
+
+  // Find the top-bar subtitle element
+  ONLINE_COUNTER.el = document.getElementById('top-bar-subtitle');
+  if (!ONLINE_COUNTER.el) {
+    console.warn('Online counter: #top-bar-subtitle not found');
+    return;
+  }
+
+  // Start somewhere mid-range
+  ONLINE_COUNTER.value = Math.floor(Math.random() * (ONLINE_COUNTER.max - ONLINE_COUNTER.min + 1)) + ONLINE_COUNTER.min;
+
+  renderOnlineCounter();
+
+  // Drift every 4-8 seconds
+  const scheduleDrift = () => {
+    const delay = 4000 + Math.random() * 4000;
+    ONLINE_COUNTER.timer = setTimeout(() => {
+      const current = ONLINE_COUNTER.value;
+      // Bias toward the middle so it doesn't stick to the edges
+      const bias = current < 55 ? 1 : current > 80 ? -1 : (Math.random() < 0.5 ? 1 : -1);
+      const step = Math.floor(Math.random() * 3) + 1; // 1-3
+      let next = current + bias * step;
+      next = Math.max(ONLINE_COUNTER.min, Math.min(ONLINE_COUNTER.max, next));
+      ONLINE_COUNTER.value = next;
+      renderOnlineCounter();
+      scheduleDrift();
+    }, delay);
+  };
+  scheduleDrift();
+}
+
+function renderOnlineCounter() {
+  if (!ONLINE_COUNTER.el) return;
+  const n = ONLINE_COUNTER.value;
+  const rank = (State.profile && State.profile.rank) || 'Rookie';
+  const region = (State.profile && State.profile.region) || 'Global';
+
+  ONLINE_COUNTER.el.innerHTML = `
+    <span style="display:inline-flex;align-items:center;gap:6px;">
+      <span style="display:inline-flex;align-items:center;gap:5px;">
+        <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22C55E;box-shadow:0 0 6px rgba(34,197,94,0.8);animation:pulse 2s infinite;"></span>
+        <span style="color:#22C55E;font-weight:800;">${n} online</span>
+      </span>
+      <span style="color:#666;">·</span>
+      <span>${esc(rank)} · ${esc(region)}</span>
+    </span>
+  `;
+}
+
+function stopOnlineCounter() {
+  if (ONLINE_COUNTER.timer) {
+    clearTimeout(ONLINE_COUNTER.timer);
+    ONLINE_COUNTER.timer = null;
+  }
+}
+
+// Hook into showMainApp so the counter starts when the app opens
+// (not overriding — just wrapping on the first run only)
+(function attachOnlineCounterHook() {
+  if (window.__onlineCounterHooked) return;
+  window.__onlineCounterHooked = true;
+
+  const prev = window.showMainApp;
+  if (typeof prev !== 'function') return;
+
+  window.showMainApp = function() {
+    prev();
+    try { startOnlineCounter(); } catch (e) { console.warn('Online counter error:', e); }
+  };
+})();
+
+// ---------- Exports ----------
+window.wireHomeCards = wireHomeCards;
+window.wireHomeCardInteractions = wireHomeCardInteractions;
+window.openThemePicker = openThemePicker;
+window.openAvatarFramePicker = openAvatarFramePicker;
+window.renderSkinsPanel = renderSkinsPanel;
+window.openPartySheet = openPartySheet;
+window.showFriendsPanel = showFriendsPanel;
+window.startOnlineCounter = startOnlineCounter;
+window.stopOnlineCounter = stopOnlineCounter;
+
+console.log('Chunk 26 loaded — missing functions + online counter');
+
+// ============================================
+// END OF CHUNK 26/24
+// ============================================
+        
