@@ -13433,7 +13433,7 @@ async function boot() {
     if (splash && !splash.classList.contains('hidden')) {
       splash.classList.add('hidden');
     }
-  }, 3000);
+  }, 2000);
 
   // Wire sign-in button (in case auth-gate is visible)
   const signBtn = document.getElementById('google-signin-btn');
