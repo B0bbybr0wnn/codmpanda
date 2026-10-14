@@ -24521,3 +24521,75 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
 })();
 
 /* END OF CHUNK 55.4 */
+// ============================================
+// DEBUG PROBE — remove after diagnosis
+// ============================================
+
+(function() {
+  console.log('%c🔍 PROBE START', 'background:#FF6B00;color:#fff;padding:4px 8px;font-weight:bold');
+
+  // --- Check 1: Did app.js even start? ---
+  console.log('✅ app.js loaded');
+
+  // --- Check 2: What's the DOM state? ---
+  setTimeout(() => {
+    console.log('%c--- DOM STATE ---', 'color:#FFD700;font-weight:bold');
+
+    const splash = document.getElementById('splash');
+    const authGate = document.getElementById('auth-gate');
+    const onboarding = document.getElementById('onboarding');
+    const mainApp = document.getElementById('main-app');
+    const content = document.getElementById('content');
+
+    console.log('splash exists:', !!splash, '| hidden:', splash ? splash.classList.contains('hidden') : 'n/a');
+    console.log('auth-gate exists:', !!authGate, '| hidden:', authGate ? authGate.classList.contains('hidden') : 'n/a');
+    console.log('onboarding exists:', !!onboarding, '| hidden:', onboarding ? onboarding.classList.contains('hidden') : 'n/a');
+    console.log('main-app exists:', !!mainApp, '| hidden:', mainApp ? mainApp.classList.contains('hidden') : 'n/a');
+    console.log('content innerHTML length:', content ? content.innerHTML.length : 'n/a');
+
+    // --- Check 3: Global libraries ---
+    console.log('%c--- LIBS ---', 'color:#FFD700;font-weight:bold');
+    console.log('window.lucide:', typeof window.lucide);
+    console.log('window.firebase:', typeof window.firebase);
+    console.log('window.google:', typeof window.google);
+    console.log('window.JitsiMeetExternalAPI:', typeof window.JitsiMeetExternalAPI);
+
+    // --- Check 4: State ---
+    console.log('%c--- STATE ---', 'color:#FFD700;font-weight:bold');
+    if (window.State) {
+      console.log('State.user:', State.user ? State.user.uid : 'null');
+      console.log('State.profile:', State.profile ? State.profile.ign : 'null');
+      console.log('State.currentTab:', State.currentTab);
+      console.log('State.uiVersion:', State.uiVersion);
+      console.log('injectors registered — youTab:', State.injectors?.youTab?.length || 0, '| boot:', State.injectors?.boot?.length || 0, '| tabCleanup:', State.injectors?.tabCleanup?.length || 0);
+    } else {
+      console.log('❌ window.State is UNDEFINED — Chunk 1 never ran!');
+    }
+
+    // --- Check 5: Chunk readiness flags ---
+    console.log('%c--- CHUNK FLAGS ---', 'color:#FFD700;font-weight:bold');
+    console.log('__chunk551Ready:', window.__chunk551Ready);
+    console.log('__chunk552Ready:', window.__chunk552Ready);
+    console.log('__chunk553Ready:', window.__chunk553Ready);
+    console.log('__chunk554Ready:', window.__chunk554Ready);
+
+    // --- Check 6: Key functions ---
+    console.log('%c--- FUNCTIONS ---', 'color:#FFD700;font-weight:bold');
+    const funcs = ['toast', 'switchTab', 'showMainApp', 'renderYouTab', 'renderLobbies', 'renderVaults', 'joinLobby', 'openSheet', 'closeSheet', 'firebaseReady'];
+    funcs.forEach(f => {
+      console.log(f + ':', typeof window[f]);
+    });
+
+    console.log('%c🔍 PROBE END', 'background:#FF6B00;color:#fff;padding:4px 8px;font-weight:bold');
+  }, 3000);
+
+  // --- Global error catch ---
+  window.addEventListener('error', e => {
+    console.error('%c❌ ERROR', 'background:#f00;color:#fff;padding:2px 6px', e.message, '|', e.filename, ':', e.lineno);
+  });
+
+  window.addEventListener('unhandledrejection', e => {
+    const r = e.reason;
+    console.error('%c⚠️ PROMISE REJECTION', 'background:#f80;color:#000;padding:2px 6px', r && r.message ? r.message : r);
+  });
+})();
