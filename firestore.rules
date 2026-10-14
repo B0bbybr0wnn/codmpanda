@@ -1,36 +1,40 @@
 rules_version = '2';
 
 // ============================================
-// CODMPanda Firestore Security Rules
+// CODMPanda — Firestore Security Rules
 // ============================================
-// Philosophy: 
-//  - Authenticated users can read most things
-//  - Users can only write their own content
-//  - Admin (ADMIN_UID) can do anything
-//  - Banned users are locked out of writes
+// Philosophy:
+//   - Authenticated users can read most content
+//   - Users can only write their own content
+//   - Narrow cross-user writes: counters, arrays, friend requests
+//   - Admin (ADMIN_UID) can do anything
+//   - Banned users are locked out of creates
 // ============================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     // ============================================
-    // HELPER FUNCTIONS
+    // HELPERS
     // ============================================
-    
+
     function isSignedIn() {
       return request.auth != null;
     }
-    
+
     function isAdmin() {
-      return isSignedIn() && request.auth.uid == 'ItqEYihqxYW4HGm7i8bBYky8XNw1';
+      return isSignedIn() &&
+        request.auth.uid == 'ItqEYihqxYW4HGm7i8bBYky8XNw1';
     }
-    
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
-    
+
+    // Cheap ban check — only called on creates, not reads.
+    // Costs 1 read per invocation. Skip on likes to save quota.
     function isNotBanned() {
-      return !exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+      return !exists(/databases/$(database)/documents/users/$(request.auth.uid))
         || !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.banned;
     }
 
@@ -40,35 +44,55 @@ service cloud.firestore {
     match /users/{userId} {
       // Anyone signed in can read profiles (privacy handled client-side)
       allow read: if isSignedIn();
-      
+
       // Users can create their own profile
       allow create: if isOwner(userId);
-      
-      // Users can update their own profile — but cannot escalate to admin or unban themselves
-      allow update: if isOwner(userId) 
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned', 'banReason', 'bannedAt', 'bannedBy'])
-        || isAdmin();
-      
-      // Only admin can delete users
-      allow delete: if isAdmin();
+
+      // Users can update their own profile.
+      // They CANNOT self-escalate: banned, isPro, proExpiry, approvedCount, badges
+      // are locked. Admin can always edit.
+      // Cross-user writes are allowed ONLY for friend request arrays.
+      allow update: if isAdmin()
+        || (
+          isOwner(userId)
+          && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny([
+                'banned', 'banReason', 'bannedAt', 'bannedBy',
+                'isPro', 'proExpiry', 'proFromContribution',
+                'approvedCount', 'badges',
+                'verified', 'verifiedAt',
+                'tournamentWins', 'activeStreak', 'lastActiveDate'
+              ])
+        )
+        || (
+          // Narrow: anyone can add themselves to friend arrays
+          isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['friendRequests', 'friendRequestsSent'])
+        );
+
+      // Owner can delete their own account; admin can delete anyone
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     // ============================================
-    // LOBBIES (LFG board)
+    // LOBBIES (LFG)
     // ============================================
     match /lobbies/{lobbyId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
-      
-      // Owner can update their own lobby; anyone signed in can increment player count
+
+      // Owner edits anything; anyone can bump `players` (join);
+      // owner can also set isPro after posting.
       allow update: if isSignedIn() && (
-        resource.data.uid == request.auth.uid 
-        || isAdmin()
+        isAdmin()
+        || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['players'])
       );
-      
+
       allow delete: if isSignedIn() && (
-        resource.data.uid == request.auth.uid 
-        || isAdmin()
+        isAdmin() || resource.data.uid == request.auth.uid
       );
     }
 
@@ -78,18 +102,21 @@ service cloud.firestore {
     match /vaults/{vaultId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
+
       allow update: if isSignedIn() && (
-        resource.data.uid == request.auth.uid 
-        || isAdmin()
+        isAdmin()
+        || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['likes'])
       );
+
       allow delete: if isSignedIn() && (
-        resource.data.uid == request.auth.uid 
-        || isAdmin()
+        isAdmin() || resource.data.uid == request.auth.uid
       );
     }
 
     // ============================================
-    // CAMOS (per-user camo tracker)
+    // CAMOS (per-user tracker)
     // ============================================
     match /camos/{userId} {
       allow read: if isSignedIn();
@@ -102,16 +129,17 @@ service cloud.firestore {
     match /clans/{clanId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
-      
-      // Owner or admin can edit clan details; anyone can join (via arrayUnion on members)
+
+      // Owner edits everything; anyone can join/leave via members array
       allow update: if isSignedIn() && (
-        resource.data.ownerUid == request.auth.uid 
-        || isAdmin()
+        isAdmin()
+        || resource.data.ownerUid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['members'])
       );
-      
+
       allow delete: if isSignedIn() && (
-        resource.data.ownerUid == request.auth.uid 
-        || isAdmin()
+        isAdmin() || resource.data.ownerUid == request.auth.uid
       );
     }
 
@@ -122,8 +150,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
       allow update, delete: if isSignedIn() && (
-        resource.data.uid == request.auth.uid 
-        || isAdmin()
+        isAdmin() || resource.data.uid == request.auth.uid
       );
     }
 
@@ -133,9 +160,16 @@ service cloud.firestore {
     match /clips/{clipId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
-      allow update, delete: if isSignedIn() && (
-        resource.data.uid == request.auth.uid 
-        || isAdmin()
+
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['likes'])
+      );
+
+      allow delete: if isSignedIn() && (
+        isAdmin() || resource.data.uid == request.auth.uid
       );
     }
 
@@ -144,26 +178,37 @@ service cloud.firestore {
     // ============================================
     match /leaks/{leakId} {
       allow read: if isSignedIn();
-      
-      // Users can submit leaks (they go live immediately)
       allow create: if isSignedIn() && isNotBanned();
-      
-      // Owner can edit their own within reason; admin can always
-      allow update, delete: if isSignedIn() && (
-        resource.data.uid == request.auth.uid 
-        || isAdmin()
+
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['hypes'])
+      );
+
+      allow delete: if isSignedIn() && (
+        isAdmin() || resource.data.uid == request.auth.uid
       );
     }
 
     // ============================================
-    // POSTS (home feed text posts)
+    // POSTS (home feed)
     // ============================================
     match /posts/{postId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
-      allow update, delete: if isSignedIn() && (
-        resource.data.uid == request.auth.uid 
-        || isAdmin()
+
+      // Owner edits text; anyone can bump likes; owner can update commentCount
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['likes', 'commentCount'])
+      );
+
+      allow delete: if isSignedIn() && (
+        isAdmin() || resource.data.uid == request.auth.uid
       );
     }
 
@@ -173,85 +218,89 @@ service cloud.firestore {
     match /comments/{commentId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
-      allow update, delete: if isSignedIn() && (
-        resource.data.uid == request.auth.uid 
-        || isAdmin()
+
+      // Owner edits text; anyone can bump likes
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['likes'])
+      );
+
+      allow delete: if isSignedIn() && (
+        isAdmin() || resource.data.uid == request.auth.uid
       );
     }
 
     // ============================================
-    // LIKES / REACTIONS
-    // Doc ID format: {contentType}_{contentId}_{userId}
+    // LIKES (doc ID: {itemType}_{itemId}_{userId})
+    // Users can create/update/delete ONLY their own like doc.
     // ============================================
     match /likes/{likeId} {
       allow read: if isSignedIn();
-      
-      // Users can only create/delete their own reactions
-      // Enforce userId field matches auth uid
-      allow create: if isSignedIn() 
-        && isNotBanned() 
+
+      // Write = create + update + delete. Using `write` here so
+      // rapid double-taps that turn into setDoc-update don't fail.
+      allow write: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
-      
-      allow delete: if isSignedIn() 
-        && resource.data.userId == request.auth.uid;
-      
-      // No updates — reactions are create/delete only
-      allow update: if false;
     }
 
     // ============================================
-    // NOTIFICATIONS (in-app)
+    // NOTIFICATIONS
     // ============================================
+    // Special: needs `list` rules because the client queries with
+    // where('userId', '==', uid). Reads of individual docs use `get`.
     match /notifications/{notifId} {
-      // Users can only read their own notifications
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
-      
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow list: if isSignedIn()
+        && request.query.filters.containsKey('userId')
+        && request.query.filters.userId[1] == request.auth.uid;
+
       // Anyone signed in can create notifications for others (system messages)
       allow create: if isSignedIn();
-      
-      // Users can mark their own as read
+
+      // Only recipient can mark read
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
-      
-      // Users can delete their own; admin can delete any
+
       allow delete: if isSignedIn() && (
-        resource.data.userId == request.auth.uid 
-        || isAdmin()
+        resource.data.userId == request.auth.uid || isAdmin()
       );
     }
 
     // ============================================
     // MESSAGES (DMs)
     // ============================================
+    // Special: needs `list` rules because the client queries by
+    // fromUid OR toUid. Without these, the DM inbox fails silently.
     match /messages/{messageId} {
-      // Users can read messages they sent or received
-      allow read: if isSignedIn() && (
-        resource.data.fromUid == request.auth.uid 
+      allow get: if isSignedIn() && (
+        resource.data.fromUid == request.auth.uid
         || resource.data.toUid == request.auth.uid
       );
-      
-      // Users can only send from themselves
-      allow create: if isSignedIn() 
-        && isNotBanned() 
+
+      allow list: if isSignedIn() && (
+        (request.query.filters.containsKey('fromUid')
+          && request.query.filters.fromUid[1] == request.auth.uid)
+        || (request.query.filters.containsKey('toUid')
+          && request.query.filters.toUid[1] == request.auth.uid)
+      );
+
+      allow create: if isSignedIn()
+        && isNotBanned()
         && request.resource.data.fromUid == request.auth.uid;
-      
-      // Senders can edit/delete their own messages
+
       allow update, delete: if isSignedIn() && (
-        resource.data.fromUid == request.auth.uid 
-        || isAdmin()
+        resource.data.fromUid == request.auth.uid || isAdmin()
       );
     }
 
     // ============================================
-    // REPORTS (user-submitted)
+    // REPORTS
     // ============================================
     match /reports/{reportId} {
-      // Only admin can read reports
       allow read: if isAdmin();
-      
-      // Anyone signed in can submit a report
       allow create: if isSignedIn() && isNotBanned();
-      
-      // Only admin can update (resolve) or delete
       allow update, delete: if isAdmin();
     }
 
@@ -261,21 +310,22 @@ service cloud.firestore {
     match /tournaments/{tournamentId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
-      
-      // Creator can update; anyone can register (via arrayUnion on teams)
+
+      // Creator edits everything; anyone can register (teams array)
       allow update: if isSignedIn() && (
-        resource.data.creatorUid == request.auth.uid 
-        || isAdmin()
+        isAdmin()
+        || resource.data.creatorUid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['teams'])
       );
-      
+
       allow delete: if isSignedIn() && (
-        resource.data.creatorUid == request.auth.uid 
-        || isAdmin()
+        isAdmin() || resource.data.creatorUid == request.auth.uid
       );
     }
 
     // ============================================
-    // CLAN WARS LOG (points tracking)
+    // CLAN WARS
     // ============================================
     match /clanWarsLog/{logId} {
       allow read: if isSignedIn();
@@ -283,9 +333,6 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // ============================================
-    // CLAN WARS HISTORY (weekly champions)
-    // ============================================
     match /clanWarsHistory/{historyId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
@@ -296,8 +343,7 @@ service cloud.firestore {
     // ============================================
     match /vault_submissions/{subId} {
       allow read: if isSignedIn() && (
-        resource.data.submitterUid == request.auth.uid 
-        || isAdmin()
+        resource.data.submitterUid == request.auth.uid || isAdmin()
       );
       allow create: if isSignedIn() && isNotBanned();
       allow update, delete: if isAdmin();
@@ -305,8 +351,7 @@ service cloud.firestore {
 
     match /leak_submissions/{subId} {
       allow read: if isSignedIn() && (
-        resource.data.submitterUid == request.auth.uid 
-        || isAdmin()
+        resource.data.submitterUid == request.auth.uid || isAdmin()
       );
       allow create: if isSignedIn() && isNotBanned();
       allow update, delete: if isAdmin();
@@ -314,8 +359,7 @@ service cloud.firestore {
 
     match /clip_submissions/{subId} {
       allow read: if isSignedIn() && (
-        resource.data.submitterUid == request.auth.uid 
-        || isAdmin()
+        resource.data.submitterUid == request.auth.uid || isAdmin()
       );
       allow create: if isSignedIn() && isNotBanned();
       allow update, delete: if isAdmin();
@@ -327,14 +371,22 @@ service cloud.firestore {
     match /parties/{partyId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && (
-        resource.data.leaderUid == request.auth.uid 
-        || isAdmin()
+
+      // Leader edits; anyone can join/leave via members array
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || resource.data.leaderUid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['members'])
+      );
+
+      allow delete: if isSignedIn() && (
+        isAdmin() || resource.data.leaderUid == request.auth.uid
       );
     }
 
     // ============================================
-    // TIER VOTES (community tier list)
+    // TIER VOTES (one doc per user)
     // ============================================
     match /tierVotes/{userId} {
       allow read: if isSignedIn();
