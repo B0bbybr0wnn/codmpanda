@@ -3,20 +3,76 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<meta name="theme-color" content="#FF6B00" />
+
+<!-- ============================================
+     PRIMARY META
+     ============================================ -->
+<meta name="theme-color" content="#050505" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#FF6B00" media="(prefers-color-scheme: light)" />
 <meta name="description" content="CODMPanda — The Ultimate CODM Companion. Find squads, share builds, track camos, and dominate." />
+<meta name="application-name" content="CODMPanda" />
+<meta name="apple-mobile-web-app-title" content="CODMPanda" />
 
-<title>CODMPanda — The Ultimate CODM Companion</title>
+<!-- ============================================
+     iOS PWA
+     ============================================ -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="format-detection" content="telephone=no" />
 
+<!-- ============================================
+     OPEN GRAPH / TWITTER (for share previews)
+     ============================================ -->
+<meta property="og:title" content="CODMPanda — The Ultimate CODM Companion" />
+<meta property="og:description" content="Find squads, share builds, track camos, and dominate." />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="/icon-512.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="CODMPanda" />
+<meta name="twitter:description" content="The Ultimate CODM Companion" />
+<meta name="twitter:image" content="/icon-512.png" />
+
+<!-- ============================================
+     PWA MANIFEST + ICONS
+     ============================================ -->
 <link rel="manifest" href="/manifest.json" />
 <link rel="apple-touch-icon" href="/icon-192.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
 
+<!-- ============================================
+     PERFORMANCE HINTS
+     ============================================ -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<link rel="preconnect" href="https://www.gstatic.com" />
+<link rel="preconnect" href="https://firestore.googleapis.com" />
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com" />
+<link rel="dns-prefetch" href="https://cdn.tailwindcss.com" />
+<link rel="dns-prefetch" href="https://unpkg.com" />
 
+<!-- Preload critical assets -->
+<link rel="preload" as="image" href="/icon-512.png" />
+<link rel="preload" as="image" href="/hero-panda.jpg" />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" />
+
+<!-- ============================================
+     FONTS
+     ============================================ -->
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+  media="print"
+  onload="this.media='all'"
+/>
+<noscript>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" />
+</noscript>
+
+<!-- ============================================
+     TAILWIND (CDN)
+     ============================================ -->
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {
@@ -38,64 +94,137 @@ tailwind.config = {
 };
 </script>
 
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<!-- ============================================
+     LUCIDE ICONS (deferred — safe, only used after app.js loads)
+     ============================================ -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
 
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<!-- ============================================
+     FIREBASE (compat build for FCM — deferred)
+     ============================================ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js" defer></script>
 
+<!-- ============================================
+     GOOGLE IDENTITY SERVICES (async — GIS loads itself)
+     ============================================ -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-<!-- Eruda mobile console -->
-<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-<script>eruda.init();</script>
-
+<!-- ============================================
+     STYLES
+     ============================================ -->
 <style>
-* { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+/* ============================================
+   CSS RESET + THEME TOKENS
+   ============================================ */
+:root {
+  /* Safe area (iOS notch) */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  /* Theme colors (overridden by app.js applyTheme) */
+  --theme-bg: #050505;
+  --theme-card: #111111;
+  --theme-card-alt: #181818;
+  --theme-border: #222222;
+  --theme-text: #ffffff;
+  --theme-text-muted: #888888;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
 html, body {
-  margin: 0; padding: 0;
-  background: #050505; color: #fff;
-  font-family: 'Inter', system-ui, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: var(--theme-bg);
+  color: var(--theme-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
-body { overflow-x: hidden; }
-input, textarea, select, button { font-family: inherit; }
-input::placeholder, textarea::placeholder { color: #666; }
-::-webkit-scrollbar { width: 0; height: 0; }
 
+body {
+  overflow-x: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ============================================
+   FORM CONTROLS — inherit font
+   ============================================ */
+input, textarea, select, button {
+  font-family: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #666;
+}
+
+/* Hide scrollbars globally */
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* ============================================
+   UTILITY
+   ============================================ */
 .hidden { display: none !important; }
 
 select {
-  appearance: none; -webkit-appearance: none;
+  appearance: none;
+  -webkit-appearance: none;
   background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
   background-repeat: no-repeat;
   background-position: right 14px center;
   padding-right: 36px !important;
 }
 
+/* ============================================
+   SPINNER
+   ============================================ */
 .spinner {
-  width: 24px; height: 24px;
+  width: 24px;
+  height: 24px;
   border: 3px solid #222;
   border-top-color: #ff6b00;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
+/* ============================================
+   ANIMATIONS
+   ============================================ */
 @keyframes voicePulse {
-  0%, 100% { transform: scale(1); opacity: .6; }
+  0%, 100% { transform: scale(1); opacity: 0.6; }
   50% { transform: scale(1.15); opacity: 1; }
 }
 
-.fade-in { animation: fadeIn 0.3s ease; }
+.fade-in {
+  animation: fadeIn 0.3s ease;
+}
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.btn-press { transition: transform .1s ease; }
-.btn-press:active { transform: scale(.96); }
+.btn-press { transition: transform 0.1s ease; }
+.btn-press:active { transform: scale(0.96); }
 
+/* ============================================
+   BOTTOM NAV TABS
+   ============================================ */
 .tab-btn {
   flex: 1;
   display: flex;
@@ -115,6 +244,9 @@ select {
 .tab-btn.tab-active { color: #FF6B00; }
 .tab-btn svg, .tab-btn i { width: 22px; height: 22px; }
 
+/* ============================================
+   MODAL / SHEET
+   ============================================ */
 .modal-backdrop {
   background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(6px);
@@ -127,7 +259,7 @@ select {
   border-top: 1px solid #222;
   max-height: 92vh;
   overflow-y: auto;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--safe-bottom);
 }
 .slide-up { animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes slideUp {
@@ -135,8 +267,12 @@ select {
   to { transform: translateY(0); }
 }
 
+/* ============================================
+   TOGGLE SWITCH
+   ============================================ */
 .toggle {
-  width: 44px; height: 26px;
+  width: 44px;
+  height: 26px;
   border-radius: 13px;
   background: #333;
   position: relative;
@@ -147,8 +283,10 @@ select {
 .toggle::after {
   content: '';
   position: absolute;
-  top: 3px; left: 3px;
-  width: 20px; height: 20px;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: #fff;
   transition: transform 0.2s;
@@ -156,6 +294,9 @@ select {
 .toggle.on { background: #FF6B00; }
 .toggle.on::after { transform: translateX(18px); }
 
+/* ============================================
+   CHIP
+   ============================================ */
 .chip {
   padding: 8px 14px;
   border-radius: 999px;
@@ -175,6 +316,9 @@ select {
   color: #fff;
 }
 
+/* ============================================
+   PROGRESS BAR
+   ============================================ */
 .progress-bar {
   height: 6px;
   background: #1a1a1a;
@@ -189,6 +333,9 @@ select {
   transition: width 0.3s ease;
 }
 
+/* ============================================
+   SKELETON
+   ============================================ */
 .skeleton {
   background: linear-gradient(90deg, #141414 25%, #1f1f1f 50%, #141414 75%);
   background-size: 200% 100%;
@@ -200,7 +347,15 @@ select {
   100% { background-position: -200% 0; }
 }
 
-input[type="text"], input[type="number"], input[type="email"], input[type="url"], input[type="password"], textarea {
+/* ============================================
+   FORM INPUTS
+   ============================================ */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="url"],
+input[type="password"],
+textarea {
   width: 100%;
   background: #181818;
   border: 1px solid #222;
@@ -212,15 +367,21 @@ input[type="text"], input[type="number"], input[type="email"], input[type="url"]
   transition: border-color 0.2s;
   resize: vertical;
 }
-input:focus, textarea:focus { border-color: #FF6B00; }
+input:focus, textarea:focus {
+  border-color: #FF6B00;
+}
 
 input[type="checkbox"] {
-  width: 18px; height: 18px;
+  width: 18px;
+  height: 18px;
   accent-color: #FF6B00;
   cursor: pointer;
   flex-shrink: 0;
 }
 
+/* ============================================
+   TOAST
+   ============================================ */
 .toast-enter { animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .toast-exit { animation: toastOut 0.25s ease-out; }
 @keyframes toastIn {
@@ -231,17 +392,34 @@ input[type="checkbox"] {
   to { opacity: 0; transform: translateY(-10px); }
 }
 
-.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
-.no-scrollbar::-webkit-scrollbar { display: none; }
+/* ============================================
+   SCROLLBAR HIDING
+   ============================================ */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 
+/* ============================================
+   TOUCH BEHAVIOR
+   ============================================ */
 * { touch-action: manipulation; }
 input, textarea { touch-action: auto; }
 
+/* ============================================
+   GLOW EFFECTS
+   ============================================ */
 .glow-primary { box-shadow: 0 0 20px rgba(255, 107, 0, 0.4); }
 .glow-gold { box-shadow: 0 0 20px rgba(255, 215, 0, 0.4); }
 .glow-text-primary { text-shadow: 0 0 20px rgba(255, 107, 0, 0.6); }
 .glow-text-gold { text-shadow: 0 0 20px rgba(255, 215, 0, 0.6); }
 
+/* ============================================
+   LINE CLAMP
+   ============================================ */
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -254,13 +432,48 @@ input, textarea { touch-action: auto; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ============================================
+   NOSCRIPT FALLBACK
+   ============================================ */
+.noscript-message {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px;
+  text-align: center;
+  background: #050505;
+  color: #fff;
+  z-index: 99999;
+}
 </style>
 </head>
 <body>
 
+<!-- ============================================
+     NOSCRIPT FALLBACK
+     ============================================ -->
+<noscript>
+  <div class="noscript-message">
+    <img src="/icon-512.png" alt="CODMPanda" style="width: 80px; height: 80px; border-radius: 20px;" />
+    <div style="font-size: 20px; font-weight: 900;">
+      <span style="color: #FF6B00;">CODM</span><span>Panda</span>
+    </div>
+    <div style="font-size: 13px; color: #888; max-width: 280px; line-height: 1.5;">
+      CODMPanda requires JavaScript to run. Please enable JavaScript in your browser settings.
+    </div>
+  </div>
+</noscript>
+
 <div id="app">
 
-  <!-- SPLASH -->
+  <!-- ============================================
+       SPLASH
+       ============================================ -->
   <div id="splash" style="position:fixed;inset:0;z-index:400;background:#050505;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity 0.4s ease;">
     <img src="/icon-512.png" alt="CODMPanda" style="width:96px;height:96px;border-radius:20px;box-shadow:0 0 40px rgba(255,107,0,.5);animation:voicePulse 2s ease-in-out infinite;" />
     <div style="font-size:22px;font-weight:900;">
@@ -270,7 +483,9 @@ input, textarea { touch-action: auto; }
     <div class="spinner" style="margin-top:8px;"></div>
   </div>
 
-  <!-- AUTH GATE -->
+  <!-- ============================================
+       AUTH GATE
+       ============================================ -->
   <div id="auth-gate" style="position:fixed;inset:0;z-index:350;background:#050505;display:none;flex-direction:column;align-items:center;justify-content:center;padding:32px;text-align:center;">
     <img src="/icon-512.png" alt="CODMPanda" style="width:96px;height:96px;border-radius:20px;box-shadow:0 0 40px rgba(255,107,0,.5);margin-bottom:20px;" />
     <div style="font-size:24px;font-weight:900;margin-bottom:6px;">
@@ -284,14 +499,19 @@ input, textarea { touch-action: auto; }
     <div style="font-size:10px;color:#555;margin-top:24px;max-width:280px;line-height:1.5;">By signing in, you agree to our Terms of Service and Privacy Policy.</div>
   </div>
 
-  <!-- ONBOARDING -->
+  <!-- ============================================
+       ONBOARDING
+       ============================================ -->
   <div id="onboarding" style="position:fixed;inset:0;z-index:340;background:#050505;display:none;flex-direction:column;">
     <div id="onboarding-content" style="display:flex;flex-direction:column;height:100%;"></div>
   </div>
 
-  <!-- MAIN APP -->
-  <div id="main-app" style="display:none;min-height:100vh;padding-bottom:calc(68px + env(safe-area-inset-bottom, 0px));">
+  <!-- =============. ===============================
+       MAIN APP
+       ============================================ -->
+  <div id="main-app" style="display:none;min-height:100vh;min-height:100dvh;padding-bottom:calc(68px + env(safe-area-inset-bottom, 0px));">
 
+    <!-- Top bar -->
     <div id="top-bar" style="position:sticky;top:0;z-index:30;background:rgba(5,5,5,.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid #1a1a1a;padding:12px 16px;padding-top:calc(env(safe-area-inset-top,0px) + 12px);display:flex;align-items:center;gap:10px;">
       <img src="/icon-192.png" alt="Panda" style="width:36px;height:36px;border-radius:10px;flex-shrink:0;" />
       <div style="flex:1;min-width:0;">
@@ -308,10 +528,13 @@ input, textarea { touch-action: auto; }
       </button>
     </div>
 
+    <!-- Content outlet -->
     <div id="content" style="padding-top:4px;"></div>
 
+    <!-- Ad banner -->
     <div id="ad-banner" style="position:fixed;bottom:calc(68px + env(safe-area-inset-bottom, 0px));left:0;right:0;background:#141414;border-top:1px solid #222;padding:8px 16px;text-align:center;font-size:10px;color:#666;z-index:25;display:none;">Ad space — upgrade to Pro to remove</div>
 
+    <!-- Bottom nav -->
     <div id="bottom-nav" style="position:fixed;bottom:0;left:0;right:0;z-index:30;background:rgba(5,5,5,.98);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid #1a1a1a;padding-bottom:env(safe-area-inset-bottom,0px);display:flex;height:68px;">
       <button class="tab-btn tab-active" data-tab="home">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -341,40 +564,31 @@ input, textarea { touch-action: auto; }
 
   </div>
 
+  <!-- ============================================
+       GLOBAL OUTLETS
+       ============================================ -->
   <div id="toast-container" style="position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;width:calc(100% - 32px);max-width:400px;"></div>
   <div id="modal-container" style="position:fixed;inset:0;z-index:9000;display:none;"></div>
   <div id="sheet-container" style="position:fixed;inset:0;z-index:9000;display:none;"></div>
 
 </div>
 
+<!-- ============================================
+     APP SCRIPT
+     ============================================ -->
 <script type="module" src="/app.js"></script>
 
+<!-- ============================================
+     SERVICE WORKER
+     ============================================ -->
 <script>
-  // Fallback: hide splash after 3 seconds no matter what
-  setTimeout(function() {
-    var splash = document.getElementById('splash');
-    if (splash && !splash.classList.contains('hidden')) {
-      splash.classList.add('hidden');
-      splash.style.display = 'none';
-    }
-  }, 3000);
-
-  // Also hide splash when auth gate shows
-  var observer = new MutationObserver(function() {
-    var authGate = document.getElementById('auth-gate');
-    var splash = document.getElementById('splash');
-    if (authGate && splash && authGate.style.display !== 'none' && authGate.style.display !== '') {
-      splash.classList.add('hidden');
-      splash.style.display = 'none';
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
-
-  if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
     navigator.serviceWorker.register('/sw.js').catch(function(e) {
-      console.warn('Service Worker failed:', e);
+      console.warn('Service Worker registration failed:', e);
     });
-  }
+  });
+}
 </script>
 
 </body>
