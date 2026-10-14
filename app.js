@@ -1148,28 +1148,28 @@ async function handleSignIn() {
   try {
     toast('Opening Google...', 'info', 1500);
 
-    if (!window.google || !window.google.accounts) {
-      await new Promise(function(resolve, reject) {
-        let attempts = 0;
-        const check = setInterval(function() {
-          attempts++;
-          if (window.google && window.google.accounts) {
-            clearInterval(check);
-            resolve();
-          } else if (attempts > 50) {
-            clearInterval(check);
-            reject(new Error('Google sign-in failed to load'));
-          }
-        }, 100);
-      });
-    }
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
 
-    initGIS();
-
-    fallbackRenderGISButton();
+    const result = await signInWithPopup(auth, provider);
+    console.log('Signed in:', result.user.email, result.user.uid);
+    toast('Signed in!', 'success');
   } catch (err) {
-    console.error('GIS error:', err);
-    toast('Sign-in failed: ' + err.message, 'error', 5000);
+    console.error('Sign-in error:', err);
+    if (err.code === 'auth/popup-blocked') {
+      toast('Popup blocked. Trying redirect...', 'warning', 3000);
+      try {
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        await signInWithRedirect(auth, provider);
+      } catch (e2) {
+        toast('Sign-in failed: ' + e2.message, 'error', 5000);
+      }
+    } else if (err.code === 'auth/popup-closed-by-user') {
+      toast('Sign-in cancelled', 'info', 2000);
+    } else {
+      toast('Sign-in failed: ' + err.message, 'error', 5000);
+    }
   }
 }
 
