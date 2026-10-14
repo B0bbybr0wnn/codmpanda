@@ -24522,74 +24522,267 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
 
 /* END OF CHUNK 55.4 */
 // ============================================
-// DEBUG PROBE — remove after diagnosis
+// CHUNK 55.5 — Missing Window Exports
+// ============================================
+// The app is an ES module, so top-level functions aren't global.
+// Chunks 1-54 exported SOME functions but missed others.
+// This chunk exports everything that's called from inline HTML handlers.
 // ============================================
 
 (function() {
-  console.log('%c🔍 PROBE START', 'background:#FF6B00;color:#fff;padding:4px 8px;font-weight:bold');
+  'use strict';
 
-  // --- Check 1: Did app.js even start? ---
-  console.log('✅ app.js loaded');
+  console.log('[Chunk 55.5] Exporting missing functions to window...');
 
-  // --- Check 2: What's the DOM state? ---
-  setTimeout(() => {
-    console.log('%c--- DOM STATE ---', 'color:#FFD700;font-weight:bold');
+  // List of functions that MUST be on window for UI to work
+  const toExport = [
+    // Voice / Lobby
+    'joinLobby', 'openVoiceRoom', 'closeVoiceRoom', 'toggleVoiceMute',
 
-    const splash = document.getElementById('splash');
-    const authGate = document.getElementById('auth-gate');
-    const onboarding = document.getElementById('onboarding');
-    const mainApp = document.getElementById('main-app');
-    const content = document.getElementById('content');
+    // Sheets / Modals
+    'openSheet', 'closeSheet', 'closeModal', 'openModal',
+    'openPostLobbySheet', 'openPostScrimSheet', 'openAddClipSheet',
+    'openSubmitLeakSheet', 'openSubmitVaultSheet', 'openSubmitClipSheet',
+    'openSubmitSensSheet', 'openSubmitHudSheet',
+    'openAddVaultSheet', 'actuallyOpenAddVault',
+    'openWritePostSheet', 'openEditPostSheet', 'openPostMenu',
+    'openEditVaultModal', 'openVaultMenu', 'openVaultDetail',
+    'openEditProfileSheet', 'openEditCommentSheet', 'openEditMessageModal',
+    'openMessageOptions', 'openCreateClanSheet', 'openCreateTournament',
+    'openTournamentDetail', 'openBracketView', 'openReportScoreSheet',
+    'openOverrideSheet', 'openCommentsSheet', 'openPostComments',
+    'openCommunityBuilds', 'openGlobalSearch', 'openUpgradeSheet',
+    'openShareSheet', 'openAdvancedSettings', 'openThemePicker',
+    'openAvatarFramePicker', 'openNotificationsPanel', 'openUserProfile',
+    'openRateTeammateSheet', 'openTeamRegisterSheet', 'openDMThread',
+    'openPartyPanel', 'openInviteFriendsSheet', 'openFilterPicker',
+    'openSubmitSensSheet', 'openSubmitHudSheet',
 
-    console.log('splash exists:', !!splash, '| hidden:', splash ? splash.classList.contains('hidden') : 'n/a');
-    console.log('auth-gate exists:', !!authGate, '| hidden:', authGate ? authGate.classList.contains('hidden') : 'n/a');
-    console.log('onboarding exists:', !!onboarding, '| hidden:', onboarding ? onboarding.classList.contains('hidden') : 'n/a');
-    console.log('main-app exists:', !!mainApp, '| hidden:', mainApp ? mainApp.classList.contains('hidden') : 'n/a');
-    console.log('content innerHTML length:', content ? content.innerHTML.length : 'n/a');
+    // Actions
+    'deleteLobby', 'deleteScrim', 'deleteVault', 'deleteClip',
+    'deleteAccount', 'handleSignOut', 'handleSignIn',
+    'showFriendsPanel', 'showNotifications', 'showAdminReports',
+    'showAdminUsers', 'showAdminAnalytics', 'showAdminSubmissions',
+    'showProPaywall', 'showManagePro', 'showReferral', 'showDefaults',
+    'showFAQ', 'showPrivacy', 'showTerms', 'showGrantProDialog',
+    'showHeroWelcome', 'showOnboarding', 'showAuthGate', 'showMainApp',
 
-    // --- Check 3: Global libraries ---
-    console.log('%c--- LIBS ---', 'color:#FFD700;font-weight:bold');
-    console.log('window.lucide:', typeof window.lucide);
-    console.log('window.firebase:', typeof window.firebase);
-    console.log('window.google:', typeof window.google);
-    console.log('window.JitsiMeetExternalAPI:', typeof window.JitsiMeetExternalAPI);
+    // Content
+    'createParty', 'leaveParty', 'postPartyLobby',
+    'sendFriendRequest', 'sendPostComment', 'notifyMentions',
+    'toggleNotif', 'toggleLike', 'toggleVoiceMute',
+    'startTournament', 'registerForTournament', 'withdrawFromTournament',
+    'confirmReportedScore', 'disputeReportedScore', 'autoResolveExpiredMatches',
+    'declareChampion', 'castVote', 'openVoteGunSheet',
+    'shareProfileCard', 'shareBuild', 'shareBuildAsImage', 'shareApp',
 
-    // --- Check 4: State ---
-    console.log('%c--- STATE ---', 'color:#FFD700;font-weight:bold');
-    if (window.State) {
-      console.log('State.user:', State.user ? State.user.uid : 'null');
-      console.log('State.profile:', State.profile ? State.profile.ign : 'null');
-      console.log('State.currentTab:', State.currentTab);
-      console.log('State.uiVersion:', State.uiVersion);
-      console.log('injectors registered — youTab:', State.injectors?.youTab?.length || 0, '| boot:', State.injectors?.boot?.length || 0, '| tabCleanup:', State.injectors?.tabCleanup?.length || 0);
+    // Pro / Payment
+    'goPro', 'startPayment', 'checkProStatus',
+
+    // Admin
+    'approveSubmission', 'rejectSubmission', 'grantProToContributor',
+    'cleanupExpiredContent', 'cleanupOldTournaments',
+
+    // Utility
+    'copyText', 'shareContent', 'showUpdateBanner', 'checkForUpdates',
+    'copyMyProfileLink', 'checkCustomLobbyUrl', 'getProLobbyShareUrl',
+    'getBadgeHTML', 'getYouTubeEmbed', 'getGunMeta',
+    'renderContributorCard', 'renderActivityStats', 'renderLeaderboardSub',
+    'renderClanWarsSub', 'renderTournamentsSub', 'renderSkinsPanel',
+    'renderFriendActivity', 'renderInboxBody', 'renderNotificationsTabFast',
+    'renderMessagesTabFast', 'renderNotificationsList', 'renderPostComments',
+    'loadPostComments', 'refreshCommentCounts554',
+
+    // Camo / Builder
+    'openGunsmithBuilder', 'openAttachmentPicker', 'saveBuildToVault',
+    'openCommunityBuilds', 'exportCamoProgress', 'uploadCamoProof',
+
+    // Misc
+    'backupToggleLike', 'toggleReaction', 'reportContent',
+    'openPoiDetail', 'startOnboardingTour', 'endOnboardingTour',
+    'copyMyProfileLink', 'copyText', 'shareContent'
+  ];
+
+  let exported = 0;
+  let missing = [];
+
+  toExport.forEach(name => {
+    if (typeof window[name] !== 'function' && typeof eval(name) === 'function') {
+      try {
+        window[name] = eval(name);
+        exported++;
+      } catch (e) {
+        missing.push(name);
+      }
+    } else if (typeof window[name] === 'function') {
+      // already exported
+      exported++;
     } else {
-      console.log('❌ window.State is UNDEFINED — Chunk 1 never ran!');
+      missing.push(name);
     }
-
-    // --- Check 5: Chunk readiness flags ---
-    console.log('%c--- CHUNK FLAGS ---', 'color:#FFD700;font-weight:bold');
-    console.log('__chunk551Ready:', window.__chunk551Ready);
-    console.log('__chunk552Ready:', window.__chunk552Ready);
-    console.log('__chunk553Ready:', window.__chunk553Ready);
-    console.log('__chunk554Ready:', window.__chunk554Ready);
-
-    // --- Check 6: Key functions ---
-    console.log('%c--- FUNCTIONS ---', 'color:#FFD700;font-weight:bold');
-    const funcs = ['toast', 'switchTab', 'showMainApp', 'renderYouTab', 'renderLobbies', 'renderVaults', 'joinLobby', 'openSheet', 'closeSheet', 'firebaseReady'];
-    funcs.forEach(f => {
-      console.log(f + ':', typeof window[f]);
-    });
-
-    console.log('%c🔍 PROBE END', 'background:#FF6B00;color:#fff;padding:4px 8px;font-weight:bold');
-  }, 3000);
-
-  // --- Global error catch ---
-  window.addEventListener('error', e => {
-    console.error('%c❌ ERROR', 'background:#f00;color:#fff;padding:2px 6px', e.message, '|', e.filename, ':', e.lineno);
   });
 
-  window.addEventListener('unhandledrejection', e => {
-    const r = e.reason;
-    console.error('%c⚠️ PROMISE REJECTION', 'background:#f80;color:#000;padding:2px 6px', r && r.message ? r.message : r);
+  // Special: some functions live inside module scope only.
+  // Reference them explicitly.
+  const explicitExports = {
+    'joinLobby': typeof joinLobby !== 'undefined' ? joinLobby : null,
+    'openPostLobbySheet': typeof openPostLobbySheet !== 'undefined' ? openPostLobbySheet : null,
+    'openPostScrimSheet': typeof openPostScrimSheet !== 'undefined' ? openPostScrimSheet : null,
+    'openSubmitLeakSheet': typeof openSubmitLeakSheet !== 'undefined' ? openSubmitLeakSheet : null,
+    'openSubmitVaultSheet': typeof openSubmitVaultSheet !== 'undefined' ? openSubmitVaultSheet : null,
+    'openSubmitClipSheet': typeof openSubmitClipSheet !== 'undefined' ? openSubmitClipSheet : null,
+    'openAddVaultSheet': typeof openAddVaultSheet !== 'undefined' ? openAddVaultSheet : null,
+    'openWritePostSheet': typeof openWritePostSheet !== 'undefined' ? openWritePostSheet : null,
+    'openEditVaultModal': typeof openEditVaultModal !== 'undefined' ? openEditVaultModal : null,
+    'openVaultMenu': typeof openVaultMenu !== 'undefined' ? openVaultMenu : null,
+    'openVaultDetail': typeof openVaultDetail !== 'undefined' ? openVaultDetail : null,
+    'openCommentsSheet': typeof openCommentsSheet !== 'undefined' ? openCommentsSheet : null,
+    'openPostComments': typeof openPostComments !== 'undefined' ? openPostComments : null,
+    'openCommunityBuilds': typeof openCommunityBuilds !== 'undefined' ? openCommunityBuilds : null,
+    'openGlobalSearch': typeof openGlobalSearch !== 'undefined' ? openGlobalSearch : null,
+    'openNotificationsPanel': typeof openNotificationsPanel !== 'undefined' ? openNotificationsPanel : null,
+    'openUserProfile': typeof openUserProfile !== 'undefined' ? openUserProfile : null,
+    'openDMThread': typeof openDMThread !== 'undefined' ? openDMThread : null,
+    'openRateTeammateSheet': typeof openRateTeammateSheet !== 'undefined' ? openRateTeammateSheet : null,
+    'openTeamRegisterSheet': typeof openTeamRegisterSheet !== 'undefined' ? openTeamRegisterSheet : null,
+    'openCreateClanSheet': typeof openCreateClanSheet !== 'undefined' ? openCreateClanSheet : null,
+    'openCreateTournament': typeof openCreateTournament !== 'undefined' ? openCreateTournament : null,
+    'openTournamentDetail': typeof openTournamentDetail !== 'undefined' ? openTournamentDetail : null,
+    'openBracketView': typeof openBracketView !== 'undefined' ? openBracketView : null,
+    'openFilterPicker': typeof openFilterPicker !== 'undefined' ? openFilterPicker : null,
+    'openShareSheet': typeof openShareSheet !== 'undefined' ? openShareSheet : null,
+    'openAdvancedSettings': typeof openAdvancedSettings !== 'undefined' ? openAdvancedSettings : null,
+    'openThemePicker': typeof openThemePicker !== 'undefined' ? openThemePicker : null,
+    'openAvatarFramePicker': typeof openAvatarFramePicker !== 'undefined' ? openAvatarFramePicker : null,
+    'openUpgradeSheet': typeof openUpgradeSheet !== 'undefined' ? openUpgradeSheet : null,
+    'openGunsmithBuilder': typeof openGunsmithBuilder !== 'undefined' ? openGunsmithBuilder : null,
+    'openAttachmentPicker': typeof openAttachmentPicker !== 'undefined' ? openAttachmentPicker : null,
+    'openMessageOptions': typeof openMessageOptions !== 'undefined' ? openMessageOptions : null,
+    'openEditMessageModal': typeof openEditMessageModal !== 'undefined' ? openEditMessageModal : null,
+    'openEditCommentSheet': typeof openEditCommentSheet !== 'undefined' ? openEditCommentSheet : null,
+    'openEditPostSheet': typeof openEditPostSheet !== 'undefined' ? openEditPostSheet : null,
+    'openPostMenu': typeof openPostMenu !== 'undefined' ? openPostMenu : null,
+    'openEditProfileSheet': typeof openEditProfileSheet !== 'undefined' ? openEditProfileSheet : null,
+    'openPartyPanel': typeof openPartyPanel !== 'undefined' ? openPartyPanel : null,
+    'openInviteFriendsSheet': typeof openInviteFriendsSheet !== 'undefined' ? openInviteFriendsSheet : null,
+    'openVoiceRoom': typeof openVoiceRoom !== 'undefined' ? openVoiceRoom : null,
+    'closeVoiceRoom': typeof closeVoiceRoom !== 'undefined' ? closeVoiceRoom : null,
+
+    'deleteLobby': typeof deleteLobby !== 'undefined' ? deleteLobby : null,
+    'deleteScrim': typeof deleteScrim !== 'undefined' ? deleteScrim : null,
+    'deleteVault': typeof deleteVault !== 'undefined' ? deleteVault : null,
+    'deleteClip': typeof deleteClip !== 'undefined' ? deleteClip : null,
+    'deleteAccount': typeof deleteAccount !== 'undefined' ? deleteAccount : null,
+    'handleSignOut': typeof handleSignOut !== 'undefined' ? handleSignOut : null,
+    'handleSignIn': typeof handleSignIn !== 'undefined' ? handleSignIn : null,
+
+    'showFriendsPanel': typeof showFriendsPanel !== 'undefined' ? showFriendsPanel : null,
+    'showNotifications': typeof showNotifications !== 'undefined' ? showNotifications : null,
+    'showAdminReports': typeof showAdminReports !== 'undefined' ? showAdminReports : null,
+    'showAdminUsers': typeof showAdminUsers !== 'undefined' ? showAdminUsers : null,
+    'showAdminAnalytics': typeof showAdminAnalytics !== 'undefined' ? showAdminAnalytics : null,
+    'showAdminSubmissions': typeof showAdminSubmissions !== 'undefined' ? showAdminSubmissions : null,
+    'showProPaywall': typeof showProPaywall !== 'undefined' ? showProPaywall : null,
+    'showManagePro': typeof showManagePro !== 'undefined' ? showManagePro : null,
+    'showReferral': typeof showReferral !== 'undefined' ? showReferral : null,
+    'showDefaults': typeof showDefaults !== 'undefined' ? showDefaults : null,
+    'showFAQ': typeof showFAQ !== 'undefined' ? showFAQ : null,
+    'showPrivacy': typeof showPrivacy !== 'undefined' ? showPrivacy : null,
+    'showTerms': typeof showTerms !== 'undefined' ? showTerms : null,
+    'showGrantProDialog': typeof showGrantProDialog !== 'undefined' ? showGrantProDialog : null,
+    'showHeroWelcome': typeof showHeroWelcome !== 'undefined' ? showHeroWelcome : null,
+    'showOnboarding': typeof showOnboarding !== 'undefined' ? showOnboarding : null,
+    'showAuthGate': typeof showAuthGate !== 'undefined' ? showAuthGate : null,
+    'showMainApp': typeof showMainApp !== 'undefined' ? showMainApp : null,
+
+    'createParty': typeof createParty !== 'undefined' ? createParty : null,
+    'leaveParty': typeof leaveParty !== 'undefined' ? leaveParty : null,
+    'postPartyLobby': typeof postPartyLobby !== 'undefined' ? postPartyLobby : null,
+    'sendFriendRequest': typeof sendFriendRequest !== 'undefined' ? sendFriendRequest : null,
+    'sendPostComment': typeof sendPostComment !== 'undefined' ? sendPostComment : null,
+    'notifyMentions': typeof notifyMentions !== 'undefined' ? notifyMentions : null,
+    'toggleNotif': typeof toggleNotif !== 'undefined' ? toggleNotif : null,
+    'toggleLike': typeof toggleLike !== 'undefined' ? toggleLike : null,
+    'toggleVoiceMute': typeof toggleVoiceMute !== 'undefined' ? toggleVoiceMute : null,
+    'startTournament': typeof startTournament !== 'undefined' ? startTournament : null,
+    'registerForTournament': typeof registerForTournament !== 'undefined' ? registerForTournament : null,
+    'withdrawFromTournament': typeof withdrawFromTournament !== 'undefined' ? withdrawFromTournament : null,
+    'confirmReportedScore': typeof confirmReportedScore !== 'undefined' ? confirmReportedScore : null,
+    'disputeReportedScore': typeof disputeReportedScore !== 'undefined' ? disputeReportedScore : null,
+    'autoResolveExpiredMatches': typeof autoResolveExpiredMatches !== 'undefined' ? autoResolveExpiredMatches : null,
+    'declareChampion': typeof declareChampion !== 'undefined' ? declareChampion : null,
+    'castVote': typeof castVote !== 'undefined' ? castVote : null,
+    'openVoteGunSheet': typeof openVoteGunSheet !== 'undefined' ? openVoteGunSheet : null,
+    'shareProfileCard': typeof shareProfileCard !== 'undefined' ? shareProfileCard : null,
+    'shareBuild': typeof shareBuild !== 'undefined' ? shareBuild : null,
+    'shareBuildAsImage': typeof shareBuildAsImage !== 'undefined' ? shareBuildAsImage : null,
+    'shareApp': typeof shareApp !== 'undefined' ? shareApp : null,
+    'goPro': typeof goPro !== 'undefined' ? goPro : null,
+    'startPayment': typeof startPayment !== 'undefined' ? startPayment : null,
+    'checkProStatus': typeof checkProStatus !== 'undefined' ? checkProStatus : null,
+    'approveSubmission': typeof approveSubmission !== 'undefined' ? approveSubmission : null,
+    'rejectSubmission': typeof rejectSubmission !== 'undefined' ? rejectSubmission : null,
+    'grantProToContributor': typeof grantProToContributor !== 'undefined' ? grantProToContributor : null,
+    'cleanupExpiredContent': typeof cleanupExpiredContent !== 'undefined' ? cleanupExpiredContent : null,
+    'cleanupOldTournaments': typeof cleanupOldTournaments !== 'undefined' ? cleanupOldTournaments : null,
+    'copyText': typeof copyText !== 'undefined' ? copyText : null,
+    'shareContent': typeof shareContent !== 'undefined' ? shareContent : null,
+    'showUpdateBanner': typeof showUpdateBanner !== 'undefined' ? showUpdateBanner : null,
+    'checkForUpdates': typeof checkForUpdates !== 'undefined' ? checkForUpdates : null,
+    'copyMyProfileLink': typeof copyMyProfileLink !== 'undefined' ? copyMyProfileLink : null,
+    'checkCustomLobbyUrl': typeof checkCustomLobbyUrl !== 'undefined' ? checkCustomLobbyUrl : null,
+    'getProLobbyShareUrl': typeof getProLobbyShareUrl !== 'undefined' ? getProLobbyShareUrl : null,
+    'getBadgeHTML': typeof getBadgeHTML !== 'undefined' ? getBadgeHTML : null,
+    'getYouTubeEmbed': typeof getYouTubeEmbed !== 'undefined' ? getYouTubeEmbed : null,
+    'getGunMeta': typeof getGunMeta !== 'undefined' ? getGunMeta : null,
+    'renderContributorCard': typeof renderContributorCard !== 'undefined' ? renderContributorCard : null,
+    'renderActivityStats': typeof renderActivityStats !== 'undefined' ? renderActivityStats : null,
+    'renderLeaderboardSub': typeof renderLeaderboardSub !== 'undefined' ? renderLeaderboardSub : null,
+    'renderClanWarsSub': typeof renderClanWarsSub !== 'undefined' ? renderClanWarsSub : null,
+    'renderTournamentsSub': typeof renderTournamentsSub !== 'undefined' ? renderTournamentsSub : null,
+    'renderSkinsPanel': typeof renderSkinsPanel !== 'undefined' ? renderSkinsPanel : null,
+    'renderFriendActivity': typeof renderFriendActivity !== 'undefined' ? renderFriendActivity : null,
+    'renderInboxBody': typeof renderInboxBody !== 'undefined' ? renderInboxBody : null,
+    'renderNotificationsTabFast': typeof renderNotificationsTabFast !== 'undefined' ? renderNotificationsTabFast : null,
+    'renderMessagesTabFast': typeof renderMessagesTabFast !== 'undefined' ? renderMessagesTabFast : null,
+    'renderNotificationsList': typeof renderNotificationsList !== 'undefined' ? renderNotificationsList : null,
+    'renderPostComments': typeof renderPostComments !== 'undefined' ? renderPostComments : null,
+    'loadPostComments': typeof loadPostComments !== 'undefined' ? loadPostComments : null,
+    'refreshCommentCounts554': typeof refreshCommentCounts554 !== 'undefined' ? refreshCommentCounts554 : null,
+    'openGunsmithBuilder': typeof openGunsmithBuilder !== 'undefined' ? openGunsmithBuilder : null,
+    'openAttachmentPicker': typeof openAttachmentPicker !== 'undefined' ? openAttachmentPicker : null,
+    'saveBuildToVault': typeof saveBuildToVault !== 'undefined' ? saveBuildToVault : null,
+    'openCommunityBuilds': typeof openCommunityBuilds !== 'undefined' ? openCommunityBuilds : null,
+    'exportCamoProgress': typeof exportCamoProgress !== 'undefined' ? exportCamoProgress : null,
+    'uploadCamoProof': typeof uploadCamoProof !== 'undefined' ? uploadCamoProof : null,
+    'reportContent': typeof reportContent !== 'undefined' ? reportContent : null,
+    'openPoiDetail': typeof openPoiDetail !== 'undefined' ? openPoiDetail : null,
+    'startOnboardingTour': typeof startOnboardingTour !== 'undefined' ? startOnboardingTour : null,
+    'endOnboardingTour': typeof endOnboardingTour !== 'undefined' ? endOnboardingTour : null
+  };
+
+  Object.keys(explicitExports).forEach(name => {
+    const fn = explicitExports[name];
+    if (typeof fn === 'function') {
+      window[name] = fn;
+      exported++;
+    }
   });
+
+  console.log('✅ [Chunk 55.5] Exported', exported, 'functions to window');
+  if (missing.length > 0) {
+    console.warn('⚠️ [Chunk 55.5] Missing functions:', missing.join(', '));
+  }
+
+  // Verification list — check these exist on window
+  const criticalFns = ['joinLobby', 'openPostLobbySheet', 'openSheet', 'closeSheet', 'openCommentsSheet', 'openVaultDetail', 'showFriendsPanel', 'openNotificationsPanel'];
+  const broken = criticalFns.filter(f => typeof window[f] !== 'function');
+  if (broken.length === 0) {
+    console.log('✅ All critical functions exported');
+  } else {
+    console.error('❌ Still missing:', broken.join(', '));
+  }
+
 })();
+
+/* END OF CHUNK 55.5 */
