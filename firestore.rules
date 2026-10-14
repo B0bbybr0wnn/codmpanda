@@ -1,14 +1,7 @@
 rules_version = '2';
 
 // ============================================
-// CODMPanda — Firestore Security Rules
-// ============================================
-// Philosophy:
-//   - Authenticated users can read most content
-//   - Users can only write their own content
-//   - Narrow cross-user writes: counters, arrays, friend requests
-//   - Admin (ADMIN_UID) can do anything
-//   - Banned users are locked out of creates
+// CODMPanda — Firestore Security Rules (v3)
 // ============================================
 
 service cloud.firestore {
@@ -31,13 +24,6 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Cheap ban check — only called on creates, not reads.
-    // Costs 1 read per invocation. Skip on likes to save quota.
-    function isNotBanned() {
-      return !exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        || !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.banned;
-    }
-
     // ============================================
     // USERS
     // ============================================
@@ -50,15 +36,11 @@ service cloud.firestore {
           isOwner(userId)
           && !request.resource.data.diff(resource.data).affectedKeys()
               .hasAny([
-                'banned', 'banReason', 'bannedAt', 'bannedBy',
-                'isPro', 'proExpiry', 'proFromContribution',
-                'approvedCount', 'badges',
-                'verified', 'verifiedAt',
-                'tournamentWins', 'activeStreak', 'lastActiveDate'
+                'banned', 'banReason', 'bannedAt', 'bannedBy'
               ])
         )
         || (
-          // Narrow: anyone can add themselves to friend arrays
+          // Narrow: friend requests
           isSignedIn()
           && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['friendRequests', 'friendRequestsSent'])
@@ -68,11 +50,11 @@ service cloud.firestore {
     }
 
     // ============================================
-    // LOBBIES (LFG)
+    // LOBBIES
     // ============================================
     match /lobbies/{lobbyId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
 
       allow update: if isSignedIn() && (
         isAdmin()
@@ -87,11 +69,11 @@ service cloud.firestore {
     }
 
     // ============================================
-    // VAULTS (Gunsmith / Sens / HUD)
+    // VAULTS
     // ============================================
     match /vaults/{vaultId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
 
       allow update: if isSignedIn() && (
         isAdmin()
@@ -106,7 +88,7 @@ service cloud.firestore {
     }
 
     // ============================================
-    // CAMOS (per-user tracker)
+    // CAMOS
     // ============================================
     match /camos/{userId} {
       allow read: if isSignedIn();
@@ -118,7 +100,7 @@ service cloud.firestore {
     // ============================================
     match /clans/{clanId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
 
       allow update: if isSignedIn() && (
         isAdmin()
@@ -137,7 +119,7 @@ service cloud.firestore {
     // ============================================
     match /scrims/{scrimId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
       allow update, delete: if isSignedIn() && (
         isAdmin() || resource.data.uid == request.auth.uid
       );
@@ -148,7 +130,7 @@ service cloud.firestore {
     // ============================================
     match /clips/{clipId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
 
       allow update: if isSignedIn() && (
         isAdmin()
@@ -167,7 +149,7 @@ service cloud.firestore {
     // ============================================
     match /leaks/{leakId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
 
       allow update: if isSignedIn() && (
         isAdmin()
@@ -182,11 +164,11 @@ service cloud.firestore {
     }
 
     // ============================================
-    // POSTS (home feed)
+    // POSTS
     // ============================================
     match /posts/{postId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
 
       allow update: if isSignedIn() && (
         isAdmin()
@@ -205,7 +187,7 @@ service cloud.firestore {
     // ============================================
     match /comments/{commentId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
 
       allow update: if isSignedIn() && (
         isAdmin()
@@ -229,7 +211,7 @@ service cloud.firestore {
     }
 
     // ============================================
-    // NOTIFICATIONS
+    // NOTIFICATIONS — WITH FULL LIST RULES
     // ============================================
     match /notifications/{notifId} {
       allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
@@ -248,7 +230,7 @@ service cloud.firestore {
     }
 
     // ============================================
-    // MESSAGES (DMs)
+    // MESSAGES — WITH FULL LIST RULES
     // ============================================
     match /messages/{messageId} {
       allow get: if isSignedIn() && (
@@ -261,10 +243,10 @@ service cloud.firestore {
           && request.query.filters.fromUid[1] == request.auth.uid)
         || (request.query.filters.containsKey('toUid')
           && request.query.filters.toUid[1] == request.auth.uid)
+        || (request.query.filters.containsKey('chatId'))
       );
 
       allow create: if isSignedIn()
-        && isNotBanned()
         && request.resource.data.fromUid == request.auth.uid;
 
       allow update, delete: if isSignedIn() && (
@@ -277,7 +259,7 @@ service cloud.firestore {
     // ============================================
     match /reports/{reportId} {
       allow read: if isAdmin();
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
 
@@ -286,7 +268,7 @@ service cloud.firestore {
     // ============================================
     match /tournaments/{tournamentId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
 
       allow update: if isSignedIn() && (
         isAdmin()
@@ -321,7 +303,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         resource.data.submitterUid == request.auth.uid || isAdmin()
       );
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
 
@@ -329,7 +311,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         resource.data.submitterUid == request.auth.uid || isAdmin()
       );
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
 
@@ -337,7 +319,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         resource.data.submitterUid == request.auth.uid || isAdmin()
       );
-      allow create: if isSignedIn() && isNotBanned();
+      allow create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
 
@@ -369,11 +351,11 @@ service cloud.firestore {
     }
 
     // ============================================
-    // RATINGS (LFG reputation)
+    // RATINGS
     // ============================================
     match /ratings/{ratingId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isNotBanned()
+      allow create: if isSignedIn()
         && request.resource.data.fromUid == request.auth.uid;
       allow update, delete: if isAdmin()
         || resource.data.fromUid == request.auth.uid;
