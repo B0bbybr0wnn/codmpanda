@@ -37,6 +37,44 @@ import {
   Timestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+// ============ DIAGNOSTIC BOOT ============
+(function() {
+  var box = document.createElement('div');
+  box.id = 'codm-diag';
+  box.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:999999;background:#050505;color:#0f0;font-family:monospace;font-size:11px;padding:12px;overflow:auto;white-space:pre-wrap;line-height:1.4;';
+  box.textContent = '🐼 DIAGNOSTIC START\n';
+  document.body.appendChild(box);
+
+  function log(msg, color) {
+    var line = document.createElement('div');
+    line.textContent = msg;
+    if (color) line.style.color = color;
+    box.appendChild(line);
+  }
+
+  window.addEventListener('error', function(e) {
+    log('❌ ERROR: ' + e.message + '\n   at ' + (e.filename || '?') + ':' + e.lineno, '#f44');
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    log('❌ REJECTION: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)), '#f44');
+  });
+
+  // After 8s, dump screen state
+  setTimeout(function() {
+    log('\n--- STATUS @ 8s ---', '#ff0');
+    ['splash','auth-gate','onboarding','main-app'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) { log(id + ': NOT FOUND', '#f44'); return; }
+      log(id + ': display=' + (el.style.display || '(inline)') + ' | classes=' + el.className);
+    });
+    log('\nState.user: ' + (typeof State !== 'undefined' && State.user ? State.user.email : 'null'));
+    log('toast func: ' + typeof window.toast);
+  }, 8000);
+
+  // Tap to close after 8s
+  box.addEventListener('click', function() { box.remove(); });
+  log('Tap screen to dismiss after 8s\n', '#888');
+})();
 // ============================================
 // FIREBASE CONFIG
 // ============================================
