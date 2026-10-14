@@ -4,26 +4,17 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
-<!-- ============================================
-     PRIMARY META
-     ============================================ -->
 <meta name="theme-color" content="#050505" media="(prefers-color-scheme: dark)" />
 <meta name="theme-color" content="#FF6B00" media="(prefers-color-scheme: light)" />
 <meta name="description" content="CODMPanda — The Ultimate CODM Companion. Find squads, share builds, track camos, and dominate." />
 <meta name="application-name" content="CODMPanda" />
 <meta name="apple-mobile-web-app-title" content="CODMPanda" />
 
-<!-- ============================================
-     iOS PWA
-     ============================================ -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="format-detection" content="telephone=no" />
 
-<!-- ============================================
-     OPEN GRAPH
-     ============================================ -->
 <meta property="og:title" content="CODMPanda — The Ultimate CODM Companion" />
 <meta property="og:description" content="Find squads, share builds, track camos, and dominate." />
 <meta property="og:type" content="website" />
@@ -33,17 +24,11 @@
 <meta name="twitter:description" content="The Ultimate CODM Companion" />
 <meta name="twitter:image" content="/icon-512.png" />
 
-<!-- ============================================
-     PWA MANIFEST + ICONS
-     ============================================ -->
 <link rel="manifest" href="/manifest.json" />
 <link rel="apple-touch-icon" href="/icon-192.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
 
-<!-- ============================================
-     PERFORMANCE HINTS
-     ============================================ -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preconnect" href="https://www.gstatic.com" />
@@ -54,14 +39,8 @@
 
 <link rel="preload" as="image" href="/icon-512.png" />
 
-<!-- ============================================
-     FONTS
-     ============================================ -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
 
-<!-- ============================================
-     TAILWIND
-     ============================================ -->
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {
@@ -83,25 +62,11 @@ tailwind.config = {
 };
 </script>
 
-<!-- ============================================
-     LUCIDE
-     ============================================ -->
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-
-<!-- ============================================
-     FIREBASE COMPAT (for FCM)
-     ============================================ -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
-
-<!-- ============================================
-     GOOGLE IDENTITY SERVICES
-     ============================================ -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-<!-- ============================================
-     STYLES
-     ============================================ -->
 <style>
 :root {
   --safe-top: env(safe-area-inset-top, 0px);
@@ -247,7 +212,7 @@ input, textarea { touch-action: auto; }
   </div>
 
   <!-- AUTH GATE -->
-  <div id="auth-gate" style="position:fixed;inset:0;z-index:350;background:#050505;display:none;flex-direction:column;align-items:center;justify-content:center;padding:32px;text-align:center;">
+  <div id="auth-gate" class="hidden" style="position:fixed;inset:0;z-index:350;background:#050505;flex-direction:column;align-items:center;justify-content:center;padding:32px;text-align:center;">
     <img src="/icon-512.png" alt="CODMPanda" style="width:96px;height:96px;border-radius:20px;box-shadow:0 0 40px rgba(255,107,0,.5);margin-bottom:20px;" />
     <div style="font-size:24px;font-weight:900;margin-bottom:6px;">
       <span style="color:#FF6B00;">CODM</span><span style="color:#fff;">Panda</span>
@@ -261,12 +226,12 @@ input, textarea { touch-action: auto; }
   </div>
 
   <!-- ONBOARDING -->
-  <div id="onboarding" style="position:fixed;inset:0;z-index:340;background:#050505;display:none;flex-direction:column;">
+  <div id="onboarding" class="hidden" style="position:fixed;inset:0;z-index:340;background:#050505;flex-direction:column;">
     <div id="onboarding-content" style="display:flex;flex-direction:column;height:100%;"></div>
   </div>
 
   <!-- MAIN APP -->
-  <div id="main-app" style="display:none;min-height:100vh;min-height:100dvh;padding-bottom:calc(68px + env(safe-area-inset-bottom, 0px));">
+  <div id="main-app" class="hidden" style="min-height:100vh;min-height:100dvh;padding-bottom:calc(68px + env(safe-area-inset-bottom, 0px));">
 
     <div id="top-bar" style="position:sticky;top:0;z-index:30;background:rgba(5,5,5,.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid #1a1a1a;padding:12px 16px;padding-top:calc(env(safe-area-inset-top,0px) + 12px);display:flex;align-items:center;gap:10px;">
       <img src="/icon-192.png" alt="Panda" style="width:36px;height:36px;border-radius:10px;flex-shrink:0;" />
@@ -323,14 +288,8 @@ input, textarea { touch-action: auto; }
 
 </div>
 
-<!-- ============================================
-     APP SCRIPT
-     ============================================ -->
 <script type="module" src="/app.js"></script>
 
-<!-- ============================================
-     SERVICE WORKER
-     ============================================ -->
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
@@ -341,9 +300,7 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- ============================================
-     ERUDA (DEBUG ONLY — REMOVE BEFORE PRODUCTION)
-     ============================================ -->
+<!-- ERUDA (DEBUG ONLY) -->
 <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
 <script>
   if (typeof eruda !== 'undefined') {
