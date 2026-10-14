@@ -1165,11 +1165,7 @@ async function handleSignIn() {
 
     initGIS();
 
-    window.google.accounts.id.prompt(function(notification) {
-      if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-        fallbackRenderGISButton();
-      }
-    });
+    fallbackRenderGISButton();
   } catch (err) {
     console.error('GIS error:', err);
     toast('Sign-in failed: ' + err.message, 'error', 5000);
@@ -1346,15 +1342,19 @@ onAuthStateChanged(auth, async (user) => {
   }
 });
 
-// ============================================
-// SCREENS
-// ============================================
 function showAuthGate() {
   const gate = document.getElementById('auth-gate');
   gate.classList.remove('hidden');
   gate.classList.add('flex');
-  document.getElementById('onboarding').classList.add('hidden');
-  document.getElementById('main-app').classList.add('hidden');
+  gate.style.display = 'flex';
+
+  const onboard = document.getElementById('onboarding');
+  onboard.classList.add('hidden');
+  onboard.style.display = 'none';
+
+  const mainApp = document.getElementById('main-app');
+  mainApp.classList.add('hidden');
+  mainApp.style.display = 'none';
 
   const signBtn = document.getElementById('google-signin-btn');
   if (signBtn && !signBtn.dataset.bound) {
@@ -1364,7 +1364,6 @@ function showAuthGate() {
 
   if (window.lucide) window.lucide.createIcons();
 }
-
 // ============================================
 // ONBOARDING
 // ============================================
@@ -1378,14 +1377,22 @@ const ONBOARDING_SLIDES = [
 ];
 
 function showOnboarding() {
-  document.getElementById('auth-gate').classList.add('hidden');
-  document.getElementById('main-app').classList.add('hidden');
-  document.getElementById('onboarding').classList.remove('hidden');
-  document.getElementById('onboarding').classList.add('flex');
+  const gate = document.getElementById('auth-gate');
+  gate.classList.add('hidden');
+  gate.style.display = 'none';
+
+  const mainApp = document.getElementById('main-app');
+  mainApp.classList.add('hidden');
+  mainApp.style.display = 'none';
+
+  const onboard = document.getElementById('onboarding');
+  onboard.classList.remove('hidden');
+  onboard.classList.add('flex');
+  onboard.style.display = 'flex';
+
   onboardingStep = 0;
   renderOnboarding();
 }
-
 function renderOnboarding() {
   const container = document.getElementById('onboarding-content');
   if (!container) return;
@@ -1474,9 +1481,12 @@ function renderOnboarding() {
 // ============================================
 function showMainApp() {
   document.getElementById('auth-gate').classList.add('hidden');
+  document.getElementById('auth-gate').style.display = 'none';
   document.getElementById('onboarding').classList.add('hidden');
+  document.getElementById('onboarding').style.display = 'none';
   document.getElementById('main-app').classList.remove('hidden');
-
+  document.getElementById('main-app').style.display = 'block';
+  
   const subtitle = document.getElementById('top-bar-subtitle');
   if (subtitle && State.profile) {
     subtitle.textContent = `${State.profile.rank || 'Rookie'} • ${State.profile.region || 'Global'}`;
