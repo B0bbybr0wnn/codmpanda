@@ -42,16 +42,9 @@ service cloud.firestore {
     // USERS
     // ============================================
     match /users/{userId} {
-      // Anyone signed in can read profiles (privacy handled client-side)
       allow read: if isSignedIn();
-
-      // Users can create their own profile
       allow create: if isOwner(userId);
 
-      // Users can update their own profile.
-      // They CANNOT self-escalate: banned, isPro, proExpiry, approvedCount, badges
-      // are locked. Admin can always edit.
-      // Cross-user writes are allowed ONLY for friend request arrays.
       allow update: if isAdmin()
         || (
           isOwner(userId)
@@ -71,7 +64,6 @@ service cloud.firestore {
               .hasOnly(['friendRequests', 'friendRequestsSent'])
         );
 
-      // Owner can delete their own account; admin can delete anyone
       allow delete: if isOwner(userId) || isAdmin();
     }
 
@@ -82,13 +74,11 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
 
-      // Owner edits anything; anyone can bump `players` (join);
-      // owner can also set isPro after posting.
       allow update: if isSignedIn() && (
         isAdmin()
         || resource.data.uid == request.auth.uid
         || request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['players'])
+            .hasOnly(['players', 'isPro'])
       );
 
       allow delete: if isSignedIn() && (
@@ -130,7 +120,6 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
 
-      // Owner edits everything; anyone can join/leave via members array
       allow update: if isSignedIn() && (
         isAdmin()
         || resource.data.ownerUid == request.auth.uid
@@ -199,7 +188,6 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
 
-      // Owner edits text; anyone can bump likes; owner can update commentCount
       allow update: if isSignedIn() && (
         isAdmin()
         || resource.data.uid == request.auth.uid
@@ -213,13 +201,12 @@ service cloud.firestore {
     }
 
     // ============================================
-    // COMMENTS (on posts, vaults, clips, leaks, lobbies)
+    // COMMENTS
     // ============================================
     match /comments/{commentId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
 
-      // Owner edits text; anyone can bump likes
       allow update: if isSignedIn() && (
         isAdmin()
         || resource.data.uid == request.auth.uid
@@ -233,14 +220,10 @@ service cloud.firestore {
     }
 
     // ============================================
-    // LIKES (doc ID: {itemType}_{itemId}_{userId})
-    // Users can create/update/delete ONLY their own like doc.
+    // LIKES
     // ============================================
     match /likes/{likeId} {
       allow read: if isSignedIn();
-
-      // Write = create + update + delete. Using `write` here so
-      // rapid double-taps that turn into setDoc-update don't fail.
       allow write: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
     }
@@ -248,8 +231,6 @@ service cloud.firestore {
     // ============================================
     // NOTIFICATIONS
     // ============================================
-    // Special: needs `list` rules because the client queries with
-    // where('userId', '==', uid). Reads of individual docs use `get`.
     match /notifications/{notifId} {
       allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
 
@@ -257,10 +238,8 @@ service cloud.firestore {
         && request.query.filters.containsKey('userId')
         && request.query.filters.userId[1] == request.auth.uid;
 
-      // Anyone signed in can create notifications for others (system messages)
       allow create: if isSignedIn();
 
-      // Only recipient can mark read
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
 
       allow delete: if isSignedIn() && (
@@ -271,8 +250,6 @@ service cloud.firestore {
     // ============================================
     // MESSAGES (DMs)
     // ============================================
-    // Special: needs `list` rules because the client queries by
-    // fromUid OR toUid. Without these, the DM inbox fails silently.
     match /messages/{messageId} {
       allow get: if isSignedIn() && (
         resource.data.fromUid == request.auth.uid
@@ -311,12 +288,11 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isNotBanned();
 
-      // Creator edits everything; anyone can register (teams array)
       allow update: if isSignedIn() && (
         isAdmin()
         || resource.data.creatorUid == request.auth.uid
         || request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['teams'])
+            .hasOnly(['teams', 'bracket', 'currentRound', 'status', 'winner', 'completedAt'])
       );
 
       allow delete: if isSignedIn() && (
@@ -339,7 +315,7 @@ service cloud.firestore {
     }
 
     // ============================================
-    // SUBMISSIONS (legacy — kept for backward compat)
+    // SUBMISSIONS (legacy)
     // ============================================
     match /vault_submissions/{subId} {
       allow read: if isSignedIn() && (
@@ -366,13 +342,12 @@ service cloud.firestore {
     }
 
     // ============================================
-    // PARTIES (voice room groups)
+    // PARTIES
     // ============================================
     match /parties/{partyId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
 
-      // Leader edits; anyone can join/leave via members array
       allow update: if isSignedIn() && (
         isAdmin()
         || resource.data.leaderUid == request.auth.uid
@@ -386,11 +361,22 @@ service cloud.firestore {
     }
 
     // ============================================
-    // TIER VOTES (one doc per user)
+    // TIER VOTES
     // ============================================
     match /tierVotes/{userId} {
       allow read: if isSignedIn();
       allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // ============================================
+    // RATINGS (LFG reputation)
+    // ============================================
+    match /ratings/{ratingId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isNotBanned()
+        && request.resource.data.fromUid == request.auth.uid;
+      allow update, delete: if isAdmin()
+        || resource.data.fromUid == request.auth.uid;
     }
 
     // ============================================
