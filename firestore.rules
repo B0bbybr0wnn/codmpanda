@@ -114,9 +114,11 @@ service cloud.firestore {
     }
 
     // ---------- LIKES / REACTIONS ----------
+    // FIXED: split create vs update/delete so unlike + reaction removal work
     match /likes/{id} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
     // ---------- NOTIFICATIONS ----------
