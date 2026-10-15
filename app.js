@@ -19444,3 +19444,4008 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
 })();
 
 /* END OF CHUNK 55.4 */
+// ============================================
+// Chunk 55: Notifications Core
+// ============================================
+
+const VAPID_KEY = "BB38qRzf4R5T_szvw7SvPklifWz_PhM1e4XQ8KKjqaIcauiUeJAZUKmJpWSbzusdny75mzckpAKXB78qSBWdU8A";
+
+// Compat Firebase for FCM
+if (window.firebase && !window.firebase.apps.length) {
+  window.firebase.initializeApp({
+    apiKey: "AIzaSyC4wVCT-ITLRFPDtzENnDjxL_1aVCAqWHg",
+    authDomain: "codmpanda-app.firebaseapp.com",
+    projectId: "codmpanda-app",
+    storageBucket: "codmpanda-app.firebasestorage.app",
+    messagingSenderId: "604146891375",
+    appId: "1:604146891375:web:ae74f70c184fd89d572b9a"
+  });
+}
+
+// ---------- LOG IN-APP NOTIFICATION ----------
+async function logInAppNotification(userId, type, title, body, data) {
+  try {
+    await addDoc(collection(db, 'notifications'), {
+      userId,
+      type: type || 'default',
+      title: title || '',
+      body: body || '',
+      data: data || {},
+      read: false,
+      createdAt: serverTimestamp()
+    });
+  } catch (e) {
+    console.warn('logInAppNotification failed:', e);
+  }
+}
+
+// ---------- ENABLE / DISABLE PUSH ----------
+async function enableNotifications() {
+  try {
+    if (!('Notification' in window)) {
+      toast('Notifications not supported', 'error');
+      return;
+    }
+    if (!('serviceWorker' in navigator)) {
+      toast('Service Worker not supported', 'error');
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      toast('Permission denied', 'warning', 4000);
+      return;
+    }
+
+    toast('Registering device...', 'info', 2000);
+
+    let attempts = 0;
+    while ((!window.firebase || !window.firebase.messaging) && attempts < 30) {
+      await new Promise(r => setTimeout(r, 100));
+      attempts++;
+    }
+    if (!window.firebase || !window.firebase.messaging) {
+      toast('FCM SDK failed to load', 'error');
+      return;
+    }
+
+    const messaging = window.firebase.messaging();
+    const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    const token = await messaging.getToken({
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: swReg
+    });
+
+    if (!token) {
+      toast('Failed to get device token', 'error');
+      return;
+    }
+
+    const userRef = doc(db, 'users', State.user.uid);
+    const snap = await getDoc(userRef);
+    const currentTokens = snap.exists() ? (snap.data().fcmTokens || []) : [];
+
+    if (!currentTokens.includes(token)) {
+      currentTokens.push(token);
+      await updateDoc(userRef, {
+        fcmTokens: currentTokens,
+        notificationsEnabled: true,
+        notificationsEnabledAt: serverTimestamp()
+      });
+      State.profile = { ...State.profile, fcmTokens: currentTokens, notificationsEnabled: true };
+    }
+
+    toast('✅ Notifications enabled!', 'success', 3000);
+    if (State.currentTab === 'you') setTimeout(() => renderYouTab(), 500);
+  } catch (e) {
+    console.error('FCM error:', e);
+    toast('Failed: ' + e.message, 'error', 5000);
+  }
+}
+
+async function disableNotifications() {
+  try {
+    if (window.firebase && window.firebase.messaging) {
+      const messaging = window.firebase.messaging();
+      const token = await messaging.getToken({ vapidKey: VAPID_KEY }).catch(() => null);
+      if (token) await messaging.deleteToken(token).catch(() => {});
+    }
+    await updateDoc(doc(db, 'users', State.user.uid), {
+      fcmTokens: [],
+      notificationsEnabled: false
+    });
+    State.profile = { ...State.profile, fcmTokens: [], notificationsEnabled: false };
+    toast('Notifications disabled', 'success');
+    if (State.currentTab === 'you') setTimeout(() => renderYouTab(), 500);
+  } catch (e) {
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+// ---------- SEND PUSH ----------
+async function sendNotificationToUser(uid, title, body, data) {
+  const isDM = data && data.type === 'dm';
+
+  // Log to in-app (skip for DMs — they belong in Messages tab)
+  if (!isDM) {
+    await logInAppNotification(uid, data?.type || 'default', title, body, data);
+  }
+
+  // Send push
+  try {
+    const userSnap = await getDoc(doc(db, 'users', uid));
+    if (!userSnap.exists()) return false;
+    const tokens = userSnap.data().fcmTokens || [];
+    if (tokens.length === 0) return false;
+
+    const res = await fetch(NOTIFY_WORKER_URL + '/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokens, title, body, data: data || {} })
+    });
+    return await res.json();
+  } catch (e) {
+    console.error('Notify error:', e);
+    return false;
+  }
+}
+
+async function broadcastNotification(title, body, data) {
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), where('notificationsEnabled', '==', true)));
+    const allTokens = [];
+    snap.forEach(d => {
+      const tokens = d.data().fcmTokens || [];
+      allTokens.push(...tokens);
+    });
+    if (allTokens.length === 0) {
+      toast('No users with notifications enabled', 'warning');
+      return;
+    }
+    await fetch(NOTIFY_WORKER_URL + '/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokens: allTokens, title, body, data: data || {} })
+    });
+    toast('Sent to ' + allTokens.length + ' device(s)', 'success');
+  } catch (e) {
+    console.error('Broadcast error:', e);
+  }
+}
+
+// ---------- NOTIFICATIONS CARD (for YOU tab injector) ----------
+function renderNotificationsCard() {
+  const enabled = State.profile && State.profile.notificationsEnabled;
+  return '<div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">' +
+    '<div class="px-4 py-3 border-b border-border">' +
+      '<div class="text-xs font-bold text-gray-400 uppercase flex items-center gap-2">' +
+        '<i data-lucide="bell" class="w-4 h-4"></i> Push Notifications' +
+      '</div>' +
+    '</div>' +
+    '<div class="p-4">' +
+      '<div class="flex items-center justify-between mb-3">' +
+        '<div class="flex-1 min-w-0">' +
+          '<div class="text-sm font-semibold">' + (enabled ? 'Enabled' : 'Disabled') + '</div>' +
+          '<div class="text-[10px] text-gray-500 mt-0.5">Get alerts for LFG matches, approvals, and new leaks</div>' +
+        '</div>' +
+        '<div class="toggle ' + (enabled ? 'on' : '') + '" id="notif-toggle"></div>' +
+      '</div>' +
+      '<div class="text-[10px] text-gray-600">' + (enabled ? 'Tap to disable anytime' : 'Tap to enable') + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+// ---------- BELL BUTTON WIRING ----------
+const _origRenderPlayTabNotif55 = window.renderPlayTab;
+window.renderPlayTab = function() {
+  _origRenderPlayTabNotif55();
+  setTimeout(() => {
+    const bellBtn = document.getElementById('btn-notifications');
+    if (bellBtn) {
+      bellBtn.onclick = () => {
+        if (typeof window.openNotificationsPanel === 'function') {
+          window.openNotificationsPanel();
+        } else {
+          toast('Notifications loading...', 'info', 1500);
+        }
+      };
+    }
+  }, 150);
+};
+
+// Export to window
+window.sendNotificationToUser = sendNotificationToUser;
+window.logInAppNotification = logInAppNotification;
+window.enableNotifications = enableNotifications;
+window.disableNotifications = disableNotifications;
+window.broadcastNotification = broadcastNotification;
+window.renderNotificationsCard = renderNotificationsCard;
+
+console.log('✅ Chunk 55 loaded — Notifications Core');
+
+/* END OF CHUNK 55 */
+// ============================================
+// Chunk 56: Friends Core
+// ============================================
+
+let friendsTab = 'friends'; // 'friends' | 'requests' | 'search' | 'activity'
+
+// ---------- MAIN PANEL ----------
+async function showFriendsPanel() {
+  openSheet(`
+    <div class="text-center py-8"><div class="spinner mx-auto"></div></div>
+  `, '👥 Friends');
+
+  const sheetBody = document.querySelector('#sheet-container .px-5');
+  if (!sheetBody) return;
+
+  sheetBody.innerHTML = `
+    <div class="flex gap-2 mb-4 overflow-x-auto no-scrollbar">
+      <button class="chip friends-tab ${friendsTab === 'friends' ? 'active' : ''}" data-tab="friends">Friends</button>
+      <button class="chip friends-tab ${friendsTab === 'requests' ? 'active' : ''}" data-tab="requests">Requests</button>
+      <button class="chip friends-tab ${friendsTab === 'search' ? 'active' : ''}" data-tab="search">Search</button>
+      <button class="chip friends-tab ${friendsTab === 'activity' ? 'active' : ''}" data-tab="activity">Activity</button>
+    </div>
+    <div id="friends-body"></div>
+  `;
+
+  document.querySelectorAll('.friends-tab').forEach(btn => {
+    btn.onclick = () => {
+      friendsTab = btn.dataset.tab;
+      document.querySelectorAll('.friends-tab').forEach(b => b.classList.toggle('active', b === btn));
+      renderFriendsBody();
+    };
+  });
+
+  renderFriendsBody();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- ROUTER ----------
+async function renderFriendsBody() {
+  const body = document.getElementById('friends-body');
+  if (!body) return;
+  body.innerHTML = '<div class="text-center py-6"><div class="spinner mx-auto"></div></div>';
+
+  try {
+    const userRef = doc(db, 'users', State.user.uid);
+    const snap = await getDoc(userRef);
+    const data = snap.exists() ? snap.data() : {};
+
+    const friendUids = data.friends || [];
+    const incomingReqs = data.friendRequests || [];
+    const outgoingReqs = data.friendRequestsSent || [];
+
+    if (friendsTab === 'friends') {
+      await renderFriendsList(body, friendUids);
+    } else if (friendsTab === 'requests') {
+      await renderRequestsList(body, incomingReqs, outgoingReqs);
+    } else if (friendsTab === 'activity') {
+      await renderFriendActivity(body, friendUids);
+    } else {
+      renderSearchBody(body);
+    }
+  } catch (e) {
+    console.error('Friends error:', e);
+    body.innerHTML = '<div class="text-center py-6 text-red-400 text-sm">Failed to load</div>';
+  }
+}
+
+// ---------- FRIENDS LIST ----------
+async function renderFriendsList(body, friendUids) {
+  if (friendUids.length === 0) {
+    body.innerHTML = `
+      <div class="text-center py-12">
+        <div class="text-5xl mb-3">👥</div>
+        <div class="text-sm font-bold mb-1">No friends yet</div>
+        <div class="text-xs text-gray-500 mb-4">Search for players to add</div>
+        <button id="goto-search-btn" class="btn-press px-4 py-2.5 rounded-xl bg-primary font-bold text-sm">
+          Find Players
+        </button>
+      </div>
+    `;
+    document.getElementById('goto-search-btn').onclick = () => {
+      friendsTab = 'search';
+      document.querySelectorAll('.friends-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === 'search'));
+      renderFriendsBody();
+    };
+    return;
+  }
+
+  const friends = [];
+  for (const uid of friendUids) {
+    try {
+      const s = await getDoc(doc(db, 'users', uid));
+      if (s.exists()) friends.push({ id: uid, ...s.data() });
+    } catch (e) { /* skip */ }
+  }
+
+  body.innerHTML = friends.map(f => `
+    <div class="flex items-center gap-3 p-3 bg-card border border-border rounded-xl mb-2">
+      <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden flex-shrink-0">
+        ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-bold truncate flex items-center gap-1.5">
+          ${esc(f.ign || 'Unknown')}
+          ${f.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
+        </div>
+        <div class="text-[10px] text-gray-500">${esc(f.rank || '—')} · ${esc(f.region || '—')}</div>
+      </div>
+      <button class="dm-btn w-9 h-9 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center mr-2" data-uid="${f.id}" data-ign="${esc(f.ign)}">
+        <i data-lucide="message-circle" class="w-4 h-4 text-primary"></i>
+      </button>
+      <button class="remove-friend-btn w-9 h-9 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center" data-uid="${f.id}" data-ign="${esc(f.ign)}">
+        <i data-lucide="user-minus" class="w-4 h-4 text-red-400"></i>
+      </button>
+    </div>
+  `).join('');
+
+  body.querySelectorAll('.dm-btn').forEach(btn => {
+    btn.onclick = () => {
+      if (typeof window.openDMThread === 'function') {
+        window.openDMThread(btn.dataset.uid, btn.dataset.ign);
+      } else {
+        toast('DMs loading...', 'info', 1500);
+      }
+    };
+  });
+
+  body.querySelectorAll('.remove-friend-btn').forEach(btn => {
+    btn.onclick = () => {
+      confirmDialog('Remove Friend', `Remove ${btn.dataset.ign} from your friends?`, async () => {
+        try {
+          await updateDoc(doc(db, 'users', State.user.uid), { friends: arrayRemove(btn.dataset.uid) });
+          await updateDoc(doc(db, 'users', btn.dataset.uid), { friends: arrayRemove(State.user.uid) });
+          toast('Friend removed', 'success');
+          renderFriendsBody();
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Remove', true);
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- REQUESTS ----------
+async function renderRequestsList(body, incomingReqs, outgoingReqs) {
+  let html = '';
+
+  if (incomingReqs.length > 0) {
+    html += `<div class="text-[10px] font-bold text-primary uppercase mb-2">Incoming (${incomingReqs.length})</div>`;
+    const incoming = [];
+    for (const uid of incomingReqs) {
+      try {
+        const s = await getDoc(doc(db, 'users', uid));
+        if (s.exists()) incoming.push({ id: uid, ...s.data() });
+      } catch (e) { /* skip */ }
+    }
+    html += incoming.map(u => `
+      <div class="flex items-center gap-3 p-3 bg-primary/5 border border-primary/30 rounded-xl mb-2">
+        <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden flex-shrink-0">
+          ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+          <div class="text-[10px] text-gray-500">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
+        </div>
+        <button class="accept-friend-btn w-9 h-9 rounded-lg bg-green-500 flex items-center justify-center" data-uid="${u.id}" data-ign="${esc(u.ign)}">
+          <i data-lucide="check" class="w-4 h-4 text-white"></i>
+        </button>
+        <button class="decline-friend-btn w-9 h-9 rounded-lg bg-red-500/20 border border-red-500/40 flex items-center justify-center" data-uid="${u.id}">
+          <i data-lucide="x" class="w-4 h-4 text-red-400"></i>
+        </button>
+      </div>
+    `).join('');
+  }
+
+  if (outgoingReqs.length > 0) {
+    html += `<div class="text-[10px] font-bold text-gray-400 uppercase mb-2 mt-4">Sent (${outgoingReqs.length})</div>`;
+    const outgoing = [];
+    for (const uid of outgoingReqs) {
+      try {
+        const s = await getDoc(doc(db, 'users', uid));
+        if (s.exists()) outgoing.push({ id: uid, ...s.data() });
+      } catch (e) { /* skip */ }
+    }
+    html += outgoing.map(u => `
+      <div class="flex items-center gap-3 p-3 bg-card border border-border rounded-xl mb-2">
+        <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden flex-shrink-0">
+          ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+          <div class="text-[10px] text-yellow-400">Pending...</div>
+        </div>
+        <button class="cancel-req-btn w-9 h-9 rounded-lg bg-cardAlt border border-border flex items-center justify-center" data-uid="${u.id}">
+          <i data-lucide="x" class="w-4 h-4 text-gray-400"></i>
+        </button>
+      </div>
+    `).join('');
+  }
+
+  if (!html) {
+    html = `
+      <div class="text-center py-12">
+        <div class="text-5xl mb-3">📬</div>
+        <div class="text-sm font-bold mb-1">No pending requests</div>
+        <div class="text-xs text-gray-500">Friend requests will appear here</div>
+      </div>
+    `;
+  }
+
+  body.innerHTML = html;
+
+  body.querySelectorAll('.accept-friend-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        const myUid = State.user.uid;
+        const theirUid = btn.dataset.uid;
+        await updateDoc(doc(db, 'users', myUid), {
+          friends: arrayUnion(theirUid),
+          friendRequests: arrayRemove(theirUid)
+        });
+        await updateDoc(doc(db, 'users', theirUid), {
+          friends: arrayUnion(myUid),
+          friendRequestsSent: arrayRemove(myUid)
+        });
+        toast('Friend added! 🎉', 'success');
+        renderFriendsBody();
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+      }
+    };
+  });
+
+  body.querySelectorAll('.decline-friend-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          friendRequests: arrayRemove(btn.dataset.uid)
+        });
+        toast('Request declined', 'success');
+        renderFriendsBody();
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+
+  body.querySelectorAll('.cancel-req-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          friendRequestsSent: arrayRemove(btn.dataset.uid)
+        });
+        await updateDoc(doc(db, 'users', btn.dataset.uid), {
+          friendRequests: arrayRemove(State.user.uid)
+        });
+        toast('Request cancelled', 'success');
+        renderFriendsBody();
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- ACTIVITY ----------
+async function renderFriendActivity(body, friendUids) {
+  if (friendUids.length === 0) {
+    body.innerHTML = `
+      <div class="text-center py-12">
+        <div class="text-5xl mb-3">👥</div>
+        <div class="text-sm font-bold mb-1">No friends yet</div>
+        <div class="text-xs text-gray-500">Add friends to see their activity</div>
+      </div>
+    `;
+    return;
+  }
+
+  const friends = [];
+  for (const uid of friendUids) {
+    try {
+      const s = await getDoc(doc(db, 'users', uid));
+      if (s.exists()) friends.push({ id: uid, ...s.data() });
+    } catch (e) { /* skip */ }
+  }
+
+  friends.sort((a, b) => (b.lastSeen?.seconds || 0) - (a.lastSeen?.seconds || 0));
+
+  const online = friends.filter(f => f.lastSeen?.seconds && (Date.now() / 1000 - f.lastSeen.seconds) < 300);
+  const recentlyActive = friends.filter(f => {
+    const t = f.lastSeen?.seconds || 0;
+    return (Date.now() / 1000 - t) < 24 * 60 * 60 && (Date.now() / 1000 - t) >= 300;
+  });
+  const offline = friends.filter(f => {
+    const t = f.lastSeen?.seconds || 0;
+    return (Date.now() / 1000 - t) >= 24 * 60 * 60;
+  });
+
+  body.innerHTML = `
+    ${online.length > 0 ? `
+      <div class="text-[10px] font-bold text-green-400 uppercase mb-2 flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> Online Now (${online.length})
+      </div>
+      ${online.map(f => renderActivityCard(f, 'online')).join('')}
+    ` : ''}
+    ${recentlyActive.length > 0 ? `
+      <div class="text-[10px] font-bold text-yellow-400 uppercase mb-2 mt-4">Recent (${recentlyActive.length})</div>
+      ${recentlyActive.map(f => renderActivityCard(f, 'recent')).join('')}
+    ` : ''}
+    ${offline.length > 0 ? `
+      <div class="text-[10px] font-bold text-gray-500 uppercase mb-2 mt-4">Offline (${offline.length})</div>
+      ${offline.map(f => renderActivityCard(f, 'offline')).join('')}
+    ` : ''}
+  `;
+
+  body.querySelectorAll('.friend-activity-card').forEach(card => {
+    card.onclick = () => {
+      if (typeof window.openUserProfile === 'function') {
+        window.openUserProfile(card.dataset.uid);
+      }
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function renderActivityCard(f, status) {
+  const dotColor = status === 'online' ? 'bg-green-500 animate-pulse'
+    : status === 'recent' ? 'bg-yellow-500' : 'bg-gray-500';
+  const rankInfo = f.rank ? ` · ${f.rank}` : '';
+  const rating = f.ratingAvg ? ` ⭐ ${f.ratingAvg}` : '';
+
+  return `
+    <div class="friend-activity-card bg-card border border-border rounded-xl p-3 mb-2 cursor-pointer hover:border-primary/40 transition-colors flex items-center gap-3" data-uid="${f.id}">
+      <div class="relative flex-shrink-0">
+        <div class="w-11 h-11 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden">
+          ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
+        </div>
+        <div class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${dotColor} border-2 border-card"></div>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-bold truncate flex items-center gap-1.5">
+          ${esc(f.ign || 'Unknown')}
+          ${f.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
+        </div>
+        <div class="text-[10px] text-gray-500 truncate">${f.region || 'Global'}${rankInfo}${rating}</div>
+      </div>
+      <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+    </div>
+  `;
+}
+
+// ---------- SEARCH ----------
+function renderSearchBody(body) {
+  body.innerHTML = `
+    <div class="relative mb-4">
+      <i data-lucide="search" class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+      <input id="friend-search-input" type="text" placeholder="Search by IGN..." class="pl-10" />
+    </div>
+    <div id="search-results" class="space-y-2">
+      <div class="text-center py-8 text-xs text-gray-500">Start typing to search players</div>
+    </div>
+  `;
+
+  const input = document.getElementById('friend-search-input');
+  let debounceTimer;
+
+  input.oninput = () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => performFriendSearch(input.value.trim()), 400);
+  };
+
+  input.focus();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function performFriendSearch(queryStr) {
+  const results = document.getElementById('search-results');
+  if (!results) return;
+
+  if (queryStr.length < 2) {
+    results.innerHTML = '<div class="text-center py-8 text-xs text-gray-500">Type at least 2 characters</div>';
+    return;
+  }
+
+  results.innerHTML = '<div class="text-center py-6"><div class="spinner mx-auto"></div></div>';
+
+  try {
+    const allUsers = [];
+    const snap = await getDocs(collection(db, 'users'));
+    snap.forEach(d => {
+      if (d.id === State.user.uid) return;
+      allUsers.push({ id: d.id, ...d.data() });
+    });
+
+    const q = queryStr.toLowerCase();
+    const matches = allUsers.filter(u => (u.ign || '').toLowerCase().includes(q));
+
+    if (matches.length === 0) {
+      results.innerHTML = '<div class="text-center py-8 text-xs text-gray-500">No players found</div>';
+      return;
+    }
+
+    const mySnap = await getDoc(doc(db, 'users', State.user.uid));
+    const myData = mySnap.exists() ? mySnap.data() : {};
+    const myFriends = myData.friends || [];
+    const mySent = myData.friendRequestsSent || [];
+    const myIncoming = myData.friendRequests || [];
+
+    results.innerHTML = matches.slice(0, 30).map(u => {
+      let actionHTML = '';
+      if (myFriends.includes(u.id)) {
+        actionHTML = '<span class="text-[10px] px-2 py-1 rounded-full bg-green-500/20 text-green-400 font-bold">✓ Friend</span>';
+      } else if (mySent.includes(u.id)) {
+        actionHTML = '<span class="text-[10px] px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-400 font-bold">Pending</span>';
+      } else if (myIncoming.includes(u.id)) {
+        actionHTML = `<button class="send-req-btn text-[10px] px-2 py-1 rounded-full bg-primary text-white font-bold" data-uid="${u.id}" data-ign="${esc(u.ign)}">Accept</button>`;
+      } else {
+        actionHTML = `<button class="send-req-btn text-[10px] px-2.5 py-1.5 rounded-lg bg-primary text-white font-bold" data-uid="${u.id}" data-ign="${esc(u.ign)}">+ Add</button>`;
+      }
+
+      return `
+        <div class="flex items-center gap-3 p-3 bg-card border border-border rounded-xl">
+          <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden flex-shrink-0">
+            ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+            <div class="text-[10px] text-gray-500">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
+          </div>
+          ${actionHTML}
+        </div>
+      `;
+    }).join('');
+
+    results.querySelectorAll('.send-req-btn').forEach(btn => {
+      btn.onclick = () => sendFriendRequest(btn.dataset.uid, btn.dataset.ign);
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Search error:', e);
+    results.innerHTML = '<div class="text-center py-8 text-red-400 text-xs">' + esc(e.message) + '</div>';
+  }
+}
+
+async function sendFriendRequest(targetUid, targetIgn) {
+  try {
+    await updateDoc(doc(db, 'users', State.user.uid), {
+      friendRequestsSent: arrayUnion(targetUid)
+    });
+    await updateDoc(doc(db, 'users', targetUid), {
+      friendRequests: arrayUnion(State.user.uid)
+    });
+
+    toast(`Request sent to ${targetIgn}`, 'success');
+
+    // Notify
+    if (typeof window.sendNotificationToUser === 'function') {
+      try {
+        await window.sendNotificationToUser(
+          targetUid,
+          '👋 New Friend Request',
+          `${State.profile.ign} wants to be your friend`,
+          { type: 'friend_request' }
+        );
+      } catch (e) { /* silent */ }
+    }
+
+    const input = document.getElementById('friend-search-input');
+    if (input) performFriendSearch(input.value.trim());
+  } catch (e) {
+    console.error(e);
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
+// Export
+window.showFriendsPanel = showFriendsPanel;
+window.sendFriendRequest = sendFriendRequest;
+window.renderFriendActivity = renderFriendActivity;
+
+console.log('✅ Chunk 56 loaded — Friends Core');
+
+/* END OF CHUNK 56 */
+// ============================================
+// Chunk 57: Profile View + Direct Messages
+// ============================================
+
+// ---------- OPEN USER PROFILE ----------
+async function openUserProfile(uid) {
+  if (!uid) return;
+  if (uid === State.user.uid) {
+    switchTab('you');
+    return;
+  }
+
+  openSheet('<div class="text-center py-8"><div class="spinner mx-auto"></div></div>', 'Profile');
+
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    if (!snap.exists()) {
+      toast('User not found', 'error');
+      return;
+    }
+    const u = { id: uid, ...snap.data() };
+
+    const mySnap = await getDoc(doc(db, 'users', State.user.uid));
+    const myData = mySnap.exists() ? mySnap.data() : {};
+    const isFriend = (myData.friends || []).includes(uid);
+    const reqSent = (myData.friendRequestsSent || []).includes(uid);
+    const reqReceived = (myData.friendRequests || []).includes(uid);
+
+    let vaultCount = 0;
+    let camoPct = 0;
+    try {
+      const [vaultSnap, camoSnap] = await Promise.all([
+        getDocs(query(collection(db, 'vaults'), where('uid', '==', uid))),
+        getDoc(doc(db, 'camos', uid))
+      ]);
+      vaultCount = vaultSnap.size;
+      if (camoSnap.exists()) {
+        const totalPossible = ALL_GUNS.length * CAMO_TYPES.length;
+        let checked = 0;
+        Object.values(camoSnap.data()).forEach(gun => {
+          CAMO_TYPES.forEach(c => { if (gun[c.key]) checked++; });
+        });
+        camoPct = Math.round((checked / totalPossible) * 100);
+      }
+    } catch (e) { /* silent */ }
+
+    const friendsCount = (u.friends || []).length;
+    const approvedCount = u.approvedCount || 0;
+    const tournamentWins = u.tournamentWins || 0;
+
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (!sheetBody) return;
+
+    sheetBody.innerHTML = `
+      <div class="space-y-4">
+        <div class="bg-card border ${u.isPro ? 'border-gold glow-gold' : 'border-border'} rounded-2xl p-4">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="relative">
+              <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-2xl overflow-hidden">
+                ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+              </div>
+              ${u.isPro ? `<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>` : ''}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-base font-black truncate">${esc(u.ign || 'Unknown')}</span>
+                ${u.isPro ? `<span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">PRO</span>` : ''}
+              </div>
+              <div class="text-[11px] text-gray-500 mt-0.5">${esc(u.rank || 'Rookie')} · ${esc(u.region || 'Global')}</div>
+              ${u.lastSeen?.seconds ? `
+                <div class="flex items-center gap-1.5 mt-1">
+                  ${(Date.now() / 1000 - u.lastSeen.seconds) < 300
+                    ? `<div class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div><span class="text-[9px] text-green-400 font-bold">ONLINE</span>`
+                    : `<div class="w-1.5 h-1.5 rounded-full bg-gray-500"></div><span class="text-[9px] text-gray-500">${timeAgo(u.lastSeen)}</span>`
+                  }
+                </div>
+              ` : ''}
+            </div>
+          </div>
+          ${u.bio ? `<p class="text-xs text-gray-400 mb-3">${esc(u.bio)}</p>` : ''}
+          ${u.favGun ? `<div class="text-[11px] text-gray-500">🎯 Favourite: <span class="font-bold text-gray-300">${esc(u.favGun)}</span></div>` : ''}
+        </div>
+
+        <div class="grid grid-cols-4 gap-2">
+          <div class="bg-card border border-border rounded-xl p-2.5 text-center">
+            <div class="text-base font-black text-primary">${vaultCount}</div>
+            <div class="text-[8px] text-gray-500 uppercase">Vaults</div>
+          </div>
+          <div class="bg-card border border-border rounded-xl p-2.5 text-center">
+            <div class="text-base font-black text-gold">${camoPct}%</div>
+            <div class="text-[8px] text-gray-500 uppercase">Camos</div>
+          </div>
+          <div class="bg-card border border-border rounded-xl p-2.5 text-center">
+            <div class="text-base font-black text-blue-400">${friendsCount}</div>
+            <div class="text-[8px] text-gray-500 uppercase">Friends</div>
+          </div>
+          <div class="bg-card border border-border rounded-xl p-2.5 text-center">
+            <div class="text-base font-black text-green-400">${approvedCount}</div>
+            <div class="text-[8px] text-gray-500 uppercase">Approved</div>
+          </div>
+        </div>
+
+        ${(u.badges && u.badges.length > 0) || tournamentWins > 0 ? `
+          <div class="bg-card border border-border rounded-2xl p-3">
+            <div class="text-[10px] font-bold text-gray-400 uppercase mb-2">🏅 Achievements</div>
+            <div class="flex flex-wrap gap-1.5">
+              ${(u.badges || []).map(b => {
+                const emoji = { first_leak: '🥉', rising: '🥈', legend: '🥇', elite: '💎' }[b] || '⭐';
+                return `<span class="text-base" title="${b}">${emoji}</span>`;
+              }).join('')}
+              ${tournamentWins > 0 ? `<span class="text-base" title="Tournament Champion">🏆×${tournamentWins}</span>` : ''}
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="space-y-2">
+          ${isFriend ? `
+            <button id="up-dm" class="btn-press w-full py-3 rounded-xl bg-primary text-white font-bold text-sm glow-primary flex items-center justify-center gap-2">
+              <i data-lucide="message-circle" class="w-4 h-4"></i> Message
+            </button>
+            <button id="up-remove-friend" class="btn-press w-full py-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-sm">
+              Remove Friend
+            </button>
+          ` : reqSent ? `
+            <div class="text-center py-2 text-xs text-yellow-400 font-bold">⏳ Friend request pending</div>
+          ` : reqReceived ? `
+            <button id="up-accept-friend" class="btn-press w-full py-3 rounded-xl bg-green-500 text-white font-bold text-sm">
+              ✓ Accept Friend Request
+            </button>
+          ` : `
+            <button id="up-add-friend" class="btn-press w-full py-3 rounded-xl bg-primary font-bold text-sm glow-primary">
+              + Add Friend
+            </button>
+          `}
+          <button id="up-invite-btn" class="btn-press w-full py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">
+            📨 Invite to Lobby
+          </button>
+        </div>
+      </div>
+    `;
+
+    const addBtn = document.getElementById('up-add-friend');
+    if (addBtn) addBtn.onclick = async () => {
+      await sendFriendRequest(uid, u.ign);
+      closeSheet();
+    };
+
+    const dmBtn = document.getElementById('up-dm');
+    if (dmBtn) dmBtn.onclick = () => {
+      closeSheet();
+      setTimeout(() => openDMThread(uid, u.ign), 300);
+    };
+
+    const removeBtn = document.getElementById('up-remove-friend');
+    if (removeBtn) removeBtn.onclick = () => {
+      confirmDialog('Remove Friend', `Remove ${u.ign}?`, async () => {
+        try {
+          await updateDoc(doc(db, 'users', State.user.uid), { friends: arrayRemove(uid) });
+          await updateDoc(doc(db, 'users', uid), { friends: arrayRemove(State.user.uid) });
+          toast('Friend removed', 'success');
+          closeSheet();
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Remove', true);
+    };
+
+    const acceptBtn = document.getElementById('up-accept-friend');
+    if (acceptBtn) acceptBtn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          friends: arrayUnion(uid),
+          friendRequests: arrayRemove(uid)
+        });
+        await updateDoc(doc(db, 'users', uid), {
+          friends: arrayUnion(State.user.uid),
+          friendRequestsSent: arrayRemove(State.user.uid)
+        });
+        toast('Friend added! 🎉', 'success');
+        closeSheet();
+      } catch (e) { toast('Failed', 'error'); }
+    };
+
+    const inviteBtn = document.getElementById('up-invite-btn');
+    if (inviteBtn) inviteBtn.onclick = () => {
+      openSheet(`
+        <div class="space-y-3 text-center">
+          <div class="text-4xl">📨</div>
+          <div class="text-sm font-bold">Send invite</div>
+          <div class="text-xs text-gray-500">Copy this link and send it to ${esc(u.ign)}</div>
+          <div class="bg-card border border-border rounded-xl p-3 text-xs font-mono break-all text-primary">
+            ${location.origin}/?invite=${State.user.uid}
+          </div>
+          <button onclick="copyText('${location.origin}/?invite=${State.user.uid}', 'Link copied!'); closeSheet();" class="btn-press w-full py-3 rounded-xl bg-primary font-bold text-sm">
+            Copy Invite Link
+          </button>
+        </div>
+      `, 'Invite to Lobby');
+    };
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Profile view error:', e);
+    toast('Failed to load profile', 'error');
+  }
+}
+
+// ---------- DM THREAD ----------
+async function openDMThread(friendUid, friendIgn) {
+  const chatId = [State.user.uid, friendUid].sort().join('_');
+
+  openSheet(`
+    <div class="flex flex-col" style="height: 70vh;">
+      <div id="dm-messages" class="flex-1 overflow-y-auto mb-3 space-y-2 pb-3">
+        <div class="text-center py-6"><div class="spinner mx-auto"></div></div>
+      </div>
+      <div class="flex gap-2 sticky bottom-0 bg-[#0a0a0a] pt-3 border-t border-border">
+        <input id="dm-input" type="text" placeholder="Message ${esc(friendIgn)}..." class="flex-1" maxlength="500" />
+        <button id="dm-send" class="btn-press w-11 h-11 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
+          <i data-lucide="send" class="w-5 h-5 text-white"></i>
+        </button>
+      </div>
+    </div>
+  `, `💬 ${esc(friendIgn)}`);
+
+  const messagesContainer = document.getElementById('dm-messages');
+
+  const loadMessages = async () => {
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'messages'),
+        where('chatId', '==', chatId),
+        limit(100)
+      ));
+
+      if (snap.empty) {
+        messagesContainer.innerHTML = `
+          <div class="text-center py-8">
+            <div class="text-3xl mb-2">💬</div>
+            <div class="text-xs text-gray-500">Start the conversation</div>
+          </div>
+        `;
+        return;
+      }
+
+      const messages = [];
+      snap.forEach(d => messages.push({ id: d.id, ...d.data() }));
+      messages.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+
+      messagesContainer.innerHTML = messages.map(m => {
+        const isMine = m.fromUid === State.user.uid;
+        return `
+          <div class="flex ${isMine ? 'justify-end' : 'justify-start'}">
+            <div class="max-w-[75%] ${isMine ? 'bg-primary text-white' : 'bg-card border border-border'} rounded-2xl px-3 py-2">
+              <div class="text-xs whitespace-pre-wrap break-words">${esc(m.text)}</div>
+              <div class="text-[8px] ${isMine ? 'text-white/70' : 'text-gray-500'} mt-1 text-right">${timeAgo(m.createdAt)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    } catch (e) {
+      console.error('DM load error:', e);
+      messagesContainer.innerHTML = '<div class="text-center py-6 text-red-400 text-xs">Failed to load messages</div>';
+    }
+  };
+
+  const sendMessage = async () => {
+    const input = document.getElementById('dm-input');
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    input.disabled = true;
+
+    try {
+      await addDoc(collection(db, 'messages'), {
+        chatId,
+        fromUid: State.user.uid,
+        fromIgn: State.profile.ign,
+        toUid: friendUid,
+        toIgn: friendIgn,
+        text,
+        createdAt: serverTimestamp()
+      });
+
+      if (typeof window.sendNotificationToUser === 'function') {
+        try {
+          await window.sendNotificationToUser(
+            friendUid,
+            `💬 ${State.profile.ign}`,
+            text.length > 60 ? text.slice(0, 60) + '...' : text,
+            { type: 'dm', chatId }
+          );
+        } catch (e) { /* silent */ }
+      }
+
+      await loadMessages();
+    } catch (e) {
+      console.error(e);
+      toast('Send failed', 'error');
+    } finally {
+      input.disabled = false;
+      input.focus();
+    }
+  };
+
+  document.getElementById('dm-send').onclick = sendMessage;
+  document.getElementById('dm-input').onkeypress = (e) => {
+    if (e.key === 'Enter') sendMessage();
+  };
+
+  await loadMessages();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// Export
+window.openUserProfile = openUserProfile;
+window.openDMThread = openDMThread;
+
+console.log('✅ Chunk 57 loaded — Profile View + DMs');
+
+/* END OF CHUNK 57 */
+// ============================================
+// Chunk 58: Badges + Themes
+// ============================================
+
+// ---------- BADGE HELPERS ----------
+function getBadgeHTML(item) {
+  if (!item) return '';
+  let badges = '';
+  if (item.uid === ADMIN_UID) {
+    badges += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex-shrink-0">👑 FOUNDER</span>';
+  } else if (item.isPro) {
+    badges += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex-shrink-0">👑 PRO</span>';
+  }
+  if (item.verified) {
+    badges += '<span class="verified-badge" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: #1DA1F2; color: #fff; font-size: 9px; font-weight: 900; flex-shrink: 0; box-shadow: 0 0 8px rgba(29, 161, 242, 0.5);">✓</span>';
+  }
+  return badges;
+}
+
+function getFounderBadge(uid) {
+  if (uid === ADMIN_UID) {
+    return '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑 FOUNDER</span>';
+  }
+  return '';
+}
+
+function renderVerifiedBadge(user) {
+  if (!user || !user.verified) return '';
+  return `<span class="verified-badge" title="Verified Creator" style="
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #1DA1F2;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 900;
+    flex-shrink: 0;
+    box-shadow: 0 0 8px rgba(29, 161, 242, 0.5);
+  ">✓</span>`;
+}
+
+// ---------- AUTO-VERIFIED STATUS ----------
+async function checkVerifiedStatus() {
+  if (!State.user || !State.profile) return;
+
+  const approvedCount = State.profile.approvedCount || 0;
+  const isPro = State.profile.isPro || false;
+  const shouldBeVerified = isPro && approvedCount >= 10;
+  const isCurrentlyVerified = State.profile.verified || false;
+
+  if (shouldBeVerified !== isCurrentlyVerified) {
+    try {
+      await updateDoc(doc(db, 'users', State.user.uid), {
+        verified: shouldBeVerified,
+        verifiedAt: shouldBeVerified ? serverTimestamp() : null
+      });
+      State.profile.verified = shouldBeVerified;
+      console.log('✅ Verified status updated:', shouldBeVerified);
+      if (shouldBeVerified) {
+        toast('🎉 You\'re now a Verified Creator!', 'success', 4000);
+      }
+    } catch (e) {
+      console.warn('Verified update failed:', e);
+    }
+  }
+}
+
+// ---------- PROFILE THEMES ----------
+const PROFILE_THEMES = {
+  dark: {
+    name: 'AMOLED Dark',
+    pro: false,
+    gradient: 'linear-gradient(135deg, #111 0%, #0a0a0a 100%)',
+    border: '#222222',
+    glow: 'none',
+    nameColor: '#ffffff'
+  },
+  gold: {
+    name: 'Royal Gold',
+    pro: true,
+    gradient: 'linear-gradient(135deg, #1a1200 0%, #000000 100%)',
+    border: '#FFD700',
+    glow: '0 0 30px rgba(255, 215, 0, 0.4)',
+    nameColor: '#FFD700'
+  },
+  fire: {
+    name: 'Fire Storm',
+    pro: true,
+    gradient: 'linear-gradient(135deg, #1a0500 0%, #000000 60%, #1a0500 100%)',
+    border: '#FF6B00',
+    glow: '0 0 30px rgba(255, 107, 0, 0.5)',
+    nameColor: '#FF6B00'
+  },
+  ice: {
+    name: 'Ice Freeze',
+    pro: true,
+    gradient: 'linear-gradient(135deg, #001428 0%, #000000 100%)',
+    border: '#00BFFF',
+    glow: '0 0 30px rgba(0, 191, 255, 0.4)',
+    nameColor: '#00BFFF'
+  },
+  galaxy: {
+    name: 'Galaxy',
+    pro: true,
+    gradient: 'linear-gradient(135deg, #1a0033 0%, #000000 50%, #0a001a 100%)',
+    border: '#AF52DE',
+    glow: '0 0 30px rgba(175, 82, 222, 0.5)',
+    nameColor: '#AF52DE'
+  }
+};
+
+// ---------- AVATAR FRAMES ----------
+const AVATAR_FRAMES = {
+  none: { name: 'None', pro: false, style: '' },
+  gold: { name: 'Gold', pro: true, style: 'background: linear-gradient(135deg, #FFD700, #B8860B); padding: 3px; border-radius: 50%;' },
+  fire: { name: 'Fire', pro: true, style: 'background: linear-gradient(135deg, #FF6B00, #FF3B30); padding: 3px; border-radius: 50%;' },
+  ice: { name: 'Ice', pro: true, style: 'background: linear-gradient(135deg, #00BFFF, #0080FF); padding: 3px; border-radius: 50%;' },
+  neon: { name: 'Neon', pro: true, style: 'background: linear-gradient(135deg, #AF52DE, #FF6B00); padding: 3px; border-radius: 50%;' }
+};
+
+// ---------- THEME PICKER ----------
+function openThemePicker() {
+  const isPro = State.profile?.isPro;
+  const currentTheme = State.profile?.themeStyle || 'dark';
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-xs text-gray-500">${isPro ? '👑 Pro — All themes unlocked' : 'Free — 1 theme, upgrade for all'}</div>
+
+      <div class="grid grid-cols-2 gap-3">
+        ${Object.entries(PROFILE_THEMES).map(([key, theme]) => {
+          const isSelected = currentTheme === key;
+          const isLocked = theme.pro && !isPro;
+          return `
+            <button class="theme-pick-btn btn-press relative rounded-2xl overflow-hidden" data-theme="${key}" data-locked="${isLocked}">
+              <div style="
+                height: 80px;
+                background: ${theme.gradient};
+                border: 2px solid ${isSelected ? theme.border : '#222'};
+                border-radius: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: ${isSelected ? theme.glow : 'none'};
+                position: relative;
+              ">
+                <div style="font-weight: 900; font-size: 14px; color: ${theme.nameColor};">${theme.name}</div>
+                ${isLocked ? `<div style="position: absolute; top: 6px; right: 6px; font-size: 14px;">🔒</div>` : ''}
+                ${isSelected && !isLocked ? `<div style="position: absolute; top: 6px; right: 6px; background: #FF6B00; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; font-weight: 900;">✓</div>` : ''}
+              </div>
+            </button>
+          `;
+        }).join('')}
+      </div>
+
+      ${!isPro ? `
+        <button id="theme-upgrade-btn" class="btn-press w-full py-3.5 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
+          👑 Unlock All Themes — Go Pro
+        </button>
+      ` : ''}
+    </div>
+  `, '🎨 Profile Themes');
+
+  document.querySelectorAll('.theme-pick-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const themeKey = btn.dataset.theme;
+      const isLocked = btn.dataset.locked === 'true';
+
+      if (isLocked) {
+        showProPaywall('Unlock all 5 animated profile themes with Pro.');
+        return;
+      }
+
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), { themeStyle: themeKey });
+        State.profile.themeStyle = themeKey;
+        toast('🎨 Theme applied!', 'success');
+        closeSheet();
+        if (State.currentTab === 'you') renderYouTab();
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+      }
+    };
+  });
+
+  const upgradeBtn = document.getElementById('theme-upgrade-btn');
+  if (upgradeBtn) upgradeBtn.onclick = goPro;
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- VERIFIED STATUS PERIODIC CHECK ----------
+setTimeout(() => {
+  if (State.user && State.profile) checkVerifiedStatus();
+}, 5000);
+
+setInterval(() => {
+  if (State.user && State.profile) checkVerifiedStatus();
+}, 5 * 60 * 1000);
+
+// Export
+window.getBadgeHTML = getBadgeHTML;
+window.getFounderBadge = getFounderBadge;
+window.renderVerifiedBadge = renderVerifiedBadge;
+window.checkVerifiedStatus = checkVerifiedStatus;
+window.openThemePicker = openThemePicker;
+window.PROFILE_THEMES = PROFILE_THEMES;
+window.AVATAR_FRAMES = AVATAR_FRAMES;
+
+console.log('✅ Chunk 58 loaded — Badges + Themes');
+
+/* END OF CHUNK 58 */
+// ============================================
+// Chunk 59: Avatar Frames + Advanced Settings
+// ============================================
+
+// ---------- PREMIUM AVATAR FRAMES (11) ----------
+const PREMIUM_FRAMES = {
+  none:       { name: 'None',          pro: false, css: '' },
+  gold:       { name: 'Gold',          pro: true,  css: 'background: linear-gradient(135deg, #FFD700, #B8860B);' },
+  fire:       { name: 'Fire',          pro: true,  css: 'background: linear-gradient(135deg, #FF6B00, #FF3B30);' },
+  ice:        { name: 'Ice',           pro: true,  css: 'background: linear-gradient(135deg, #00BFFF, #0080FF);' },
+  neon:       { name: 'Neon',          pro: true,  css: 'background: linear-gradient(135deg, #AF52DE, #FF6B00);' },
+  molten:     { name: 'Molten Core',   pro: true,  css: 'background: conic-gradient(from 0deg, #FF0000, #FF6B00, #FFD700, #FF6B00, #FF0000); box-shadow: 0 0 15px rgba(255,107,0,0.7);' },
+  tesla:      { name: 'Tesla Coil',    pro: true,  css: 'background: linear-gradient(135deg, #00E5FF, #7B2FF7, #00E5FF); box-shadow: 0 0 15px rgba(0,229,255,0.7);' },
+  crystal:    { name: 'Crystal Shard', pro: true,  css: 'background: linear-gradient(135deg, #7B2FF7, #F107A3, #00E5FF, #7B2FF7); box-shadow: 0 0 15px rgba(123,47,247,0.6);' },
+  darkops:    { name: 'Dark Ops',      pro: true,  css: 'background: linear-gradient(135deg, #1a0000, #FF0000, #1a0000); box-shadow: 0 0 15px rgba(255,0,0,0.7);' },
+  voidwalker: { name: 'Void Walker',   pro: true,  css: 'background: conic-gradient(from 0deg, #1a0033, #7B2FF7, #1a0033, #F107A3, #1a0033); box-shadow: 0 0 15px rgba(123,47,247,0.6);' },
+  bloodgem:   { name: 'Blood Diamond', pro: true,  css: 'background: linear-gradient(135deg, #FF0000, #8B0000, #FF6B6B, #FF0000); box-shadow: 0 0 15px rgba(255,0,0,0.6);' },
+  jade:       { name: 'Jade Dragon',   pro: true,  css: 'background: linear-gradient(135deg, #00FF7F, #00C957, #FFD700, #00FF7F); box-shadow: 0 0 15px rgba(0,255,127,0.5);' }
+};
+
+// ---------- GET AVATAR WITH FRAME ----------
+function getAvatarWithFrame(avatarUrl, ign, size) {
+  const frameKey = State.profile?.avatarFrame || 'none';
+  const frameDef = PREMIUM_FRAMES[frameKey] || PREMIUM_FRAMES.none;
+
+  if (frameKey === 'none' || !frameDef.css) {
+    return `
+      <div style="width: ${size}px; height: ${size}px; border-radius: 50%; overflow: hidden; background: rgba(255,107,0,0.15); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: ${size * 0.35}px;">
+        ${avatarUrl ? `<img src="${esc(avatarUrl)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(ign)}
+      </div>
+    `;
+  }
+
+  const innerSize = size - 6;
+  return `
+    <div style="${frameDef.css} width: ${size}px; height: ${size}px; box-sizing: border-box; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+      <div style="width: ${innerSize}px; height: ${innerSize}px; border-radius: 50%; overflow: hidden; background: #111; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: ${innerSize * 0.35}px; border: 2px solid #0a0a0a;">
+        ${avatarUrl ? `<img src="${esc(avatarUrl)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(ign)}
+      </div>
+    </div>
+  `;
+}
+
+// ---------- AVATAR FRAME PICKER ----------
+function openAvatarFramePicker() {
+  const isPro = State.profile?.isPro;
+  const currentFrame = State.profile?.avatarFrame || 'none';
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-center text-xs text-gray-500">
+        ${isPro ? '👑 Pro — all frames unlocked' : 'Free — frames are Pro only'}
+      </div>
+      <div class="grid grid-cols-3 gap-3">
+        ${Object.entries(PREMIUM_FRAMES).map(([key, frame]) => {
+          const isSelected = currentFrame === key;
+          const isLocked = frame.pro && !isPro;
+          const preview = frame.css
+            ? `<div style="${frame.css} width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative;">
+                 <div style="width: 50px; height: 50px; border-radius: 50%; background: #111; display: flex; align-items: center; justify-content: center; border: 2px solid #0a0a0a; overflow: hidden;">
+                   ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width:100%;height:100%;object-fit:cover;" />` : '🐼'}
+                 </div>
+                 ${isLocked ? `<div style="position: absolute; top: -4px; right: -4px; font-size: 14px;">🔒</div>` : ''}
+               </div>`
+            : `<div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(255,107,0,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 22px;">
+                 ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />` : '🐼'}
+               </div>`;
+          return `
+            <button class="frame-pick-btn btn-press flex flex-col items-center gap-2 p-3 rounded-2xl ${isSelected ? 'bg-primary/10 border-2 border-primary' : 'bg-card border border-border'}" data-frame="${key}" data-locked="${isLocked}">
+              ${preview}
+              <span class="text-[9px] font-bold ${isSelected ? 'text-primary' : 'text-gray-400'} text-center leading-tight">${frame.name}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+      ${!isPro ? `
+        <button id="frame-upgrade" class="btn-press w-full py-3.5 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
+          👑 Unlock All Frames — Go Pro
+        </button>
+      ` : ''}
+    </div>
+  `, '✨ Avatar Frames');
+
+  document.querySelectorAll('.frame-pick-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (btn.dataset.locked === 'true') {
+        closeSheet();
+        setTimeout(() => showProPaywall('Unlock premium frames with Pro.'), 300);
+        return;
+      }
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          avatarFrame: btn.dataset.frame
+        });
+        State.profile.avatarFrame = btn.dataset.frame;
+        toast('✨ Frame applied!', 'success');
+        closeSheet();
+        if (State.currentTab === 'you') setTimeout(renderYouTab, 300);
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+      }
+    };
+  });
+
+  const upBtn = document.getElementById('frame-upgrade');
+  if (upBtn) upBtn.onclick = () => { closeSheet(); setTimeout(goPro, 300); };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- ADVANCED SETTINGS ----------
+function openAdvancedSettings() {
+  const p = State.profile || {};
+  const currentTheme = p.theme || 'amoled';
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="bg-card border border-border rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-border">
+          <div class="text-xs font-bold text-gray-400 uppercase">Appearance</div>
+        </div>
+        <div class="p-4 space-y-4">
+          <div>
+            <div class="text-sm font-semibold mb-2">App Theme</div>
+            <div class="grid grid-cols-3 gap-2">
+              <button class="theme-btn btn-press py-3 rounded-xl ${currentTheme === 'amoled' ? 'bg-primary/15 border-2 border-primary' : 'bg-cardAlt border border-border'} flex flex-col items-center gap-1" data-theme="amoled">
+                <div class="w-6 h-6 rounded-md bg-black border border-gray-700"></div>
+                <span class="text-[10px] font-bold ${currentTheme === 'amoled' ? 'text-primary' : 'text-gray-400'}">AMOLED</span>
+              </button>
+              <button class="theme-btn btn-press py-3 rounded-xl ${currentTheme === 'dark' ? 'bg-primary/15 border-2 border-primary' : 'bg-cardAlt border border-border'} flex flex-col items-center gap-1" data-theme="dark">
+                <div class="w-6 h-6 rounded-md bg-[#1a1a1a] border border-gray-700"></div>
+                <span class="text-[10px] font-bold ${currentTheme === 'dark' ? 'text-primary' : 'text-gray-400'}">Dark</span>
+              </button>
+              <button class="theme-btn btn-press py-3 rounded-xl ${currentTheme === 'light' ? 'bg-primary/15 border-2 border-primary' : 'bg-cardAlt border border-border'} flex flex-col items-center gap-1" data-theme="light">
+                <div class="w-6 h-6 rounded-md bg-white border border-gray-300"></div>
+                <span class="text-[10px] font-bold ${currentTheme === 'light' ? 'text-primary' : 'text-gray-400'}">Light</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Show Online Status</div>
+              <div class="text-[10px] text-gray-500">Friends see when you're online</div>
+            </div>
+            <div class="toggle ${p.showOnline !== false ? 'on' : ''}" id="set-online"></div>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Compact Mode</div>
+              <div class="text-[10px] text-gray-500">Smaller cards, more content</div>
+            </div>
+            <div class="toggle ${p.compactMode ? 'on' : ''}" id="set-compact"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-border">
+          <div class="text-xs font-bold text-gray-400 uppercase">Privacy</div>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Private Profile</div>
+              <div class="text-[10px] text-gray-500">Only friends can see your stats</div>
+            </div>
+            <div class="toggle ${p.privateProfile ? 'on' : ''}" id="set-private"></div>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Hide from Leaderboards</div>
+              <div class="text-[10px] text-gray-500">Don't show in contributor list</div>
+            </div>
+            <div class="toggle ${p.hideLeaderboard ? 'on' : ''}" id="set-hide-lb"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-border">
+          <div class="text-xs font-bold text-gray-400 uppercase">Content</div>
+        </div>
+        <div class="p-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold">Auto-play Clips</div>
+              <div class="text-[10px] text-gray-500">Play videos on scroll</div>
+            </div>
+            <div class="toggle ${p.autoPlay !== false ? 'on' : ''}" id="set-autoplay"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl p-4">
+        <div class="text-xs font-bold text-gray-400 uppercase mb-3">App Info</div>
+        <div class="space-y-2 text-[11px]">
+          <div class="flex justify-between"><span class="text-gray-500">Version</span><span class="font-bold">${APP_VERSION}</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">Environment</span><span class="font-bold text-green-400">Production</span></div>
+          ${p.isPro ? `<div class="flex justify-between"><span class="text-gray-500">Account</span><span class="font-bold text-gold">👑 Pro Member</span></div>` : ''}
+        </div>
+      </div>
+
+      <button id="set-save" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+        Save Preferences
+      </button>
+    </div>
+  `, '⚙️ Advanced Settings');
+
+  let selectedTheme = currentTheme;
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.onclick = () => {
+      selectedTheme = btn.dataset.theme;
+      document.querySelectorAll('.theme-btn').forEach(b => {
+        if (b === btn) {
+          b.classList.add('bg-primary/15', 'border-2', 'border-primary');
+          b.classList.remove('bg-cardAlt', 'border', 'border-border');
+          b.querySelector('span').classList.add('text-primary');
+          b.querySelector('span').classList.remove('text-gray-400');
+        } else {
+          b.classList.remove('bg-primary/15', 'border-2', 'border-primary');
+          b.classList.add('bg-cardAlt', 'border', 'border-border');
+          b.querySelector('span').classList.remove('text-primary');
+          b.querySelector('span').classList.add('text-gray-400');
+        }
+      });
+    };
+  });
+
+  ['online', 'compact', 'private', 'hide-lb', 'autoplay'].forEach(key => {
+    const el = document.getElementById('set-' + key);
+    if (el) el.onclick = () => el.classList.toggle('on');
+  });
+
+  document.getElementById('set-save').onclick = async () => {
+    try {
+      const updates = {
+        theme: selectedTheme,
+        showOnline: document.getElementById('set-online').classList.contains('on'),
+        compactMode: document.getElementById('set-compact').classList.contains('on'),
+        privateProfile: document.getElementById('set-private').classList.contains('on'),
+        hideLeaderboard: document.getElementById('set-hide-lb').classList.contains('on'),
+        autoPlay: document.getElementById('set-autoplay').classList.contains('on')
+      };
+      await updateDoc(doc(db, 'users', State.user.uid), updates);
+      State.profile = { ...State.profile, ...updates };
+
+      applyTheme(selectedTheme);
+
+      if (updates.compactMode) document.body.classList.add('compact-mode');
+      else document.body.classList.remove('compact-mode');
+
+      toast('✅ Preferences saved', 'success');
+      closeSheet();
+    } catch (e) {
+      toast('Failed: ' + e.message, 'error');
+    }
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- THEME APPLY ----------
+function applyTheme(theme) {
+  const root = document.documentElement;
+  const themes = {
+    amoled: { bg: '#050505', card: '#111111', cardAlt: '#181818', border: '#222222', text: '#ffffff', textMuted: '#888888' },
+    dark:   { bg: '#0f0f0f', card: '#1a1a1a', cardAlt: '#222222', border: '#2e2e2e', text: '#f0f0f0', textMuted: '#999999' },
+    light:  { bg: '#f5f5f5', card: '#ffffff', cardAlt: '#eeeeee', border: '#dddddd', text: '#0a0a0a', textMuted: '#666666' }
+  };
+
+  const t = themes[theme] || themes.amoled;
+
+  root.style.setProperty('--theme-bg', t.bg);
+  root.style.setProperty('--theme-card', t.card);
+  root.style.setProperty('--theme-card-alt', t.cardAlt);
+  root.style.setProperty('--theme-border', t.border);
+  root.style.setProperty('--theme-text', t.text);
+  root.style.setProperty('--theme-text-muted', t.textMuted);
+
+  document.body.style.background = t.bg;
+  document.body.style.color = t.text;
+
+  let styleEl = document.getElementById('theme-styles');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'theme-styles';
+    document.head.appendChild(styleEl);
+  }
+
+  if (theme === 'light') {
+    styleEl.textContent = `
+      body { background: ${t.bg} !important; color: ${t.text} !important; }
+      .bg-amoled { background: ${t.bg} !important; }
+      .bg-card { background: ${t.card} !important; }
+      .bg-cardAlt { background: ${t.cardAlt} !important; }
+      .border-border { border-color: ${t.border} !important; }
+      .text-white { color: ${t.text} !important; }
+      input, select, textarea { background: ${t.card} !important; color: ${t.text} !important; border-color: ${t.border} !important; }
+      .sheet { background: ${t.card} !important; }
+      #top-bar, #bottom-nav { background: ${t.bg}dd !important; border-color: ${t.border} !important; }
+    `;
+  } else if (theme === 'dark') {
+    styleEl.textContent = `
+      body { background: ${t.bg} !important; color: ${t.text} !important; }
+      .bg-amoled { background: ${t.bg} !important; }
+      .bg-card { background: ${t.card} !important; }
+      .bg-cardAlt { background: ${t.cardAlt} !important; }
+      .border-border { border-color: ${t.border} !important; }
+      input, select, textarea { background: ${t.card} !important; color: ${t.text} !important; border-color: ${t.border} !important; }
+      .sheet { background: ${t.card} !important; }
+      #top-bar, #bottom-nav { background: ${t.bg}dd !important; border-color: ${t.border} !important; }
+    `;
+  } else {
+    styleEl.textContent = '';
+  }
+
+  localStorage.setItem('codmpanda_theme', theme);
+  State.profile = { ...State.profile, theme };
+}
+
+// ---------- LOAD SAVED THEME ON START ----------
+function loadSavedTheme() {
+  const saved = localStorage.getItem('codmpanda_theme') || State.profile?.theme || 'amoled';
+  if (saved !== 'amoled') {
+    setTimeout(() => applyTheme(saved), 500);
+  }
+}
+
+setTimeout(loadSavedTheme, 1000);
+
+// Export
+window.getAvatarWithFrame = getAvatarWithFrame;
+window.openAvatarFramePicker = openAvatarFramePicker;
+window.openAdvancedSettings = openAdvancedSettings;
+window.applyTheme = applyTheme;
+window.loadSavedTheme = loadSavedTheme;
+window.PREMIUM_FRAMES = PREMIUM_FRAMES;
+
+console.log('✅ Chunk 59 loaded — Frames + Advanced Settings');
+
+/* END OF CHUNK 59 */
+// ============================================
+// Chunk 60: Post Detail + Image Zoom + Mentions
+// ============================================
+
+// ---------- IMAGE VIEWER (fullscreen zoom) ----------
+function openImageViewer(src) {
+  const existing = document.getElementById('image-viewer');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'image-viewer';
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    z-index: 2147483600;
+    background: rgba(0,0,0,0.96);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    cursor: zoom-out;
+    animation: fadeIn 0.2s ease;
+  `;
+
+  const img = document.createElement('img');
+  img.src = src;
+  img.style.cssText = `
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+  `;
+  overlay.appendChild(img);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '✕';
+  closeBtn.style.cssText = `
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 20px);
+    right: 20px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(8px);
+    border: none;
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `;
+  closeBtn.onclick = (e) => { e.stopPropagation(); overlay.remove(); };
+  overlay.appendChild(closeBtn);
+
+  overlay.onclick = () => overlay.remove();
+  document.body.appendChild(overlay);
+}
+
+// ---------- POST DETAIL VIEW ----------
+function openPostDetail(post) {
+  const isLiked = State.likedItems?.post?.[post.id] || false;
+  const isMine = post.uid === State.user.uid;
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
+          ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
+        </div>
+        <div class="flex-1 min-w-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
+          <div class="text-sm font-bold truncate">${esc(post.ign || 'Unknown')}</div>
+          <div class="text-[10px] text-gray-500">${timeAgo(post.createdAt)}</div>
+        </div>
+        ${isMine ? `
+          <button class="btn-press w-8 h-8 rounded-lg bg-cardAlt border border-border flex items-center justify-center" onclick="closeSheet()">
+            <i data-lucide="x" class="w-4 h-4 text-gray-400"></i>
+          </button>
+        ` : ''}
+      </div>
+
+      <p class="text-sm text-gray-200 whitespace-pre-wrap break-words">${esc(post.text || '')}</p>
+
+      ${post.imageUrl ? `
+        <div class="post-image-wrap" style="cursor:zoom-in;">
+          <img src="${esc(post.imageUrl)}" class="w-full rounded-xl" data-zoomable />
+        </div>
+      ` : ''}
+
+      <div class="flex items-center gap-4 pt-3 border-t border-border">
+        <button class="post-detail-like flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'} font-bold" data-id="${post.id}">
+          <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i>
+          <span>${post.likes || 0}</span>
+        </button>
+        <button class="post-detail-comment flex items-center gap-1.5 text-xs text-gray-400 font-bold" data-id="${post.id}">
+          <i data-lucide="message-circle" class="w-4 h-4"></i>
+          <span>${post.commentCount || 0}</span>
+        </button>
+        <button class="post-detail-share flex items-center gap-1.5 text-xs text-primary font-bold" data-id="${post.id}">
+          <i data-lucide="share-2" class="w-4 h-4"></i>
+          Share
+        </button>
+      </div>
+    </div>
+  `, 'Post');
+
+  setTimeout(() => {
+    const likeBtn = document.querySelector('.post-detail-like');
+    if (likeBtn) likeBtn.onclick = async () => {
+      if (typeof window.toggleLike === 'function') {
+        const nowLiked = await window.toggleLike('post', post.id, 'likes');
+        post.likes = nowLiked ? (post.likes || 0) + 1 : Math.max(0, (post.likes || 0) - 1);
+        likeBtn.querySelector('span').textContent = post.likes;
+        likeBtn.classList.toggle('text-primary', nowLiked);
+        likeBtn.querySelector('i').classList.toggle('fill-current', nowLiked);
+      } else {
+        try {
+          await updateDoc(doc(db, 'posts', post.id), { likes: increment(1) });
+          post.likes = (post.likes || 0) + 1;
+          likeBtn.querySelector('span').textContent = post.likes;
+          likeBtn.classList.add('text-primary');
+          likeBtn.querySelector('i').classList.add('fill-current');
+        } catch (err) { toast('Failed to like', 'error'); }
+      }
+    };
+
+    const commentBtn = document.querySelector('.post-detail-comment');
+    if (commentBtn) commentBtn.onclick = () => {
+      closeSheet();
+      setTimeout(() => {
+        if (typeof window.openPostComments === 'function') window.openPostComments(post.id);
+      }, 300);
+    };
+
+    const shareBtn = document.querySelector('.post-detail-share');
+    if (shareBtn) shareBtn.onclick = () => {
+      openShareSheet({
+        title: 'CODMPanda Post',
+        text: post.text || 'Check this out',
+        url: `${location.origin}/?post=${post.id}`
+      });
+    };
+
+    // Image zoom
+    document.querySelectorAll('[data-zoomable]').forEach(img => {
+      img.onclick = (e) => {
+        e.stopPropagation();
+        openImageViewer(img.src);
+      };
+    });
+
+    // Username links
+    document.querySelectorAll('[data-uid]').forEach(el => {
+      el.onclick = (e) => {
+        if (e.target.closest('button')) return;
+        e.stopPropagation();
+        const uid = el.dataset.uid;
+        if (uid && uid !== State.user.uid && typeof window.openUserProfile === 'function') {
+          window.openUserProfile(uid);
+        }
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  }, 100);
+}
+
+// ---------- POST TAP DELEGATION (on #content) ----------
+(function() {
+  const content = document.getElementById('content');
+  if (!content || content.dataset.postTapBound) return;
+  content.dataset.postTapBound = '1';
+
+  content.addEventListener('click', function(e) {
+    if (e.target.closest('#eruda, .eruda-container')) return;
+
+    const card = e.target.closest('.home-card[data-type="post"]');
+    if (!card) return;
+    if (e.target.closest('button')) return;
+    if (e.target.tagName === 'IMG') return;
+
+    const postId = card.dataset.id;
+    if (!postId) return;
+
+    e.stopPropagation();
+    e.preventDefault();
+
+    const post = (typeof homeCache !== 'undefined' && homeCache.feed ? homeCache.feed : []).find(p => p.id === postId);
+    if (post) openPostDetail(post);
+  }, false);
+})();
+
+// ---------- IMAGE ZOOM DELEGATION (on #content) ----------
+(function() {
+  const content = document.getElementById('content');
+  if (!content || content.dataset.imageZoomBound) return;
+  content.dataset.imageZoomBound = '1';
+
+  content.addEventListener('click', function(e) {
+    if (e.target.closest('#eruda, .eruda-container')) return;
+
+    const img = e.target.tagName === 'IMG' ? e.target : null;
+    if (!img) return;
+
+    const rect = img.getBoundingClientRect();
+    if (rect.width < 120 || rect.height < 120) return;
+    if (img.closest('a')) return;
+
+    e.stopPropagation();
+    e.preventDefault();
+    openImageViewer(img.src);
+  }, false);
+})();
+
+// ---------- @MENTIONS SYSTEM ----------
+let mentionFriends = [];
+let mentionDropdownEl = null;
+
+async function loadMentionFriends() {
+  if (mentionFriends.length > 0) return mentionFriends;
+  try {
+    const snap = await getDoc(doc(db, 'users', State.user.uid));
+    const data = snap.exists() ? snap.data() : {};
+    const friendUids = data.friends || [];
+
+    const friends = [];
+    for (const uid of friendUids.slice(0, 30)) {
+      try {
+        const s = await getDoc(doc(db, 'users', uid));
+        if (s.exists()) friends.push({ uid, ign: s.data().ign, avatar: s.data().avatar });
+      } catch (e) { /* skip */ }
+    }
+    mentionFriends = friends;
+    return friends;
+  } catch (e) {
+    return [];
+  }
+}
+
+function closeMentionDropdown() {
+  if (mentionDropdownEl) {
+    mentionDropdownEl.remove();
+    mentionDropdownEl = null;
+  }
+}
+
+function showMentionDropdown(inputEl, filter) {
+  closeMentionDropdown();
+
+  const matches = mentionFriends.filter(f =>
+    f.ign.toLowerCase().includes((filter || '').toLowerCase())
+  ).slice(0, 6);
+
+  if (matches.length === 0) return;
+
+  const rect = inputEl.getBoundingClientRect();
+  const dropdown = document.createElement('div');
+  dropdown.className = 'mention-dropdown';
+  dropdown.style.cssText = `
+    position: fixed;
+    bottom: ${window.innerHeight - rect.top + 8}px;
+    left: 16px;
+    right: 16px;
+    max-width: 400px;
+    margin: 0 auto;
+    background: #0a0a0a;
+    border: 1px solid #FF6B00;
+    border-radius: 16px;
+    padding: 8px;
+    z-index: 10000;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
+    max-height: 240px;
+    overflow-y: auto;
+  `;
+
+  dropdown.innerHTML = matches.map(f => `
+    <button class="mention-opt w-full flex items-center gap-2 p-2 rounded-lg hover:bg-primary/10 text-left" data-ign="${esc(f.ign)}">
+      <div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
+        ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
+      </div>
+      <span class="text-xs font-bold text-white flex-1">@${esc(f.ign)}</span>
+    </button>
+  `).join('');
+
+  document.body.appendChild(dropdown);
+  mentionDropdownEl = dropdown;
+
+  dropdown.querySelectorAll('.mention-opt').forEach(btn => {
+    btn.onclick = () => {
+      insertMention(inputEl, btn.dataset.ign);
+      closeMentionDropdown();
+    };
+  });
+}
+
+function insertMention(inputEl, ign) {
+  const value = inputEl.value;
+  const cursorPos = inputEl.selectionStart || value.length;
+  const beforeCursor = value.slice(0, cursorPos);
+  const atIndex = beforeCursor.lastIndexOf('@');
+  if (atIndex === -1) return;
+
+  const before = value.slice(0, atIndex);
+  const after = value.slice(cursorPos);
+  const newValue = before + '@' + ign + ' ' + after;
+
+  inputEl.value = newValue;
+  inputEl.focus();
+  const newCursor = atIndex + ign.length + 2;
+  inputEl.setSelectionRange(newCursor, newCursor);
+}
+
+function setupMentionListener(inputEl) {
+  if (!inputEl || inputEl.dataset.mentionSetup) return;
+  inputEl.dataset.mentionSetup = '1';
+
+  inputEl.addEventListener('input', async (e) => {
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart || value.length;
+    const beforeCursor = value.slice(0, cursorPos);
+    const atIndex = beforeCursor.lastIndexOf('@');
+
+    if (atIndex === -1) {
+      closeMentionDropdown();
+      return;
+    }
+
+    const afterAt = beforeCursor.slice(atIndex + 1);
+    if (afterAt.includes(' ') || afterAt.includes('\n')) {
+      closeMentionDropdown();
+      return;
+    }
+
+    await loadMentionFriends();
+    showMentionDropdown(inputEl, afterAt);
+  });
+
+  inputEl.addEventListener('blur', () => {
+    setTimeout(closeMentionDropdown, 200);
+  });
+}
+
+// ---------- MENTION NOTIFICATIONS ----------
+async function notifyMentions(text, sourceType, sourceId) {
+  try {
+    const mentionRegex = /@([A-Za-z0-9_]{2,24})/g;
+    const mentions = new Set();
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+      mentions.add(match[1]);
+    }
+    if (mentions.size === 0) return;
+
+    await loadMentionFriends();
+
+    for (const ign of mentions) {
+      const friend = mentionFriends.find(f => f.ign.toLowerCase() === ign.toLowerCase());
+      if (!friend) continue;
+      if (friend.uid === State.user.uid) continue;
+
+      if (typeof window.sendNotificationToUser === 'function') {
+        try {
+          await window.sendNotificationToUser(
+            friend.uid,
+            `💬 ${State.profile.ign} mentioned you`,
+            text.length > 80 ? text.slice(0, 80) + '...' : text,
+            { type: 'mention', sourceType, sourceId }
+          );
+        } catch (e) { /* silent */ }
+      }
+    }
+  } catch (e) {
+    console.warn('Mention notify error:', e);
+  }
+}
+
+// Export
+window.openPostDetail = openPostDetail;
+window.openImageViewer = openImageViewer;
+window.setupMentionListener = setupMentionListener;
+window.loadMentionFriends = loadMentionFriends;
+window.notifyMentions = notifyMentions;
+
+console.log('✅ Chunk 60 loaded — Post Detail + Zoom + Mentions');
+
+/* END OF CHUNK 60 */
+// ============================================
+// Chunk 61: Reactions (❤️🔥💀🎯👑) + Long Press
+// ============================================
+
+const REACTIONS = [
+  { key: 'heart',  emoji: '❤️', label: 'Like',   pro: false },
+  { key: 'fire',   emoji: '🔥', label: 'Fire',   pro: false },
+  { key: 'skull',  emoji: '💀', label: 'Dead',   pro: false },
+  { key: 'clutch', emoji: '🎯', label: 'Clutch', pro: true  },
+  { key: 'crown',  emoji: '👑', label: 'Crown',  pro: true  }
+];
+
+const userReactionCache = {};
+
+function reactionEmoji(key) {
+  const r = REACTIONS.find(x => x.key === key);
+  return r ? r.emoji : '❤️';
+}
+
+function getCollectionForType(itemType) {
+  return itemType === 'vault'   ? 'vaults'   :
+         itemType === 'clip'    ? 'clips'    :
+         itemType === 'leak'    ? 'leaks'    :
+         itemType === 'post'    ? 'posts'    :
+         itemType === 'comment' ? 'comments' :
+         itemType === 'lobby'   ? 'lobbies'  : 'vaults';
+}
+
+function guessItemType(btn) {
+  if (btn.dataset.type) return btn.dataset.type;
+  if (btn.classList.contains('post-like-btn')) return 'post';
+  if (btn.classList.contains('home-like-btn')) return btn.dataset.type || 'lobby';
+  if (btn.classList.contains('like-btn')) return 'vault';
+  if (btn.classList.contains('like-clip')) return 'clip';
+  if (btn.classList.contains('hype-leak')) return 'leak';
+  return null;
+}
+
+async function getUserReaction(itemType, itemId) {
+  const cacheKey = `${itemType}_${itemId}`;
+  if (userReactionCache[cacheKey] !== undefined) {
+    return userReactionCache[cacheKey];
+  }
+  if (!State.user) return null;
+  try {
+    const ref = doc(db, 'likes', `${itemType}_${itemId}_${State.user.uid}`);
+    const snap = await getDoc(ref);
+    const reaction = snap.exists() ? (snap.data().reaction || 'heart') : null;
+    userReactionCache[cacheKey] = reaction;
+    return reaction;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function adjustReactionCount(itemType, itemId, reactionKey, delta) {
+  const collectionName = getCollectionForType(itemType);
+  const legacyField = reactionKey === 'heart' ? 'likes' :
+                      reactionKey === 'fire'  ? 'hypes' : null;
+
+  try {
+    const updates = {};
+    updates[`reactions.${reactionKey}`] = increment(delta);
+    if (legacyField) updates[legacyField] = increment(delta);
+    await updateDoc(doc(db, collectionName, itemId), updates);
+  } catch (e) {
+    try {
+      const updates = {};
+      updates[`reactions.${reactionKey}`] = Math.max(0, delta);
+      if (legacyField) updates[legacyField] = Math.max(0, delta);
+      await updateDoc(doc(db, collectionName, itemId), updates);
+    } catch (e2) {
+      console.warn('adjustReactionCount failed:', e2);
+    }
+  }
+}
+
+async function reactToItem(itemType, itemId, reactionKey) {
+  if (!State.user) return null;
+
+  const reactionDef = REACTIONS.find(r => r.key === reactionKey);
+  if (reactionDef && reactionDef.pro && !State.profile?.isPro) {
+    toast('👑 Pro reaction — upgrade to unlock', 'warning', 2000);
+    return null;
+  }
+
+  const likeRef = doc(db, 'likes', `${itemType}_${itemId}_${State.user.uid}`);
+  const cacheKey = `${itemType}_${itemId}`;
+  const prevReaction = userReactionCache[cacheKey] || null;
+
+  try {
+    if (prevReaction === reactionKey) {
+      await deleteDoc(likeRef);
+      userReactionCache[cacheKey] = null;
+      await adjustReactionCount(itemType, itemId, reactionKey, -1);
+      return { action: 'removed', reaction: null };
+    }
+
+    await setDoc(likeRef, {
+      itemType,
+      itemId,
+      userId: State.user.uid,
+      reaction: reactionKey,
+      createdAt: serverTimestamp()
+    });
+
+    if (prevReaction && prevReaction !== reactionKey) {
+      await adjustReactionCount(itemType, itemId, prevReaction, -1);
+    }
+
+    userReactionCache[cacheKey] = reactionKey;
+    await adjustReactionCount(itemType, itemId, reactionKey, 1);
+    return { action: 'added', reaction: reactionKey };
+  } catch (e) {
+    console.error('reactToItem error:', e);
+    return null;
+  }
+}
+
+// ---------- REACTION PICKER ----------
+function openReactionPicker(itemType, itemId, onPicked) {
+  const isPro = State.profile?.isPro;
+
+  getUserReaction(itemType, itemId).then(currentReaction => {
+    openSheet(`
+      <div class="space-y-4">
+        <div class="text-center text-xs text-gray-500">
+          ${isPro ? '👑 Pro — all 5 reactions unlocked' : 'Free — 3 reactions · Pro unlocks 5'}
+        </div>
+        <div class="grid grid-cols-5 gap-2">
+          ${REACTIONS.map(r => {
+            const locked = r.pro && !isPro;
+            const active = currentReaction === r.key;
+            return `
+              <button class="reaction-pick-btn flex flex-col items-center gap-1 p-3 rounded-2xl ${active ? 'bg-primary/15 border-2 border-primary' : locked ? 'bg-card/50 border border-border opacity-60' : 'bg-card border border-border'}" data-key="${r.key}" data-locked="${locked}">
+                <span class="text-2xl">${r.emoji}</span>
+                <span class="text-[9px] font-bold ${active ? 'text-primary' : 'text-gray-400'}">${r.label}</span>
+                ${locked ? '<span class="text-[8px] text-gold font-black">👑</span>' : ''}
+              </button>
+            `;
+          }).join('')}
+        </div>
+        ${!isPro ? `
+          <button id="reaction-upgrade" class="btn-press w-full py-3 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
+            👑 Unlock All 5 — Go Pro
+          </button>
+        ` : ''}
+        <button id="reaction-cancel" class="text-xs text-gray-500 w-full pt-2">Cancel</button>
+      </div>
+    `, 'React');
+
+    document.querySelectorAll('.reaction-pick-btn').forEach(btn => {
+      btn.onclick = async () => {
+        if (btn.dataset.locked === 'true') {
+          closeSheet();
+          setTimeout(() => showProPaywall('Unlock all 5 reactions with Pro.'), 300);
+          return;
+        }
+        const key = btn.dataset.key;
+        closeSheet();
+        if (onPicked) onPicked(key);
+      };
+    });
+
+    const upBtn = document.getElementById('reaction-upgrade');
+    if (upBtn) upBtn.onclick = () => { closeSheet(); setTimeout(goPro, 300); };
+
+    const cancelBtn = document.getElementById('reaction-cancel');
+    if (cancelBtn) cancelBtn.onclick = closeSheet;
+
+    if (window.lucide) window.lucide.createIcons();
+  });
+}
+
+async function applyReaction(btn, itemType, itemId, reactionKey) {
+  const result = await reactToItem(itemType, itemId, reactionKey);
+  if (!result) return;
+
+  const emoji = result.reaction ? reactionEmoji(result.reaction) : '❤️';
+  const isLiked = !!result.reaction;
+
+  const currentText = btn.textContent.replace(/[^0-9]/g, '');
+  let currentCount = parseInt(currentText) || 0;
+  if (result.action === 'removed') currentCount = Math.max(0, currentCount - 1);
+  else currentCount = currentCount + 1;
+
+  btn.innerHTML = `<i data-lucide="${result.reaction === 'fire' ? 'flame' : 'heart'}" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i> ${emoji} ${currentCount}`;
+  btn.classList.toggle('text-primary', isLiked);
+  btn.classList.toggle('text-gray-400', !isLiked);
+
+  if (window.lucide) window.lucide.createIcons();
+
+  toast(result.action === 'removed' ? 'Reaction removed' : `${emoji} Reacted`, 'success', 1200);
+
+  if (!State.likedItems) State.likedItems = {};
+  if (!State.likedItems[itemType]) State.likedItems[itemType] = {};
+  State.likedItems[itemType][itemId] = isLiked;
+}
+
+// ---------- LONG-PRESS HANDLER (on #content) ----------
+(function() {
+  const content = document.getElementById('content');
+  if (!content || content.dataset.reactionsBound) return;
+  content.dataset.reactionsBound = '1';
+
+  const pressState = { timer: null, longPressed: false, targetBtn: null };
+
+  function clearPress() {
+    if (pressState.timer) clearTimeout(pressState.timer);
+    pressState.timer = null;
+    pressState.targetBtn = null;
+  }
+
+  function findReactionButton(el) {
+    if (!el || !el.closest) return null;
+    const btn = el.closest('.home-like-btn, .like-btn, .like-clip, .hype-leak, .post-like-btn');
+    if (!btn || !btn.dataset.id) return null;
+    return btn;
+  }
+
+  function startPress(btn) {
+    pressState.longPressed = false;
+    pressState.targetBtn = btn;
+    pressState.timer = setTimeout(() => {
+      pressState.longPressed = true;
+      const itemType = guessItemType(btn);
+      const itemId = btn.dataset.id;
+      if (!itemType || !itemId) return;
+
+      openReactionPicker(itemType, itemId, async (reactionKey) => {
+        await applyReaction(btn, itemType, itemId, reactionKey);
+      });
+    }, 500);
+  }
+
+  content.addEventListener('touchstart', (e) => {
+    if (e.target.closest('#eruda, .eruda-container')) return;
+    const btn = findReactionButton(e.target);
+    if (!btn) return;
+    startPress(btn);
+  }, { passive: true });
+
+  content.addEventListener('touchend', clearPress);
+  content.addEventListener('touchcancel', clearPress);
+
+  content.addEventListener('mousedown', (e) => {
+    if (e.target.closest('#eruda, .eruda-container')) return;
+    const btn = findReactionButton(e.target);
+    if (!btn) return;
+    startPress(btn);
+  });
+
+  content.addEventListener('mouseup', clearPress);
+  content.addEventListener('mouseleave', clearPress);
+
+  content.addEventListener('click', (e) => {
+    if (pressState.longPressed) {
+      e.stopPropagation();
+      e.preventDefault();
+      pressState.longPressed = false;
+    }
+  }, true);
+})();
+
+// ---------- PREFETCH USER REACTIONS ----------
+setTimeout(async () => {
+  if (!State.user) return;
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'likes'),
+      where('userId', '==', State.user.uid),
+      limit(500)
+    ));
+    snap.forEach(d => {
+      const data = d.data();
+      if (data.itemType && data.itemId) {
+        userReactionCache[`${data.itemType}_${data.itemId}`] = data.reaction || 'heart';
+      }
+    });
+    console.log('[61] Prefetched', snap.size, 'user reactions');
+  } catch (e) {
+    console.warn('[61] Prefetch failed:', e);
+  }
+}, 4000);
+
+// Export
+window.reactToItem = reactToItem;
+window.openReactionPicker = openReactionPicker;
+window.REACTIONS = REACTIONS;
+
+console.log('✅ Chunk 61 loaded — Reactions + Long Press');
+
+/* END OF CHUNK 61 */
+// ============================================
+// Chunk 62: Profile Share Card
+// ============================================
+
+// ---------- CANVAS HELPERS ----------
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawInitials(ctx, name, x, y, r) {
+  const initials = getInitials(name);
+  ctx.fillStyle = '#FF6B00';
+  ctx.font = `bold ${r}px Inter, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(initials, x, y);
+  ctx.textBaseline = 'alphabetic';
+}
+
+function truncateText(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let truncated = text;
+  while (ctx.measureText(truncated + '...').width > maxWidth && truncated.length > 0) {
+    truncated = truncated.slice(0, -1);
+  }
+  return truncated + '...';
+}
+
+// ---------- GENERATE PROFILE CARD ----------
+async function generateProfileCard() {
+  const p = State.profile || {};
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  const W = 1080;
+  const H = 1920;
+  canvas.width = W;
+  canvas.height = H;
+
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, 0, W, H);
+
+  const grad1 = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, 900);
+  grad1.addColorStop(0, 'rgba(255, 107, 0, 0.35)');
+  grad1.addColorStop(1, 'rgba(255, 107, 0, 0)');
+  ctx.fillStyle = grad1;
+  ctx.fillRect(0, 0, W, 900);
+
+  const grad2 = ctx.createRadialGradient(W / 2, H, 0, W / 2, H, 800);
+  grad2.addColorStop(0, 'rgba(255, 215, 0, 0.25)');
+  grad2.addColorStop(1, 'rgba(255, 215, 0, 0)');
+  ctx.fillStyle = grad2;
+  ctx.fillRect(0, H - 800, W, 800);
+
+  ctx.strokeStyle = p.isPro ? '#FFD700' : '#222';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(20, 20, W - 40, H - 40);
+
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 52px Inter, sans-serif';
+  ctx.fillStyle = '#FF6B00';
+  ctx.fillText('CODMPanda', W / 2, 140);
+
+  ctx.font = '500 26px Inter, sans-serif';
+  ctx.fillStyle = '#666';
+  ctx.fillText('The Ultimate CODM Companion', W / 2, 190);
+
+  const avatarY = 420;
+  const avatarR = 140;
+
+  if (p.isPro) {
+    const avatarGrad = ctx.createLinearGradient(W / 2 - avatarR, avatarY - avatarR, W / 2 + avatarR, avatarY + avatarR);
+    avatarGrad.addColorStop(0, '#FFD700');
+    avatarGrad.addColorStop(0.5, '#FFF176');
+    avatarGrad.addColorStop(1, '#FFD700');
+    ctx.fillStyle = avatarGrad;
+    ctx.beginPath();
+    ctx.arc(W / 2, avatarY, avatarR + 12, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = '#FF6B00';
+    ctx.beginPath();
+    ctx.arc(W / 2, avatarY, avatarR + 8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.arc(W / 2, avatarY, avatarR, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (p.avatar) {
+    try {
+      const img = await loadImage(p.avatar);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(W / 2, avatarY, avatarR, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(img, W / 2 - avatarR, avatarY - avatarR, avatarR * 2, avatarR * 2);
+      ctx.restore();
+    } catch (e) {
+      drawInitials(ctx, p.ign, W / 2, avatarY, avatarR);
+    }
+  } else {
+    drawInitials(ctx, p.ign, W / 2, avatarY, avatarR);
+  }
+
+  if (p.isPro) {
+    ctx.font = 'bold 90px Inter, sans-serif';
+    ctx.fillText('👑', W / 2 + 115, avatarY - 85);
+  }
+
+  ctx.font = 'bold 72px Inter, sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(truncateText(ctx, p.ign || 'Panda Player', W - 100), W / 2, 700);
+
+  ctx.font = '500 32px Inter, sans-serif';
+  ctx.fillStyle = '#888';
+  ctx.fillText(`${p.rank || 'Rookie'} • ${p.region || 'Global'}`, W / 2, 760);
+
+  if (p.isPro) {
+    const proText = '👑 PRO MEMBER';
+    ctx.font = 'bold 30px Inter, sans-serif';
+    const proW = ctx.measureText(proText).width + 60;
+    const proX = W / 2 - proW / 2;
+    const proY = 810;
+    ctx.fillStyle = '#FFD700';
+    roundRect(ctx, proX, proY, proW, 60, 30);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.fillText(proText, W / 2, proY + 42);
+  }
+
+  const statY = 980;
+  const boxW = 300;
+  const boxH = 180;
+  const gap = 20;
+  const totalW = boxW * 3 + gap * 2;
+  const startX = (W - totalW) / 2;
+
+  let vaultCount = State.cache.myVaultCount || 0;
+  let camoPct = State.cache.myCamoPct || 0;
+  const approved = p.approvedCount || 0;
+
+  const stats = [
+    { value: vaultCount.toString(), label: 'VAULTS' },
+    { value: camoPct + '%', label: 'CAMOS' },
+    { value: approved.toString(), label: 'APPROVED' }
+  ];
+
+  stats.forEach((stat, i) => {
+    const x = startX + (boxW + gap) * i;
+    ctx.fillStyle = 'rgba(20, 20, 20, 0.9)';
+    roundRect(ctx, x, statY, boxW, boxH, 24);
+    ctx.fill();
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = 'bold 64px Inter, sans-serif';
+    ctx.fillStyle = i === 1 ? '#FFD700' : '#FF6B00';
+    ctx.textAlign = 'center';
+    ctx.fillText(stat.value, x + boxW / 2, statY + 100);
+
+    ctx.font = '600 20px Inter, sans-serif';
+    ctx.fillStyle = '#666';
+    ctx.fillText(stat.label, x + boxW / 2, statY + 145);
+  });
+
+  const badges = p.badges || [];
+  if (badges.length > 0) {
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 32px Inter, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('CONTRIBUTOR BADGES', W / 2, 1300);
+
+    const badgeEmojis = { first_leak: '🥉', rising: '🥈', legend: '🥇', elite: '💎' };
+    const badgeLabels = { first_leak: 'First Leak', rising: 'Rising', legend: 'Legend', elite: 'Elite' };
+    const badgeW = 200;
+    const badgeGap = 30;
+    const totalBadgeW = badges.length * badgeW + (badges.length - 1) * badgeGap;
+    const badgeStartX = (W - totalBadgeW) / 2;
+    const badgeY = 1340;
+
+    badges.forEach((b, i) => {
+      const x = badgeStartX + (badgeW + badgeGap) * i;
+      ctx.fillStyle = 'rgba(255, 215, 0, 0.1)';
+      roundRect(ctx, x, badgeY, badgeW, 160, 20);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.font = 'bold 70px Inter, sans-serif';
+      ctx.fillText(badgeEmojis[b] || '⭐', x + badgeW / 2, badgeY + 95);
+
+      ctx.font = '600 18px Inter, sans-serif';
+      ctx.fillStyle = '#FFD700';
+      ctx.fillText(badgeLabels[b] || 'Badge', x + badgeW / 2, badgeY + 135);
+    });
+  }
+
+  const taglineY = badges.length > 0 ? 1720 : 1450;
+  ctx.textAlign = 'center';
+  ctx.font = 'italic 400 30px Inter, sans-serif';
+  ctx.fillStyle = '#888';
+  ctx.fillText('"Find squads. Track camos. Dominate."', W / 2, taglineY);
+
+  ctx.font = 'bold 36px Inter, sans-serif';
+  ctx.fillStyle = '#FF6B00';
+  ctx.fillText('codmpanda.pages.dev', W / 2, 1810);
+
+  ctx.font = '500 22px Inter, sans-serif';
+  ctx.fillStyle = '#444';
+  ctx.fillText('Join the ultimate CODM companion', W / 2, 1855);
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/png', 0.95);
+  });
+}
+
+// ---------- SHARE PROFILE CARD ----------
+async function shareProfileCard() {
+  try {
+    openSheet(`
+      <div class="text-center py-12 space-y-3">
+        <div class="spinner mx-auto" style="width: 40px; height: 40px; border-width: 3px;"></div>
+        <div class="text-sm font-bold">Generating your card...</div>
+        <div class="text-[10px] text-gray-500">This takes a few seconds</div>
+      </div>
+    `, '🎨 Profile Card');
+
+    await new Promise(r => setTimeout(r, 50));
+
+    const blob = await generateProfileCard();
+    const file = new File([blob], 'codmpanda-profile.png', { type: 'image/png' });
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: 'My CODMPanda Profile',
+          text: `Check out my CODMPanda profile! ${State.profile.ign} · ${State.profile.rank}`
+        });
+        toast('Shared!', 'success');
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+      }
+    }
+
+    const url = URL.createObjectURL(blob);
+
+    openSheet(`
+      <div class="space-y-4">
+        <div class="text-center">
+          <div class="text-sm font-bold mb-2">Your Profile Card</div>
+          <div class="text-xs text-gray-500 mb-3">Long-press to save, or use buttons below</div>
+        </div>
+        <img src="${url}" class="w-full rounded-2xl border border-border" />
+        <div class="grid grid-cols-2 gap-2">
+          <a href="${url}" download="codmpanda-profile.png" class="btn-press py-3 rounded-xl bg-primary font-bold text-sm text-center text-white">
+            ⬇️ Save Image
+          </a>
+          <button id="share-card-fallback" class="btn-press py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">
+            📤 Share
+          </button>
+        </div>
+        <button onclick="closeSheet()" class="text-xs text-gray-500 w-full">Close</button>
+      </div>
+    `, 'Share Profile Card');
+
+    document.getElementById('share-card-fallback').onclick = async () => {
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'My CODMPanda Profile',
+            text: `Check out my profile: ${State.profile.ign}`,
+            url: location.origin
+          });
+        } catch (e) { /* cancelled */ }
+      } else {
+        copyText(location.origin, 'Link copied!');
+      }
+    };
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Profile card error:', e);
+    toast('Failed to create card: ' + e.message, 'error');
+  }
+}
+
+// Export
+window.generateProfileCard = generateProfileCard;
+window.shareProfileCard = shareProfileCard;
+
+console.log('✅ Chunk 62 loaded — Profile Share Card');
+
+/* END OF CHUNK 62 */
+// ============================================
+// Chunk 63: Pro Payments (Lemon Squeezy)
+// ============================================
+
+const PAYMENT_LINKS = {
+  lemonMonthly: "https://codmpanda.lemonsqueezy.com/checkout/buy/5213aceb-052a-415f-aec4-4f5167c91d5d",
+  lemonLifetime: "https://codmpanda.lemonsqueezy.com/checkout/buy/5a5be449-8af9-4f09-88c5-da31131e6bac"
+};
+
+// ---------- UPGRADE SHEET ----------
+function openUpgradeSheet() {
+  const p = State.profile || {};
+  if (p.isPro) { showManagePro(); return; }
+
+  openSheet(`
+    <div class="text-center space-y-4">
+      <div class="text-5xl">👑</div>
+      <div>
+        <h3 class="text-xl font-black text-gold glow-text-gold mb-1">CODMPanda Pro</h3>
+        <p class="text-xs text-gray-400">Unlock everything. Support the app.</p>
+      </div>
+    </div>
+
+    <div class="bg-black/40 border border-gold/30 rounded-2xl p-4 mt-4 mb-4">
+      <div class="text-xs text-gray-300 space-y-2">
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Unlimited vault builds</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Full camo tracker</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Create & lead clans</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Pin your LFG posts</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Instant leak alerts</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Zero ads, forever</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Gold crown badge 👑</div>
+      </div>
+    </div>
+
+    <div class="bg-gradient-to-br from-gold/10 to-black border border-gold/50 rounded-2xl p-4 mb-3 relative overflow-hidden">
+      <div class="absolute top-2 right-2 text-[8px] px-1.5 py-0.5 rounded bg-gold text-black font-black z-10">BEST VALUE</div>
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-black text-gold">Lifetime</div>
+          <div class="text-[10px] text-gray-400">Pay once, Pro forever</div>
+        </div>
+        <div class="text-right">
+          <div class="text-2xl font-black text-gold glow-text-gold mt-4">$9.99</div>
+          <div class="text-[10px] text-gray-500">one-time</div>
+        </div>
+      </div>
+      <button id="buy-lifetime-btn" class="btn-press w-full py-3.5 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold">
+        Unlock Lifetime →
+      </button>
+    </div>
+
+    <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-black">Monthly</div>
+          <div class="text-[10px] text-gray-500">Cancel anytime</div>
+        </div>
+        <div class="text-right">
+          <div class="text-xl font-black">$1.99</div>
+          <div class="text-[10px] text-gray-500">/ month</div>
+        </div>
+      </div>
+      <button id="buy-monthly-btn" class="btn-press w-full py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">
+        Subscribe Monthly →
+      </button>
+    </div>
+
+    <div class="text-[10px] text-gray-600 text-center">
+      🔒 Secure payment via Lemon Squeezy<br>
+      Cards · Apple Pay · Google Pay · PayPal
+    </div>
+
+    <div class="text-[10px] text-gray-600 text-center mt-3">
+      Your Pro activates automatically within 1 minute
+    </div>
+  `, 'Upgrade to Pro');
+
+  document.getElementById('buy-lifetime-btn').onclick = () => startPayment('lemonLifetime');
+  document.getElementById('buy-monthly-btn').onclick = () => startPayment('lemonMonthly');
+}
+
+// ---------- START PAYMENT ----------
+function startPayment(type) {
+  const url = PAYMENT_LINKS[type];
+  if (!url) { toast('Payment link missing', 'error'); return; }
+
+  const email = State.user.email || '';
+  const uid = State.user.uid;
+
+  const sep = url.includes('?') ? '&' : '?';
+  const finalUrl = url +
+    sep + 'checkout[email]=' + encodeURIComponent(email) +
+    '&checkout[custom][uid]=' + encodeURIComponent(uid);
+
+  toast('Opening checkout...', 'info', 1500);
+  window.open(finalUrl, '_blank');
+  closeSheet();
+  setTimeout(() => showPaymentPendingSheet(type), 500);
+}
+
+// ---------- PENDING PAYMENT SHEET ----------
+function showPaymentPendingSheet(type) {
+  const isLifetime = type === 'lemonLifetime';
+  openSheet(`
+    <div class="text-center space-y-4 py-4">
+      <div class="text-5xl">⏳</div>
+      <div>
+        <h3 class="text-lg font-black mb-1">Complete your payment</h3>
+        <p class="text-xs text-gray-400">
+          Finish checkout in the Lemon Squeezy tab. Your Pro activates automatically once payment confirms (usually 30-60 seconds).
+        </p>
+      </div>
+
+      <div class="bg-card border border-border rounded-xl p-3 text-left text-xs">
+        <div class="text-gray-400 mb-1">Order summary:</div>
+        <div class="flex justify-between">
+          <span>CODMPanda Pro ${isLifetime ? 'Lifetime' : 'Monthly'}</span>
+          <span class="font-bold text-gold">${isLifetime ? '$9.99' : '$1.99'}</span>
+        </div>
+      </div>
+
+      <button id="check-payment-btn" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary flex items-center justify-center gap-2">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i> I've paid — check now
+      </button>
+
+      <button onclick="closeSheet()" class="text-xs text-gray-500">Cancel</button>
+
+      <div class="text-[10px] text-gray-600 pt-2 border-t border-border">
+        Note: If your Pro doesn't activate instantly, it'll sync within 5 minutes.
+      </div>
+    </div>
+  `, 'Awaiting Payment');
+
+  document.getElementById('check-payment-btn').onclick = () => checkProStatus();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ---------- CHECK PRO STATUS ----------
+async function checkProStatus() {
+  try {
+    toast('Checking...', 'info', 1500);
+    const snap = await getDoc(doc(db, 'users', State.user.uid));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.isPro) {
+        State.profile = { ...State.profile, ...data };
+        toast('👑 Pro activated!', 'success', 4000);
+        closeSheet();
+        if (typeof hideAd === 'function') hideAd();
+        setTimeout(() => {
+          if (State.currentTab === 'you') renderYouTab();
+        }, 500);
+      } else {
+        toast('Not confirmed yet. Wait 30s and try again.', 'warning', 4000);
+      }
+    }
+  } catch (e) {
+    toast('Check failed: ' + e.message, 'error');
+  }
+}
+
+// Export
+window.openUpgradeSheet = openUpgradeSheet;
+window.startPayment = startPayment;
+window.checkProStatus = checkProStatus;
+
+console.log('✅ Chunk 63 loaded — Pro Payments');
+
+/* END OF CHUNK 63 */
+// ============================================
+// Chunk 64: Onboarding Tour
+// ============================================
+
+const TOUR_STEPS = [
+  { id: 'welcome', icon: '/icon-512.png', title: 'Welcome to CODMPanda', body: 'The Ultimate CODM Companion. Let me show you around in 30 seconds.', tab: null, highlight: null },
+  { id: 'play', emoji: '🎮', title: 'Find Your Squad', body: 'Post a lobby or join one. Filter by rank, mode, region. One tap opens voice chat.', tab: 'play', highlight: 'play' },
+  { id: 'lab', emoji: '🔧', title: 'Build & Share Gunsmiths', body: 'Create weapons with our visual builder. 90+ guns, live stats, one-tap copy codes.', tab: 'lab', highlight: 'lab' },
+  { id: 'squad', emoji: '🏆', title: 'Compete & Connect', body: 'Clans, tournaments, scrims, clips. Team up with players worldwide.', tab: 'squad', highlight: 'squad' },
+  { id: 'intel', emoji: '📊', title: 'Master the Meta', body: 'Community tier lists, leaks, CP calculator, map callouts.', tab: 'intel', highlight: 'intel' },
+  { id: 'you', emoji: '👑', title: 'Your Profile', body: 'Track your stats, earn badges, unlock Pro features.', tab: 'you', highlight: 'you' },
+  { id: 'ready', emoji: '🚀', title: 'You\'re all set!', body: 'Jump in and start dominating.', tab: 'play', highlight: null }
+];
+
+let tourStep = 0;
+let tourActive = false;
+
+async function startOnboardingTour() {
+  if (tourActive) return;
+  tourActive = true;
+  tourStep = 0;
+
+  let overlay = document.getElementById('tour-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tour-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    `;
+    document.body.appendChild(overlay);
+  }
+
+  if (!document.getElementById('tour-styles')) {
+    const style = document.createElement('style');
+    style.id = 'tour-styles';
+    style.textContent = `
+      #tour-overlay.active { opacity: 1; pointer-events: auto; }
+      .tour-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.88); z-index: 10000; }
+      .tour-spotlight {
+        position: fixed;
+        border-radius: 20px;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.85), 0 0 40px rgba(255, 107, 0, 0.6);
+        border: 2px solid #FF6B00;
+        z-index: 10001;
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        pointer-events: none;
+      }
+      .tour-card {
+        position: fixed;
+        left: 16px;
+        right: 16px;
+        max-width: 420px;
+        margin: 0 auto;
+        background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);
+        border: 1px solid #FF6B00;
+        border-radius: 24px;
+        padding: 24px;
+        z-index: 10002;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+        animation: tourSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      @keyframes tourSlideUp {
+        from { opacity: 0; transform: translateY(40px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  renderTourStep();
+}
+
+function renderTourStep() {
+  const overlay = document.getElementById('tour-overlay');
+  if (!overlay) return;
+
+  const step = TOUR_STEPS[tourStep];
+  if (!step) { endOnboardingTour(); return; }
+
+  if (step.tab && step.tab !== State.currentTab) {
+    switchTab(step.tab);
+  }
+
+  let targetRect = null;
+  if (step.highlight) {
+    const target = document.querySelector(`.tab-btn[data-tab="${step.highlight}"]`);
+    if (target) targetRect = target.getBoundingClientRect();
+  }
+
+  const isFirst = tourStep === 0;
+  const isLast = tourStep === TOUR_STEPS.length - 1;
+
+  overlay.innerHTML = `
+    <div class="tour-backdrop"></div>
+    ${targetRect ? `
+      <div class="tour-spotlight" style="
+        top: ${targetRect.top - 8}px;
+        left: ${targetRect.left - 8}px;
+        width: ${targetRect.width + 16}px;
+        height: ${targetRect.height + 16}px;
+      "></div>
+    ` : ''}
+    <div class="tour-card" style="
+      ${targetRect && targetRect.top > window.innerHeight / 2 ? 'top: 80px;' : 'bottom: 140px;'}
+    ">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex gap-1.5">
+          ${TOUR_STEPS.map((_, i) => `
+            <div class="h-1.5 rounded-full transition-all ${i === tourStep ? 'w-6 bg-primary' : i < tourStep ? 'w-1.5 bg-primary/50' : 'w-1.5 bg-gray-700'}"></div>
+          `).join('')}
+        </div>
+        <button id="tour-skip" class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Skip</button>
+      </div>
+
+      <div class="flex justify-center mb-4">
+        ${step.icon ? `
+          <img src="${step.icon}" alt="CODMPanda" class="w-20 h-20 rounded-2xl" style="box-shadow: 0 0 30px rgba(255, 107, 0, 0.5);" />
+        ` : `
+          <div class="text-5xl">${step.emoji}</div>
+        `}
+      </div>
+
+      <div class="text-center mb-6">
+        <div class="text-lg font-black mb-2">${esc(step.title)}</div>
+        <div class="text-xs text-gray-400 leading-relaxed max-w-[300px] mx-auto">${esc(step.body)}</div>
+      </div>
+
+      <div class="flex gap-2">
+        ${!isFirst ? `
+          <button id="tour-prev" class="btn-press flex-1 py-3 rounded-xl bg-cardAlt border border-border font-bold text-xs text-gray-300">
+            ← Back
+          </button>
+        ` : ''}
+        <button id="tour-next" class="btn-press flex-1 py-3 rounded-xl bg-gradient-to-r from-primary to-primaryDark font-black text-xs text-white ${isLast ? 'glow-primary' : ''}">
+          ${isLast ? '🚀 Start Dominating' : 'Next →'}
+        </button>
+      </div>
+    </div>
+  `;
+
+  if (window.lucide) window.lucide.createIcons();
+
+  document.getElementById('tour-next').onclick = () => {
+    if (isLast) endOnboardingTour();
+    else { tourStep++; renderTourStep(); }
+  };
+
+  const prevBtn = document.getElementById('tour-prev');
+  if (prevBtn) prevBtn.onclick = () => { if (tourStep > 0) { tourStep--; renderTourStep(); } };
+
+  document.getElementById('tour-skip').onclick = () => {
+    confirmDialog('Skip Tour?', 'You can restart it anytime from Settings.', endOnboardingTour, 'Skip', false);
+  };
+}
+
+async function endOnboardingTour() {
+  tourActive = false;
+  const overlay = document.getElementById('tour-overlay');
+  if (overlay) {
+    overlay.style.opacity = '0';
+    setTimeout(() => overlay.remove(), 300);
+  }
+
+  try {
+    await updateDoc(doc(db, 'users', State.user.uid), {
+      tourCompleted: true,
+      tourCompletedAt: serverTimestamp()
+    });
+    State.profile = { ...State.profile, tourCompleted: true };
+  } catch (e) { /* silent */ }
+
+  toast('🎉 Welcome to CODMPanda!', 'success', 3000);
+}
+
+// Export
+window.startOnboardingTour = startOnboardingTour;
+window.endOnboardingTour = endOnboardingTour;
+
+console.log('✅ Chunk 64 loaded — Onboarding Tour');
+
+/* END OF CHUNK 64 */
+// ============================================
+// Chunk 65: Admin Analytics + Custom Lobby URLs
+// ============================================
+
+// ---------- ADMIN ANALYTICS DASHBOARD ----------
+async function showAdminAnalytics() {
+  openSheet(`
+    <div class="text-center py-8">
+      <div class="spinner mx-auto mb-3"></div>
+      <div class="text-xs text-gray-500">Loading analytics...</div>
+    </div>
+  `, 'Analytics');
+
+  try {
+    const [
+      usersSnap, lobbiesSnap, vaultsSnap,
+      leakSubsSnap, vaultSubsSnap, clipSubsSnap,
+      reportsSnap, clansSnap
+    ] = await Promise.all([
+      getDocs(collection(db, 'users')),
+      getDocs(collection(db, 'lobbies')),
+      getDocs(collection(db, 'vaults')),
+      getDocs(collection(db, 'leak_submissions')),
+      getDocs(collection(db, 'vault_submissions')),
+      getDocs(collection(db, 'clip_submissions')),
+      getDocs(collection(db, 'reports')),
+      getDocs(collection(db, 'clans'))
+    ]);
+
+    const users = [];
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const weekAgo = now - 7 * dayMs;
+    const monthAgo = now - 30 * dayMs;
+
+    let proCount = 0, dau = 0, wau = 0, mau = 0, newThisWeek = 0;
+    const regionBreakdown = {};
+    const recentUsers = [];
+
+    usersSnap.forEach(d => {
+      const u = d.data();
+      users.push({ id: d.id, ...u });
+      if (u.isPro) proCount++;
+
+      const lastSeen = u.lastSeen?.seconds ? u.lastSeen.seconds * 1000 : 0;
+      const createdAt = u.createdAt?.seconds ? u.createdAt.seconds * 1000 : 0;
+
+      if (lastSeen > now - dayMs) dau++;
+      if (lastSeen > weekAgo) wau++;
+      if (lastSeen > monthAgo) mau++;
+      if (createdAt > weekAgo) newThisWeek++;
+
+      const region = u.region || 'Unknown';
+      regionBreakdown[region] = (regionBreakdown[region] || 0) + 1;
+
+      if (createdAt > monthAgo) {
+        recentUsers.push({ id: d.id, ign: u.ign, avatar: u.avatar, createdAt, region: u.region });
+      }
+    });
+
+    recentUsers.sort((a, b) => b.createdAt - a.createdAt);
+    const topRecentUsers = recentUsers.slice(0, 10);
+
+    let pendingLeaks = 0, pendingVaults = 0, pendingClips = 0;
+    leakSubsSnap.forEach(d => { if (d.data().status === 'pending') pendingLeaks++; });
+    vaultSubsSnap.forEach(d => { if (d.data().status === 'pending') pendingVaults++; });
+    clipSubsSnap.forEach(d => { if (d.data().status === 'pending') pendingClips++; });
+    const totalPending = pendingLeaks + pendingVaults + pendingClips;
+
+    let openReports = 0;
+    reportsSnap.forEach(d => {
+      const r = d.data();
+      if (r.type === 'bug' || r.type === 'feature' || r.type === 'user-report') openReports++;
+    });
+
+    const contributors = users
+      .filter(u => (u.approvedCount || 0) > 0)
+      .sort((a, b) => (b.approvedCount || 0) - (a.approvedCount || 0))
+      .slice(0, 5);
+
+    const sortedRegions = Object.entries(regionBreakdown).sort((a, b) => b[1] - a[1]);
+
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (!sheetBody) return;
+
+    sheetBody.innerHTML = `
+      <div class="space-y-4">
+        <div class="bg-card border border-primary/40 rounded-2xl p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i data-lucide="users" class="w-4 h-4 text-primary"></i>
+            <div class="text-xs font-bold text-primary uppercase">Users</div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-primary">${users.length}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Total</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-green-400">${dau}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Daily Active</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-blue-400">${wau}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Weekly Active</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-purple-400">${mau}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Monthly Active</div>
+            </div>
+          </div>
+          <div class="flex items-center justify-between mt-3 pt-3 border-t border-border">
+            <div class="text-xs text-gray-400">New this week</div>
+            <div class="text-sm font-bold text-green-400">+${newThisWeek}</div>
+          </div>
+        </div>
+
+        <div class="bg-gradient-to-br from-gold/10 to-black border border-gold/40 rounded-2xl p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i data-lucide="crown" class="w-4 h-4 text-gold"></i>
+            <div class="text-xs font-bold text-gold uppercase">Revenue</div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-gold">${proCount}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Pro Members</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-2xl font-black text-gold">$${(proCount * 1.99).toFixed(2)}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Est. Monthly</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-card border border-border rounded-2xl p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i data-lucide="database" class="w-4 h-4 text-orange-400"></i>
+            <div class="text-xs font-bold text-orange-400 uppercase">Content</div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-xl font-black text-orange-400">${lobbiesSnap.size}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Lobbies</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-xl font-black text-primary">${vaultsSnap.size}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Vaults</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-xl font-black text-blue-400">${clansSnap.size}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Clans</div>
+            </div>
+            <div class="bg-black/40 rounded-xl p-3">
+              <div class="text-xl font-black text-purple-400">${leakSubsSnap.size + vaultSubsSnap.size + clipSubsSnap.size}</div>
+              <div class="text-[10px] text-gray-500 font-bold uppercase">Total Subs</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-card border ${totalPending > 0 ? 'border-yellow-500/50' : 'border-border'} rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="inbox" class="w-4 h-4 text-yellow-400"></i>
+              <div class="text-xs font-bold text-yellow-400 uppercase">Moderation Queue</div>
+            </div>
+            ${totalPending > 0 ? `<span class="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500 text-black font-black">${totalPending}</span>` : ''}
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-gray-400">🔥 Leak submissions</span>
+              <span class="font-bold ${pendingLeaks > 0 ? 'text-yellow-400' : 'text-gray-600'}">${pendingLeaks}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-gray-400">🔧 Vault submissions</span>
+              <span class="font-bold ${pendingVaults > 0 ? 'text-yellow-400' : 'text-gray-600'}">${pendingVaults}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-gray-400">🎬 Clip submissions</span>
+              <span class="font-bold ${pendingClips > 0 ? 'text-yellow-400' : 'text-gray-600'}">${pendingClips}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs pt-2 border-t border-border">
+              <span class="text-gray-400">🐛 Bug reports</span>
+              <span class="font-bold">${openReports}</span>
+            </div>
+          </div>
+          ${totalPending > 0 ? `
+            <button id="goto-submissions-btn" class="btn-press w-full mt-3 py-2.5 rounded-xl bg-yellow-500 text-black font-bold text-xs">
+              Review Submissions →
+            </button>
+          ` : ''}
+        </div>
+
+        ${contributors.length > 0 ? `
+          <div class="bg-card border border-border rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <i data-lucide="trophy" class="w-4 h-4 text-gold"></i>
+              <div class="text-xs font-bold text-gold uppercase">Top Contributors</div>
+            </div>
+            <div class="space-y-2">
+              ${contributors.map((u, i) => {
+                const medal = ['🥇', '🥈', '🥉', '#4', '#5'][i];
+                return `
+                  <div class="flex items-center gap-2">
+                    <div class="w-6 text-center text-sm">${medal}</div>
+                    <div class="w-7 h-7 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                      ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
+                    </div>
+                    <div class="text-xs font-black text-primary">${u.approvedCount}</div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${sortedRegions.length > 0 ? `
+          <div class="bg-card border border-border rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <i data-lucide="globe" class="w-4 h-4 text-blue-400"></i>
+              <div class="text-xs font-bold text-blue-400 uppercase">By Region</div>
+            </div>
+            <div class="space-y-2">
+              ${sortedRegions.slice(0, 8).map(([region, count]) => {
+                const pct = Math.round((count / users.length) * 100);
+                return `
+                  <div>
+                    <div class="flex items-center justify-between text-[11px] mb-1">
+                      <span class="text-gray-300">${esc(region)}</span>
+                      <span class="font-bold">${count} <span class="text-gray-600">(${pct}%)</span></span>
+                    </div>
+                    <div class="progress-bar" style="height:5px;">
+                      <div class="progress-fill" style="width:${pct}%"></div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${topRecentUsers.length > 0 ? `
+          <div class="bg-card border border-border rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <i data-lucide="user-plus" class="w-4 h-4 text-green-400"></i>
+              <div class="text-xs font-bold text-green-400 uppercase">Recent Signups</div>
+            </div>
+            <div class="space-y-2">
+              ${topRecentUsers.map(u => `
+                <div class="flex items-center gap-2">
+                  <div class="w-7 h-7 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                    ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
+                    <div class="text-[10px] text-gray-500">${esc(u.region || 'Unknown')}</div>
+                  </div>
+                  <div class="text-[10px] text-gray-500">${timeAgo({ seconds: Math.floor(u.createdAt / 1000) })}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <button id="refresh-analytics-btn" class="btn-press w-full py-3 rounded-2xl bg-cardAlt border border-border font-bold text-xs">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5 inline mr-1"></i> Refresh Data
+        </button>
+      </div>
+    `;
+
+    const subsBtn = document.getElementById('goto-submissions-btn');
+    if (subsBtn) subsBtn.onclick = () => { closeSheet(); setTimeout(showAdminSubmissions, 300); };
+
+    document.getElementById('refresh-analytics-btn').onclick = () => {
+      closeSheet();
+      setTimeout(showAdminAnalytics, 300);
+    };
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Analytics error:', e);
+    const sheetBody = document.querySelector('#sheet-container .px-5');
+    if (sheetBody) {
+      sheetBody.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">Failed to load: ' + esc(e.message) + '</div>';
+    }
+  }
+}
+
+// ---------- CUSTOM LOBBY URLs (?lobby=USERNAME) ----------
+function checkCustomLobbyUrl() {
+  const params = new URLSearchParams(location.search);
+  const lobbyUser = params.get('lobby');
+  if (!lobbyUser) return;
+
+  setTimeout(async () => {
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'lobbies'),
+        where('ign', '==', lobbyUser),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+      ));
+
+      if (!snap.empty) {
+        const lobby = { id: snap.docs[0].id, ...snap.docs[0].data() };
+        const expiresAt = lobby.expiresAt?.toMillis ? lobby.expiresAt.toMillis() : (lobby.expiresAt?.seconds ? lobby.expiresAt.seconds * 1000 : Infinity);
+
+        if (expiresAt > Date.now()) {
+          openSheet(`
+            <div class="text-center space-y-4 py-4">
+              <div class="text-5xl">🎮</div>
+              <div>
+                <h3 class="text-lg font-black mb-1">${esc(lobby.ign)}'s Lobby</h3>
+                <div class="text-xs text-gray-400">${esc(lobby.mode)} · ${esc(lobby.region)} · ${lobby.players || 1}/5 players</div>
+              </div>
+              ${lobby.note ? `<div class="bg-card border border-border rounded-xl p-3 text-xs text-gray-300">${esc(lobby.note)}</div>` : ''}
+              <button id="custom-lobby-join" class="btn-press w-full py-4 rounded-2xl bg-primary font-black glow-primary">
+                🎤 Join Voice Room
+              </button>
+              <button onclick="closeSheet()" class="text-xs text-gray-500">Cancel</button>
+            </div>
+          `, '');
+          document.getElementById('custom-lobby-join').onclick = () => {
+            closeSheet();
+            setTimeout(() => joinLobby(lobby.id), 300);
+          };
+          if (window.lucide) window.lucide.createIcons();
+        } else {
+          toast('This lobby has closed', 'info');
+        }
+      } else {
+        toast('No active lobby for that user', 'info');
+      }
+    } catch (e) { /* silent */ }
+  }, 2500);
+}
+
+function getProLobbyShareUrl(lobby) {
+  if (lobby.isPro) {
+    return `${location.origin}/?lobby=${encodeURIComponent(lobby.ign)}`;
+  }
+  return `${location.origin}/?lobby=${lobby.id}`;
+}
+
+// ---------- HANDLE ADMIN ANALYTICS ACTION ----------
+const _origHandleSettingAction65 = handleSettingAction;
+window.handleSettingAction = function(action) {
+  if (action === 'admin-analytics') {
+    showAdminAnalytics();
+    return;
+  }
+  return _origHandleSettingAction65(action);
+};
+
+// Export
+window.showAdminAnalytics = showAdminAnalytics;
+window.checkCustomLobbyUrl = checkCustomLobbyUrl;
+window.getProLobbyShareUrl = getProLobbyShareUrl;
+
+console.log('✅ Chunk 65 loaded — Admin Analytics + Custom URLs');
+
+/* END OF CHUNK 65 */
+// ============================================
+// Chunk 66: New renderYouTab (base)
+// ============================================
+
+function renderYouTab() {
+  const content = document.getElementById('content');
+  const p = State.profile || {};
+  const isPro = !!p.isPro;
+
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <div class="bg-card border ${isPro ? 'border-gold glow-gold' : 'border-border'} rounded-2xl p-4 mb-4">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="relative">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-2xl overflow-hidden">
+              ${p.avatar ? `<img src="${esc(p.avatar)}" class="w-full h-full object-cover" />` : getInitials(p.ign || '?')}
+            </div>
+            ${isPro ? `<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card"><span class="text-sm">👑</span></div>` : ''}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-base font-black truncate">${esc(p.ign || 'Set IGN')}</span>
+              ${isPro ? `<span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">PRO</span>` : ''}
+            </div>
+            <div class="text-[11px] text-gray-500 mt-0.5">${esc(p.rank || 'Rookie')} · ${esc(p.region || 'Global')}</div>
+            <button id="copy-uid-btn" class="text-[10px] text-primary font-bold mt-1 flex items-center gap-1">
+              <i data-lucide="copy" class="w-3 h-3"></i> ${State.user.uid.slice(0, 16)}...
+            </button>
+          </div>
+        </div>
+        ${p.bio ? `<p class="text-xs text-gray-400 mb-2">${esc(p.bio)}</p>` : ''}
+        ${p.favGun ? `<div class="text-[11px] text-gray-500">🎯 Favourite: <span class="font-bold text-gray-300">${esc(p.favGun)}</span></div>` : ''}
+        <button id="edit-profile-btn" class="btn-press w-full mt-3 py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold">Edit Profile</button>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 mb-4">
+        <div class="bg-card border border-border rounded-2xl p-3 text-center">
+          <div id="stat-vaults" class="text-lg font-black text-primary">—</div>
+          <div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Vaults</div>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-3 text-center">
+          <div id="stat-camos" class="text-lg font-black text-gold">—</div>
+          <div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Camos</div>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-3 text-center">
+          <div id="stat-clan" class="text-lg font-black text-green-400">—</div>
+          <div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Clan</div>
+        </div>
+      </div>
+
+      ${isPro ? renderProActive(p) : renderProUpsell()}
+
+      <div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+        <div class="px-4 py-3 border-b border-border">
+          <div class="text-xs font-bold text-gray-400 uppercase">Settings</div>
+        </div>
+        <div class="divide-y divide-border">
+          ${settingsRow('edit-profile', 'user', 'Edit Profile', 'Update IGN, bio, rank')}
+          ${settingsRow('my-referral', 'gift', 'My Referral', 'Share & earn invites')}
+          ${settingsRow('notifications', 'bell', 'Notifications', 'LFG, leaks, etc.')}
+          ${settingsRow('defaults', 'sliders', 'Default Preferences', 'Region, mode, mic')}
+          ${settingsRow('clear-cache', 'trash-2', 'Clear Cache', 'Free up space')}
+          ${settingsRow('clear-camos', 'refresh-cw', 'Reset Camo Data', 'Delete your progress', true)}
+          ${settingsRow('export-data', 'download', 'Export My Data', 'Download JSON')}
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+        <div class="px-4 py-3 border-b border-border">
+          <div class="text-xs font-bold text-gray-400 uppercase">Support</div>
+        </div>
+        <div class="divide-y divide-border">
+          ${settingsRow('bug-report', 'bug', 'Report a Bug', 'Help us improve')}
+          ${settingsRow('feature-request', 'lightbulb', 'Request Feature', 'Got an idea?')}
+          ${settingsRow('share-app', 'share-2', 'Share App', 'Invite your squad')}
+          ${settingsRow('help-faq', 'help-circle', 'Help / FAQ', 'Common questions')}
+        </div>
+      </div>
+
+      ${State.user.uid === ADMIN_UID ? `
+        <div class="bg-card border border-gold/40 rounded-2xl overflow-hidden mb-4">
+          <div class="px-4 py-3 border-b border-gold/30 bg-gold/5">
+            <div class="text-xs font-bold text-gold uppercase flex items-center gap-2">
+              <i data-lucide="shield-check" class="w-4 h-4"></i> Admin Panel
+            </div>
+          </div>
+          <div class="divide-y divide-border">
+            ${settingsRow('admin-post-leak', 'zap', 'Post Leak', 'Push intel to feed')}
+            ${settingsRow('admin-reports', 'flag', 'Manage Reports', 'Review user reports')}
+            ${settingsRow('admin-users', 'users', 'List Users', 'View all users')}
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="bg-card border border-red-500/30 rounded-2xl overflow-hidden mb-4">
+        <div class="px-4 py-3 border-b border-red-500/20">
+          <div class="text-xs font-bold text-red-400 uppercase">Danger Zone</div>
+        </div>
+        <div class="divide-y divide-border">
+          <button class="settings-row w-full flex items-center justify-between px-4 py-3 text-left" data-action="logout">
+            <div class="flex items-center gap-3">
+              <i data-lucide="log-out" class="w-4 h-4 text-gray-400"></i>
+              <span class="text-sm font-semibold">Sign Out</span>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500"></i>
+          </button>
+          <button class="settings-row w-full flex items-center justify-between px-4 py-3 text-left" data-action="delete-account">
+            <div class="flex items-center gap-3">
+              <i data-lucide="user-x" class="w-4 h-4 text-red-400"></i>
+              <span class="text-sm font-semibold text-red-400">Delete Account</span>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-red-400"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="text-center py-6 space-y-2">
+        <div id="install-pwa-btn" class="hidden">
+          <button class="btn-press px-4 py-2 rounded-xl bg-primary text-xs font-bold glow-primary">📲 Install CODMPanda</button>
+        </div>
+        <div class="text-[10px] text-gray-600">Version ${APP_VERSION}</div>
+        <div class="flex items-center justify-center gap-3 text-[10px] text-gray-500">
+          <button onclick="showPrivacy()">Privacy</button>
+          <span>·</span>
+          <button onclick="showTerms()">Terms</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.querySelectorAll('.settings-row').forEach(el => {
+    el.onclick = () => handleSettingAction(el.dataset.action);
+  });
+  document.getElementById('copy-uid-btn').onclick = () => copyText(State.user.uid, 'UID copied!');
+  document.getElementById('edit-profile-btn').onclick = openEditProfileSheet;
+
+  if (!isPro) {
+    const proBtn = document.getElementById('unlock-pro-btn');
+    if (proBtn) proBtn.onclick = goPro;
+  } else {
+    const manageBtn = document.getElementById('manage-pro-btn');
+    if (manageBtn) manageBtn.onclick = showManagePro;
+  }
+
+  loadStats();
+  loadClanStat();
+  if (typeof setupPWAInstall === 'function') setupPWAInstall();
+  if (window.lucide) window.lucide.createIcons();
+
+  // Fire the injector system — this re-adds:
+  //   Contributor card, Admin submissions, Advanced settings,
+  //   Notifications card, Friends button, Tournament badge,
+  //   Share profile card, Share profile link, Theme+Frame buttons,
+  //   Activity stats, Restart tour, Admin analytics
+  if (typeof runYouTabInjectors === 'function') {
+    setTimeout(() => runYouTabInjectors(), 80);
+  }
+}
+
+// Export
+window.renderYouTab = renderYouTab;
+
+console.log('✅ Chunk 66 loaded — renderYouTab (base)');
+
+/* END OF CHUNK 66 */
+// ============================================
+// Chunk 67: YouTab Injectors Pack
+// ============================================
+
+// ---------- CONTRIBUTOR CARD HELPER ----------
+function renderContributorCard() {
+  const p = State.profile || {};
+  const count = p.approvedCount || 0;
+  const badges = p.badges || [];
+
+  const nextMilestone = count < 1 ? 1 : count < 5 ? 5 : count < 10 ? 10 : count < 25 ? 25 : null;
+  const prevMilestone = count < 1 ? 0 : count < 5 ? 1 : count < 10 ? 5 : count < 25 ? 10 : 25;
+  const progressPct = nextMilestone ? Math.round(((count - prevMilestone) / (nextMilestone - prevMilestone)) * 100) : 100;
+
+  const badgeInfo = {
+    first_leak: { emoji: '🥉', label: 'First Leak', color: 'text-orange-400' },
+    rising: { emoji: '🥈', label: 'Rising Contributor', color: 'text-blue-400' },
+    legend: { emoji: '🥇', label: 'Community Legend', color: 'text-gold' },
+    elite: { emoji: '💎', label: 'CODMPanda Elite', color: 'text-purple-400' }
+  };
+
+  return `
+    <div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+      <div class="px-4 py-3 border-b border-border">
+        <div class="text-xs font-bold text-gray-400 uppercase flex items-center gap-2">
+          <span>🏆</span> Contributor
+        </div>
+      </div>
+      <div class="p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <div class="text-2xl font-black text-primary">${count}</div>
+            <div class="text-[10px] text-gray-500 font-bold uppercase">Approved Submissions</div>
+          </div>
+          <div class="text-right">
+            ${nextMilestone ? `
+              <div class="text-[10px] text-gray-500">Next reward at <span class="font-bold text-white">${nextMilestone}</span></div>
+              <div class="text-[10px] text-gold font-bold">${nextMilestone - count} more needed</div>
+            ` : `
+              <div class="text-[10px] text-gold font-bold glow-text-gold">ALL MILESTONES HIT 👑</div>
+            `}
+          </div>
+        </div>
+        <div class="progress-bar mb-4">
+          <div class="progress-fill" style="width: ${progressPct}%"></div>
+        </div>
+        <div class="grid grid-cols-4 gap-2 mb-3">
+          ${['first_leak', 'rising', 'legend', 'elite'].map(b => {
+            const info = badgeInfo[b];
+            const unlocked = badges.includes(b);
+            return `
+              <div class="flex flex-col items-center gap-1 p-2 rounded-lg ${unlocked ? 'bg-gold/10 border border-gold/30' : 'bg-cardAlt border border-border opacity-40'}">
+                <span class="text-xl">${info.emoji}</span>
+                <span class="text-[8px] font-bold ${unlocked ? info.color : 'text-gray-500'} text-center leading-tight">${info.label}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        <div class="text-[10px] text-gray-500 text-center">
+          Submit leaks, builds, or clips → get approved → unlock rewards
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ---------- TOURNAMENT BADGE ----------
+function renderTournamentBadges() {
+  const wins = State.profile?.tournamentWins || 0;
+  if (wins === 0) return '';
+  return `
+    <div class="bg-gradient-to-r from-gold/10 to-transparent border border-gold/30 rounded-xl p-3 mb-3">
+      <div class="flex items-center gap-3">
+        <div class="text-3xl">🏆</div>
+        <div class="flex-1">
+          <div class="text-xs font-black text-gold">Tournament Champion</div>
+          <div class="text-[10px] text-gray-500">${wins} win${wins === 1 ? '' : 's'}</div>
+        </div>
+        <div class="text-lg font-black text-gold">×${wins}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ---------- ACTIVITY STATS ----------
+async function loadActivityStats() {
+  if (!State.user) return null;
+
+  try {
+    const [lobbiesSnap, vaultsSnap, postsSnap, camoSnap] = await Promise.all([
+      getDocs(query(collection(db, 'lobbies'), where('uid', '==', State.user.uid), limit(200))).catch(() => ({ size: 0, forEach: () => {} })),
+      getDocs(query(collection(db, 'vaults'), where('uid', '==', State.user.uid), limit(200))).catch(() => ({ size: 0, forEach: () => {} })),
+      getDocs(query(collection(db, 'posts'), where('uid', '==', State.user.uid), limit(200))).catch(() => ({ size: 0, forEach: () => {} })),
+      getDoc(doc(db, 'camos', State.user.uid)).catch(() => ({ exists: () => false }))
+    ]);
+
+    let camoPct = 0;
+    let camosTracked = 0;
+    if (camoSnap.exists && camoSnap.exists()) {
+      const totalPossible = ALL_GUNS.length * CAMO_TYPES.length;
+      let checked = 0;
+      Object.values(camoSnap.data()).forEach(gun => {
+        if (typeof gun === 'object') {
+          CAMO_TYPES.forEach(c => { if (gun[c.key]) checked++; });
+        }
+      });
+      camoPct = Math.round((checked / totalPossible) * 100);
+      camosTracked = checked;
+    }
+
+    let likesReceived = 0;
+    postsSnap.forEach(d => { likesReceived += (d.data().likes || 0); });
+    vaultsSnap.forEach(d => { likesReceived += (d.data().likes || 0); });
+
+    const lastActive = State.profile?.lastActiveDate || '';
+    const today = new Date().toISOString().slice(0, 10);
+    let streak = State.profile?.activeStreak || 0;
+
+    if (lastActive !== today) {
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      if (lastActive === yesterday) streak = streak + 1;
+      else streak = 1;
+
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          lastActiveDate: today,
+          activeStreak: streak
+        });
+        State.profile.lastActiveDate = today;
+        State.profile.activeStreak = streak;
+      } catch (e) { /* silent */ }
+    }
+
+    const contributorPoints = ((State.profile?.approvedCount || 0) * 10) + Math.floor(likesReceived / 2);
+
+    const weeklyActivity = [];
+    const now = Date.now();
+    for (let i = 6; i >= 0; i--) {
+      const dayStart = new Date(now - i * 24 * 60 * 60 * 1000);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+      let dayCount = 0;
+      lobbiesSnap.forEach(d => {
+        const t = (d.data().createdAt?.seconds || 0) * 1000;
+        if (t >= dayStart.getTime() && t < dayEnd.getTime()) dayCount++;
+      });
+      postsSnap.forEach(d => {
+        const t = (d.data().createdAt?.seconds || 0) * 1000;
+        if (t >= dayStart.getTime() && t < dayEnd.getTime()) dayCount++;
+      });
+
+      weeklyActivity.push({
+        day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayStart.getDay()],
+        count: dayCount
+      });
+    }
+
+    return {
+      lobbies: lobbiesSnap.size,
+      vaults: vaultsSnap.size,
+      posts: postsSnap.size,
+      camosTracked,
+      camoPct,
+      likesReceived,
+      streak,
+      contributorPoints,
+      weeklyActivity
+    };
+  } catch (e) {
+    console.error('Stats load error:', e);
+    return null;
+  }
+}
+
+function renderActivityStats(stats) {
+  if (!stats) {
+    return `<div class="bg-card border border-border rounded-2xl p-4 mb-4"><div class="text-center py-4 text-xs text-gray-500">Loading stats...</div></div>`;
+  }
+
+  const maxWeekly = Math.max(...stats.weeklyActivity.map(d => d.count), 1);
+
+  return `
+    <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="text-xs font-bold text-gray-400 uppercase">📊 Your Activity</div>
+          <div class="text-[10px] text-gray-500 mt-0.5">Your journey in CODMPanda</div>
+        </div>
+        <div class="text-right">
+          <div class="text-lg font-black text-primary">${stats.contributorPoints}</div>
+          <div class="text-[9px] text-gray-500 uppercase">Points</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 mb-4">
+        <div class="bg-cardAlt border border-border rounded-xl p-3 text-center">
+          <div class="text-lg font-black text-primary">${stats.lobbies}</div>
+          <div class="text-[9px] text-gray-500 uppercase font-bold mt-0.5">Lobbies</div>
+        </div>
+        <div class="bg-cardAlt border border-border rounded-xl p-3 text-center">
+          <div class="text-lg font-black text-primary">${stats.vaults}</div>
+          <div class="text-[9px] text-gray-500 uppercase font-bold mt-0.5">Vaults</div>
+        </div>
+        <div class="bg-cardAlt border border-border rounded-xl p-3 text-center">
+          <div class="text-lg font-black text-primary">${stats.posts}</div>
+          <div class="text-[9px] text-gray-500 uppercase font-bold mt-0.5">Posts</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 mb-4">
+        <div class="bg-gradient-to-br from-gold/10 to-transparent border border-gold/30 rounded-xl p-3">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-base">🎯</span>
+            <span class="text-[10px] text-gold uppercase font-bold">Camo Progress</span>
+          </div>
+          <div class="text-xl font-black text-gold">${stats.camoPct}%</div>
+          <div class="text-[9px] text-gray-500">${stats.camosTracked} camos tracked</div>
+        </div>
+        <div class="bg-gradient-to-br from-primary/10 to-transparent border border-primary/30 rounded-xl p-3">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-base">❤️</span>
+            <span class="text-[10px] text-primary uppercase font-bold">Likes Received</span>
+          </div>
+          <div class="text-xl font-black text-primary">${stats.likesReceived}</div>
+          <div class="text-[9px] text-gray-500">across all your posts</div>
+        </div>
+      </div>
+
+      <div class="bg-gradient-to-r from-primary/15 to-transparent border border-primary/30 rounded-xl p-3 mb-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">🔥</span>
+            <div>
+              <div class="text-xs font-bold">Active Streak</div>
+              <div class="text-[10px] text-gray-500">Consecutive days in app</div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-2xl font-black text-primary">${stats.streak}</div>
+            <div class="text-[9px] text-gray-500 uppercase">Days</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="text-[10px] text-gray-400 uppercase font-bold mb-2">This Week</div>
+        <div class="flex items-end justify-between gap-1 h-20">
+          ${stats.weeklyActivity.map(d => {
+            const height = maxWeekly > 0 ? Math.max(4, (d.count / maxWeekly) * 100) : 4;
+            return `
+              <div class="flex-1 flex flex-col items-center gap-1">
+                <div style="width:100%;height:${height}%;min-height:4px;background:${d.count > 0 ? 'linear-gradient(180deg, #FF6B00, #FFD700)' : '#1a1a1a'};border-radius:4px;"></div>
+                <span class="text-[8px] text-gray-500 font-bold">${d.day}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// INJECTOR REGISTRY — runs after renderYouTab
+// ============================================
+
+function runYouTabInjectors() {
+  const content = document.getElementById('content');
+  if (!content) return;
+  if (State.currentTab !== 'you') return;
+
+  // 1. CONTRIBUTOR CARD
+  if (!document.getElementById('contributor-card-injected')) {
+    const statsGrid = content.querySelector('.grid-cols-3');
+    if (statsGrid && statsGrid.parentElement) {
+      const card = document.createElement('div');
+      card.id = 'contributor-card-injected';
+      card.innerHTML = renderContributorCard();
+      statsGrid.parentElement.insertBefore(card.firstElementChild, statsGrid.nextSibling);
+    }
+  }
+
+  // 2. NOTIFICATIONS CARD
+  if (!document.getElementById('notif-toggle') && typeof renderNotificationsCard === 'function') {
+    const statsGrid = content.querySelector('.grid-cols-3');
+    if (statsGrid && statsGrid.parentElement) {
+      const card = document.createElement('div');
+      card.innerHTML = renderNotificationsCard();
+      statsGrid.parentElement.insertBefore(card.firstElementChild, statsGrid.nextSibling);
+
+      const toggle = document.getElementById('notif-toggle');
+      if (toggle) {
+        toggle.onclick = function() {
+          const isEnabled = State.profile && State.profile.notificationsEnabled;
+          if (isEnabled) disableNotifications();
+          else enableNotifications();
+        };
+      }
+    }
+  }
+
+  // 3. TOURNAMENT BADGE
+  if (!document.getElementById('tournament-badge-card')) {
+    const profileCard = content.querySelector('.bg-card.border.border-border.rounded-2xl');
+    if (profileCard) {
+      const badgeHTML = renderTournamentBadges();
+      if (badgeHTML) {
+        const badgeDiv = document.createElement('div');
+        badgeDiv.id = 'tournament-badge-card';
+        badgeDiv.innerHTML = badgeHTML;
+        profileCard.parentNode.insertBefore(badgeDiv.firstElementChild, profileCard.nextSibling);
+      }
+    }
+  }
+
+  // 4. FRIENDS BUTTON
+  if (!document.getElementById('open-friends-btn')) {
+    const editBtn = document.getElementById('edit-profile-btn');
+    if (editBtn) {
+      const btn = document.createElement('button');
+      btn.id = 'open-friends-btn';
+      btn.className = 'btn-press w-full mt-2 py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold flex items-center justify-center gap-2';
+      btn.innerHTML = '<span>👥</span> Friends';
+      const reqs = (State.profile?.friendRequests || []).length;
+      if (reqs > 0) {
+        btn.innerHTML += ` <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-black">${reqs}</span>`;
+      }
+      btn.onclick = showFriendsPanel;
+      editBtn.parentNode.insertBefore(btn, editBtn.nextSibling);
+    }
+  }
+
+  // 5. SHARE PROFILE CARD BUTTON
+  if (!document.getElementById('share-profile-btn')) {
+    const editBtn = document.getElementById('edit-profile-btn');
+    if (editBtn) {
+      const shareBtn = document.createElement('button');
+      shareBtn.id = 'share-profile-btn';
+      shareBtn.className = 'btn-press w-full mt-2 py-2.5 rounded-xl bg-gradient-to-r from-primary/20 to-gold/20 border border-primary/40 text-primary text-xs font-bold flex items-center justify-center gap-2';
+      shareBtn.innerHTML = '<span>📤</span> Share My Profile Card';
+      shareBtn.onclick = shareProfileCard;
+      editBtn.parentNode.insertBefore(shareBtn, editBtn.nextSibling);
+    }
+  }
+
+  // 6. COPY PROFILE LINK BUTTON
+  if (!document.getElementById('share-profile-link-btn')) {
+    const friendsBtn = document.getElementById('open-friends-btn');
+    if (friendsBtn) {
+      const btn = document.createElement('button');
+      btn.id = 'share-profile-link-btn';
+      btn.className = 'btn-press w-full mt-2 py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold flex items-center justify-center gap-2';
+      btn.innerHTML = '<span>🔗</span> Copy Profile Link';
+      btn.onclick = () => copyText(`${location.origin}/?user=${State.user.uid}`, '✅ Profile link copied!');
+      friendsBtn.parentNode.insertBefore(btn, friendsBtn.nextSibling);
+    }
+  }
+
+  // 7. THEME + FRAME BUTTONS
+  if (!document.getElementById('theme-frame-buttons')) {
+    const profileCard = content.querySelector('.bg-card.border.border-border.rounded-2xl, .bg-card.border.border-gold.rounded-2xl');
+    if (profileCard) {
+      // Apply theme
+      if (typeof PROFILE_THEMES !== 'undefined') {
+        const theme = PROFILE_THEMES[State.profile?.themeStyle || 'dark'] || PROFILE_THEMES.dark;
+        if (theme !== PROFILE_THEMES.dark) {
+          profileCard.style.background = theme.gradient;
+          profileCard.style.borderColor = theme.border;
+          profileCard.style.boxShadow = theme.glow;
+        }
+      }
+
+      const btnContainer = document.createElement('div');
+      btnContainer.id = 'theme-frame-buttons';
+      btnContainer.className = 'grid grid-cols-2 gap-2 mt-3';
+      btnContainer.innerHTML = `
+        <button id="open-theme-btn" class="btn-press py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold flex items-center justify-center gap-1.5">
+          🎨 Themes
+        </button>
+        <button id="open-frame-btn" class="btn-press py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold flex items-center justify-center gap-1.5">
+          ✨ Avatar Frame
+        </button>
+      `;
+      profileCard.parentNode.insertBefore(btnContainer, profileCard.nextSibling);
+
+      document.getElementById('open-theme-btn').onclick = openThemePicker;
+      document.getElementById('open-frame-btn').onclick = openAvatarFramePicker;
+    }
+  }
+
+  // 8. ACTIVITY STATS CARD
+  if (!document.getElementById('activity-stats-card')) {
+    const profileCard = content.querySelector('.bg-card.border');
+    if (profileCard) {
+      const statsDiv = document.createElement('div');
+      statsDiv.id = 'activity-stats-card';
+      statsDiv.innerHTML = `<div class="bg-card border border-border rounded-2xl p-4 mb-4"><div class="text-center py-4"><div class="spinner mx-auto"></div><div class="text-[10px] text-gray-500 mt-2">Loading your stats...</div></div></div>`;
+
+      const themeFrameButtons = document.getElementById('theme-frame-buttons');
+      if (themeFrameButtons) {
+        themeFrameButtons.parentNode.insertBefore(statsDiv, themeFrameButtons.nextSibling);
+      } else {
+        profileCard.parentNode.insertBefore(statsDiv, profileCard.nextSibling);
+      }
+
+      loadActivityStats().then(stats => {
+        statsDiv.innerHTML = renderActivityStats(stats);
+        if (window.lucide) window.lucide.createIcons();
+      });
+    }
+  }
+
+  // 9. RESTART TOUR BUTTON
+  if (!document.querySelector('[data-action="restart-tour"]')) {
+    const settingsCards = content.querySelectorAll('.bg-card.border.border-border.rounded-2xl');
+    let settingsList = null;
+    settingsCards.forEach(card => {
+      const header = card.querySelector('.text-xs.font-bold.text-gray-400.uppercase');
+      if (header && header.textContent.trim() === 'Support') {
+        settingsList = card.querySelector('.divide-y');
+      }
+    });
+    if (settingsList) {
+      const btn = document.createElement('button');
+      btn.className = 'settings-row w-full flex items-center justify-between px-4 py-3 text-left';
+      btn.dataset.action = 'restart-tour';
+      btn.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0">
+          <i data-lucide="compass" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+          <div class="min-w-0">
+            <div class="text-sm font-semibold">Replay App Tour</div>
+            <div class="text-[10px] text-gray-500 truncate">See the walkthrough again</div>
+          </div>
+        </div>
+        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+      `;
+      btn.onclick = () => startOnboardingTour();
+      settingsList.insertBefore(btn, settingsList.firstChild);
+    }
+  }
+
+  // 10. ADMIN SUBMISSIONS BUTTON
+  if (!document.querySelector('[data-action="admin-submissions"]')) {
+    const adminSection = content.querySelector('.bg-card.border-gold\\/40');
+    if (adminSection) {
+      const list = adminSection.querySelector('.divide-y');
+      if (list) {
+        const btn = document.createElement('button');
+        btn.className = 'settings-row w-full flex items-center justify-between px-4 py-3 text-left';
+        btn.dataset.action = 'admin-submissions';
+        btn.innerHTML = `
+          <div class="flex items-center gap-3 min-w-0">
+            <i data-lucide="inbox" class="w-4 h-4 text-gold flex-shrink-0"></i>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold">Pending Submissions</div>
+              <div class="text-[10px] text-gray-500 truncate">Review user submissions</div>
+            </div>
+          </div>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+        `;
+        btn.onclick = () => showAdminSubmissions();
+        list.insertBefore(btn, list.firstChild);
+      }
+    }
+  }
+
+  // 11. ADMIN ANALYTICS BUTTON
+  if (!document.querySelector('[data-action="admin-analytics"]')) {
+    const adminSection = content.querySelector('.bg-card.border-gold\\/40');
+    if (adminSection) {
+      const list = adminSection.querySelector('.divide-y');
+      if (list) {
+        const btn = document.createElement('button');
+        btn.className = 'settings-row w-full flex items-center justify-between px-4 py-3 text-left';
+        btn.dataset.action = 'admin-analytics';
+        btn.innerHTML = `
+          <div class="flex items-center gap-3 min-w-0">
+            <i data-lucide="bar-chart-3" class="w-4 h-4 text-gold flex-shrink-0"></i>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold">Analytics</div>
+              <div class="text-[10px] text-gray-500 truncate">Users, revenue, activity</div>
+            </div>
+          </div>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+        `;
+        btn.onclick = () => showAdminAnalytics();
+        list.insertBefore(btn, list.firstChild);
+      }
+    }
+  }
+
+  // 12. ADVANCED SETTINGS BUTTON
+  if (!document.querySelector('[data-action="advanced-settings"]')) {
+    const settingsCards = content.querySelectorAll('.bg-card.border.border-border.rounded-2xl');
+    let settingsList = null;
+    settingsCards.forEach(card => {
+      const header = card.querySelector('.text-xs.font-bold.text-gray-400.uppercase');
+      if (header && header.textContent.trim() === 'Settings') {
+        settingsList = card.querySelector('.divide-y');
+      }
+    });
+    if (settingsList) {
+      const btn = document.createElement('button');
+      btn.className = 'settings-row w-full flex items-center justify-between px-4 py-3 text-left';
+      btn.dataset.action = 'advanced-settings';
+      btn.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0">
+          <i data-lucide="settings-2" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+          <div class="min-w-0">
+            <div class="text-sm font-semibold">Advanced Settings</div>
+            <div class="text-[10px] text-gray-500 truncate">Appearance, privacy, content</div>
+          </div>
+        </div>
+        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+      `;
+      btn.onclick = () => openAdvancedSettings();
+      settingsList.insertBefore(btn, settingsList.firstChild);
+    }
+  }
+
+  // Re-wire settings-row clicks (new buttons added above)
+  document.querySelectorAll('.settings-row').forEach(el => {
+    if (!el.dataset.wired) {
+      el.dataset.wired = '1';
+      el.addEventListener('click', () => handleSettingAction(el.dataset.action));
+    }
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// Export
+window.renderContributorCard = renderContributorCard;
+window.runYouTabInjectors = runYouTabInjectors;
+window.loadActivityStats = loadActivityStats;
+window.renderActivityStats = renderActivityStats;
+
+console.log('✅ Chunk 67 loaded — YouTab Injectors Pack');
+
+/* END OF CHUNK 67 */
