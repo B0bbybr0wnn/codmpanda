@@ -24521,3 +24521,747 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
 })();
 
 /* END OF CHUNK 55.4 */
+// ============================================
+// CHUNK 55.6 — FINAL FIXES
+// ============================================
+
+(function() {
+  'use strict';
+
+  console.log('[55.6] Applying final fixes...');
+
+  // ---------- 1. EXPORT MISSING FUNCTIONS ----------
+  if (typeof joinLobby === 'function') window.joinLobby = joinLobby;
+  if (typeof showAuthGate === 'function') window.showAuthGate = showAuthGate;
+  if (typeof openUserProfile === 'function') window.openUserProfile = openUserProfile;
+  if (typeof openGlobalSearch === 'function') window.openGlobalSearch = openGlobalSearch;
+  if (typeof openDMThread === 'function') window.openDMThread = openDMThread;
+  if (typeof openPostComments === 'function') window.openPostComments = openPostComments;
+  if (typeof showFriendsPanel === 'function') window.showFriendsPanel = showFriendsPanel;
+  if (typeof sendFriendRequest === 'function') window.sendFriendRequest = sendFriendRequest;
+
+  // ---------- 2. ONLINE COUNTER (FIX display:none) ----------
+  const _origStartOnline = window.startOnlineCounter;
+  window.startOnlineCounter = function() {
+    const el = document.getElementById('online-count');
+    const num = document.getElementById('online-num');
+    if (!el || !num) return;
+    el.classList.remove('hidden');
+    el.style.display = 'flex';
+    const base = 20 + Math.floor(Math.random() * 30);
+    num.textContent = base;
+    setInterval(() => {
+      const current = parseInt(num.textContent);
+      const delta = Math.floor(Math.random() * 5) - 2;
+      num.textContent = Math.max(5, current + delta);
+    }, 8000);
+  };
+  if (State.user) setTimeout(() => window.startOnlineCounter(), 100);
+
+  // ---------- 3. CLICKABLE USERNAMES EVERYWHERE ----------
+  function makeProfilesTappable(root) {
+    if (!root) return;
+    // Any element with .username-link or .user-name-link or data-uid
+    root.querySelectorAll('[data-uid]').forEach(el => {
+      if (el.dataset.profileBound) return;
+      // Skip buttons that are already interactive
+      if (el.tagName === 'BUTTON' && el.classList.contains('join-btn')) return;
+      el.dataset.profileBound = '1';
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', (e) => {
+        const uid = el.dataset.uid;
+        if (!uid || uid === State.user.uid) return;
+        e.stopPropagation();
+        if (typeof window.openUserProfile === 'function') window.openUserProfile(uid);
+      });
+    });
+  }
+
+  // Hook into renderers
+  ['renderLobbies', 'renderVaults', 'renderClips', 'renderHomeFeed', 'renderLeaks'].forEach(fnName => {
+    const orig = window[fnName];
+    if (typeof orig === 'function') {
+      window[fnName] = function() {
+        const r = orig.apply(this, arguments);
+        setTimeout(() => makeProfilesTappable(document.getElementById('content')), 100);
+        return r;
+      };
+    }
+  });
+
+  // Also run on tab change
+  const _origSwitch = window.switchTab;
+  window.switchTab = function(t) {
+    const r = _origSwitch.apply(this, arguments);
+    setTimeout(() => makeProfilesTappable(document.getElementById('content')), 300);
+    return r;
+  };
+
+  // And periodic sweep
+  setInterval(() => makeProfilesTappable(document.body), 4000);
+
+  // ---------- 4. POST CARD TAP → DETAIL ----------
+  document.addEventListener('click', (e) => {
+    // Find nearest .home-card
+    const card = e.target.closest('.home-card[data-type="post"]');
+    if (!card) return;
+    // Ignore if tapped on a button
+    if (e.target.closest('button')) return;
+    const postId = card.dataset.id;
+    if (!postId) return;
+    const post = (homeCache.feed || []).find(p => p.id === postId);
+    if (!post) return;
+    if (typeof window.openPostDetail === 'function') {
+      window.openPostDetail(post);
+    } else {
+      // Fallback: open comments
+      if (typeof window.openPostComments === 'function') window.openPostComments(postId);
+    }
+  }, true);
+
+  // ---------- 5. POST DETAIL VIEW ----------
+  window.openPostDetail = function(post) {
+    openSheet(`
+      <div class="space-y-4">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden">
+            ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-bold truncate">${esc(post.ign || 'Unknown')}</div>
+            <div class="text-[10px] text-gray-500">${timeAgo(post.createdAt)}</div>
+          </div>
+        </div>
+        <p class="text-sm text-gray-200 whitespace-pre-wrap break-words">${esc(post.text || '')}</p>
+        ${post.imageUrl ? `<img src="${esc(post.imageUrl)}" class="w-full rounded-xl" data-zoomable />` : ''}
+        <div class="flex items-center gap-4 pt-3 border-t border-border">
+          <button class="post-detail-like text-xs text-gray-400 flex items-center gap-1.5" data-id="${post.id}">
+            ❤️ ${post.likes || 0}
+          </button>
+          <button class="post-detail-comment text-xs text-gray-400 flex items-center gap-1.5" data-id="${post.id}">
+            💬 ${post.commentCount || 0}
+          </button>
+          <button class="post-detail-share text-xs text-primary flex items-center gap-1.5" data-id="${post.id}">
+            📤 Share
+          </button>
+        </div>
+      </div>
+    `, 'Post');
+
+    // Wire actions
+    setTimeout(() => {
+      const likeBtn = document.querySelector('.post-detail-like');
+      if (likeBtn) {
+        likeBtn.onclick = async () => {
+          try {
+            await updateDoc(doc(db, 'posts', post.id), { likes: increment(1) });
+            post.likes = (post.likes || 0) + 1;
+            likeBtn.innerHTML = `❤️ ${post.likes}`;
+          } catch (e) { toast('Failed', 'error'); }
+        };
+      }
+      const commentBtn = document.querySelector('.post-detail-comment');
+      if (commentBtn) {
+        commentBtn.onclick = () => {
+          closeSheet();
+          setTimeout(() => {
+            if (typeof window.openPostComments === 'function') window.openPostComments(post.id);
+          }, 300);
+        };
+      }
+      const shareBtn = document.querySelector('.post-detail-share');
+      if (shareBtn) {
+        shareBtn.onclick = () => {
+          openShareSheet({
+            title: 'CODMPanda Post',
+            text: post.text || 'Check this out',
+            url: `${location.origin}/?post=${post.id}`
+          });
+        };
+      }
+    }, 100);
+
+    if (window.lucide) window.lucide.createIcons();
+  };
+
+  // ---------- 6. IMAGE ZOOM ON TAP ----------
+  document.addEventListener('click', (e) => {
+    const img = e.target.closest('img[data-zoomable], .home-card img, .vault-card img, .bg-card img');
+    if (!img) return;
+    if (e.target.closest('button')) return;
+    // Skip tiny avatars
+    const rect = img.getBoundingClientRect();
+    if (rect.width < 80 || rect.height < 80) return;
+    // Skip if it's inside a card tap target
+    if (img.closest('a')) return;
+
+    e.stopPropagation();
+    e.preventDefault();
+    openImageViewer(img.src);
+  }, true);
+
+  window.openImageViewer = function(src) {
+    const overlay = document.createElement('div');
+    overlay.id = 'image-viewer';
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: rgba(0,0,0,0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      animation: fadeIn 0.2s ease;
+      cursor: zoom-out;
+    `;
+    overlay.innerHTML = `
+      <img src="${esc(src)}" style="
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 12px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+      " />
+      <button style="
+        position: absolute;
+        top: calc(env(safe-area-inset-top, 0px) + 20px);
+        right: 20px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.15);
+        backdrop-filter: blur(8px);
+        border: none;
+        color: #fff;
+        font-size: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">✕</button>
+    `;
+    document.body.appendChild(overlay);
+    overlay.onclick = () => overlay.remove();
+  };
+
+  // ---------- 7. @MENTION SYSTEM ----------
+  // Re-inject mention listeners on comment + DM inputs
+
+  const _origOpenPostComments = window.openPostComments;
+  if (typeof _origOpenPostComments === 'function') {
+    window.openPostComments = async function(postId) {
+      await _origOpenPostComments(postId);
+      setTimeout(() => {
+        const input = document.getElementById('comment-input');
+        if (input && typeof setupMentionListener === 'function') {
+          input.dataset.mentionSetup = ''; // reset flag
+          setupMentionListener(input);
+        }
+      }, 300);
+    };
+  }
+
+  const _origOpenDM = window.openDMThread;
+  if (typeof _origOpenDM === 'function') {
+    window.openDMThread = async function(uid, ign) {
+      await _origOpenDM(uid, ign);
+      setTimeout(() => {
+        const input = document.getElementById('dm-input');
+        if (input && typeof setupMentionListener === 'function') {
+          input.dataset.mentionSetup = '';
+          setupMentionListener(input);
+        }
+      }, 300);
+    };
+  }
+
+  // ---------- 8. GLOBAL SEARCH — ALWAYS WIRED ----------
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#global-search-btn, #btn-search');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof window.openGlobalSearch === 'function') window.openGlobalSearch();
+  }, true);
+
+  // Also add search button if missing
+  setTimeout(() => {
+    const topBar = document.getElementById('top-bar');
+    const bellBtn = document.getElementById('btn-notifications');
+    if (!topBar || !bellBtn || document.getElementById('global-search-btn')) return;
+    const searchBtn = document.createElement('button');
+    searchBtn.id = 'global-search-btn';
+    searchBtn.className = 'btn-press';
+    searchBtn.style.cssText = 'width:36px;height:36px;border-radius:50%;background:#111;border:1px solid #222;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;';
+    searchBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>';
+    searchBtn.onclick = () => window.openGlobalSearch && window.openGlobalSearch();
+    bellBtn.parentNode.insertBefore(searchBtn, bellBtn);
+  }, 1500);
+
+  // ---------- 9. HEARTS PERSIST ACROSS SESSIONS ----------
+  // Force reload user likes on app load (fixes "heart forgets after refresh")
+  const _origLoadLikes = window.loadUserLikes;
+  if (typeof _origLoadLikes === 'function') {
+    window.loadUserLikes = async function() {
+      await _origLoadLikes();
+      // Also paint hearts after load
+      setTimeout(() => {
+        if (typeof window.paintHeartsNow === 'function') window.paintHeartsNow();
+      }, 200);
+    };
+  }
+
+  // Force reload likes on every tab switch to Home
+  const _origSwitchLikes = window.switchTab;
+  window.switchTab = function(t) {
+    const r = _origSwitchLikes.apply(this, arguments);
+    if (t === 'home' && typeof window.loadUserLikes === 'function') {
+      setTimeout(() => window.loadUserLikes(), 500);
+    }
+    return r;
+  };
+
+  console.log('✅ [55.6] Final fixes applied');
+
+})();
+
+/* END OF CHUNK 55.6*/
+// ============================================
+// CHUNK 57 — 5 Reactions + Premium Avatar Frames
+// ============================================
+
+(function() {
+  'use strict';
+
+  console.log('[57] Loading reactions + premium frames...');
+
+  // ============================================
+  // PART 1: 5 REACTIONS SYSTEM
+  // ============================================
+  // Free users: ❤️ 🔥 💀 (3)
+  // Pro users: ❤️ 🔥 💀 🎯 👑 (5)
+
+  const REACTIONS = [
+    { key: 'heart', emoji: '❤️', label: 'Like',   pro: false },
+    { key: 'fire',  emoji: '🔥', label: 'Fire',   pro: false },
+    { key: 'skull', emoji: '💀', label: 'Dead',   pro: false },
+    { key: 'clutch',emoji: '🎯', label: 'Clutch', pro: true  },
+    { key: 'crown', emoji: '👑', label: 'Crown',  pro: true  }
+  ];
+
+  // Map old 'like'/'hypes' fields to new reaction schema
+  // reactions: { heart: 5, fire: 2, skull: 0, clutch: 1, crown: 0 }
+
+  function getReactionField(oldField) {
+    // 'likes' → 'reactions.heart'
+    // 'hypes' → 'reactions.fire'
+    return oldField === 'hypes' ? 'fire' : 'heart';
+  }
+
+  // Get the user's last reaction on an item
+  async function getUserReaction(itemType, itemId) {
+    if (!State.user) return null;
+    try {
+      const ref = doc(db, 'likes', `${itemType}_${itemId}_${State.user.uid}`);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return null;
+      return snap.data().reaction || 'heart'; // default to heart for legacy
+    } catch (e) { return null; }
+  }
+
+  // React to an item (upsert)
+  async function reactToItem(itemType, itemId, reactionKey) {
+    if (!State.user) return false;
+
+    // Check Pro gate for locked reactions
+    const reactionDef = REACTIONS.find(r => r.key === reactionKey);
+    if (reactionDef && reactionDef.pro && !State.profile?.isPro) {
+      toast('👑 Pro reaction — upgrade to unlock', 'warning', 2000);
+      return false;
+    }
+
+    try {
+      // Check if user already has a different reaction
+      const oldReaction = await getUserReaction(itemType, itemId);
+      const likeRef = doc(db, 'likes', `${itemType}_${itemId}_${State.user.uid}`);
+
+      if (oldReaction === reactionKey) {
+        // Same reaction → toggle off
+        await deleteDoc(likeRef);
+        await updateReactionCount(itemType, itemId, reactionKey, -1);
+        return { action: 'removed', reaction: null };
+      }
+
+      // Different or new reaction → upsert
+      await setDoc(likeRef, {
+        itemType, itemId,
+        userId: State.user.uid,
+        reaction: reactionKey,
+        createdAt: serverTimestamp()
+      });
+
+      if (oldReaction) {
+        // Decrement old
+        await updateReactionCount(itemType, itemId, oldReaction, -1);
+      }
+      // Increment new
+      await updateReactionCount(itemType, itemId, reactionKey, 1);
+
+      return { action: 'added', reaction: reactionKey };
+    } catch (e) {
+      console.error('React error:', e);
+      return false;
+    }
+  }
+
+  async function updateReactionCount(itemType, itemId, reactionKey, delta) {
+    const collectionName =
+      itemType === 'vault'   ? 'vaults'   :
+      itemType === 'clip'    ? 'clips'    :
+      itemType === 'leak'    ? 'leaks'    :
+      itemType === 'post'    ? 'posts'    :
+      itemType === 'comment' ? 'comments' :
+      itemType === 'lobby'   ? 'lobbies'  : 'vaults';
+
+    try {
+      // Legacy compat: also maintain the old 'likes'/'hypes' field
+      const legacyField = reactionKey === 'heart' ? 'likes' : reactionKey === 'fire' ? 'hypes' : null;
+      const updates = { [`reactions.${reactionKey}`]: increment(delta) };
+      if (legacyField) updates[legacyField] = increment(delta);
+      await updateDoc(doc(db, collectionName, itemId), updates);
+    } catch (e) {
+      // If field doesn't exist, initialize it
+      try {
+        const legacyField = reactionKey === 'heart' ? 'likes' : reactionKey === 'fire' ? 'hypes' : null;
+        const updates = { [`reactions.${reactionKey}`]: 1 };
+        if (legacyField) updates[legacyField] = 1;
+        await updateDoc(doc(db, collectionName, itemId), updates);
+      } catch (e2) { /* silent */ }
+    }
+  }
+
+  // ============================================
+  // PART 2: REACTION PICKER UI
+  // ============================================
+
+  function openReactionPicker(itemType, itemId, currentReaction, onPick) {
+    const isPro = State.profile?.isPro;
+    const available = REACTIONS;
+
+    openSheet(`
+      <div class="space-y-4">
+        <div class="text-center text-xs text-gray-500">
+          ${isPro ? '👑 Pro — all reactions unlocked' : 'Free — 3 reactions · Pro unlocks 5'}
+        </div>
+        <div class="grid grid-cols-5 gap-2">
+          ${available.map(r => {
+            const locked = r.pro && !isPro;
+            const active = currentReaction === r.key;
+            return `
+              <button class="reaction-pick-btn flex flex-col items-center gap-1 p-3 rounded-2xl ${active ? 'bg-primary/15 border-2 border-primary' : locked ? 'bg-card/50 border border-border opacity-50' : 'bg-card border border-border'}" data-key="${r.key}" data-locked="${locked}">
+                <span class="text-2xl">${r.emoji}</span>
+                <span class="text-[9px] font-bold ${active ? 'text-primary' : 'text-gray-400'}">${r.label}</span>
+                ${locked ? '<span class="text-[8px] text-gold">👑 PRO</span>' : ''}
+              </button>
+            `;
+          }).join('')}
+        </div>
+        ${!isPro ? `
+          <button id="reaction-upgrade" class="btn-press w-full py-3 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
+            👑 Unlock All 5 Reactions — Go Pro
+          </button>
+        ` : ''}
+      </div>
+    `, 'React');
+
+    document.querySelectorAll('.reaction-pick-btn').forEach(btn => {
+      btn.onclick = () => {
+        const isLocked = btn.dataset.locked === 'true';
+        if (isLocked) {
+          showProPaywall('Unlock all 5 reactions with Pro.');
+          return;
+        }
+        const key = btn.dataset.key;
+        closeSheet();
+        if (onPick) onPick(key);
+      };
+    });
+
+    const upBtn = document.getElementById('reaction-upgrade');
+    if (upBtn) upBtn.onclick = () => { closeSheet(); goPro(); };
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  // ============================================
+  // PART 3: WIRE REACTIONS ON HOME FEED
+  // ============================================
+  // Long-press OR tap the heart button to open the picker.
+  // Single tap = quick heart. Long-press = full picker.
+
+  const _origWire = window.wireHomeCards;
+  if (typeof _origWire === 'function') {
+    window.wireHomeCards = function(items) {
+      _origWire(items);
+
+      const feedEl = document.getElementById('home-feed');
+      if (!feedEl) return;
+
+      // Enhance all like buttons with long-press picker
+      feedEl.querySelectorAll('.home-like-btn').forEach(btn => {
+        const itemType = btn.dataset.type;
+        const itemId = btn.dataset.id;
+        if (!itemType || !itemId) return;
+
+        // Track long-press
+        let pressTimer = null;
+        let longPressed = false;
+
+        const startPress = () => {
+          longPressed = false;
+          pressTimer = setTimeout(() => {
+            longPressed = true;
+            // Open picker
+            getUserReaction(itemType, itemId).then(current => {
+              openReactionPicker(itemType, itemId, current, async (reactionKey) => {
+                const result = await reactToItem(itemType, itemId, reactionKey);
+                if (result) {
+                  toast(`${REACTIONS.find(r => r.key === reactionKey).emoji} ${result.action === 'removed' ? 'Removed' : 'Reacted'}`, 'success', 1200);
+                  refreshHomeReactions();
+                }
+              });
+            });
+          }, 500);
+        };
+
+        const cancelPress = () => {
+          if (pressTimer) clearTimeout(pressTimer);
+        };
+
+        btn.addEventListener('touchstart', startPress, { passive: true });
+        btn.addEventListener('touchend', cancelPress);
+        btn.addEventListener('touchcancel', cancelPress);
+        btn.addEventListener('mousedown', startPress);
+        btn.addEventListener('mouseup', cancelPress);
+        btn.addEventListener('mouseleave', cancelPress);
+      });
+    };
+  }
+
+  // Refresh reactions display after a pick
+  async function refreshHomeReactions() {
+    // Just reload likes and repaint
+    if (typeof window.loadUserLikes === 'function') {
+      await window.loadUserLikes();
+    }
+    if (typeof window.paintHeartsNow === 'function') {
+      window.paintHeartsNow();
+    }
+  }
+
+  // ============================================
+  // PART 4: PREMIUM AVATAR FRAMES
+  // ============================================
+  // 8 crazy CODM-themed frames
+
+  const PREMIUM_FRAMES = {
+    none:      { name: 'None',           pro: false, css: '' },
+    // Existing simple frames (keep for backward compat)
+    gold:      { name: 'Gold',           pro: true, css: 'background: linear-gradient(135deg, #FFD700, #B8860B); padding: 3px;' },
+    fire:      { name: 'Fire',           pro: true, css: 'background: linear-gradient(135deg, #FF6B00, #FF3B30); padding: 3px;' },
+    ice:       { name: 'Ice',            pro: true, css: 'background: linear-gradient(135deg, #00BFFF, #0080FF); padding: 3px;' },
+    neon:      { name: 'Neon',           pro: true, css: 'background: linear-gradient(135deg, #AF52DE, #FF6B00); padding: 3px;' },
+    // NEW premium frames
+    molten:    { name: 'Molten Core',    pro: true, css: 'background: conic-gradient(from 0deg, #FF0000, #FF6B00, #FFD700, #FF6B00, #FF0000); padding: 3px; animation: frameSpin 3s linear infinite;' },
+    tesla:     { name: 'Tesla Coil',     pro: true, css: 'background: linear-gradient(135deg, #00E5FF, #7B2FF7, #00E5FF); padding: 3px; box-shadow: 0 0 15px rgba(0,229,255,0.6);' },
+    crystal:   { name: 'Crystal Shard',  pro: true, css: 'background: linear-gradient(135deg, #7B2FF7, #F107A3, #00E5FF, #7B2FF7); padding: 3px; animation: frameSpin 4s linear infinite;' },
+    darkops:   { name: 'Dark Ops',       pro: true, css: 'background: linear-gradient(135deg, #1a0000, #FF0000, #1a0000); padding: 3px; box-shadow: 0 0 12px rgba(255,0,0,0.7);' },
+    voidwalker:{ name: 'Void Walker',    pro: true, css: 'background: conic-gradient(from 0deg, #1a0033, #7B2FF7, #1a0033, #F107A3, #1a0033); padding: 3px; animation: frameSpin 5s linear infinite;' },
+    bloodgem:  { name: 'Blood Diamond',  pro: true, css: 'background: linear-gradient(135deg, #FF0000, #8B0000, #FF6B6B, #FF0000); padding: 3px; box-shadow: 0 0 15px rgba(255,0,0,0.5);' },
+    jade:      { name: 'Jade Dragon',    pro: true, css: 'background: linear-gradient(135deg, #00FF7F, #00C957, #FFD700, #00FF7F); padding: 3px; animation: frameSpin 6s linear infinite;' }
+  };
+
+  // Add spin animation CSS
+  if (!document.getElementById('frame-spin-style')) {
+    const s = document.createElement('style');
+    s.id = 'frame-spin-style';
+    s.textContent = `
+      @keyframes frameSpin {
+        from { background-position: 0% 50%; }
+        to { background-color: initial; transform: rotate(360deg); }
+      }
+      .premium-frame-wrap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+      }
+    `;
+    document.head.appendChild(s);
+  }
+
+  // Enhanced getAvatarWithFrame (replaces old one)
+  window.getAvatarWithFrame = function(avatarUrl, ign, size) {
+    const frameKey = State.profile?.avatarFrame || 'none';
+    const frameDef = PREMIUM_FRAMES[frameKey] || PREMIUM_FRAMES.none;
+
+    if (frameKey === 'none' || !frameDef.css) {
+      return `
+        <div style="width: ${size}px; height: ${size}px; border-radius: 50%; overflow: hidden; background: rgba(255,107,0,0.15); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: ${size * 0.35}px;">
+          ${avatarUrl ? `<img src="${esc(avatarUrl)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(ign)}
+        </div>
+      `;
+    }
+
+    const innerSize = size - 6;
+    return `
+      <div class="premium-frame-wrap" style="${frameDef.css} width: ${size}px; height: ${size}px; box-sizing: border-box;">
+        <div style="width: ${innerSize}px; height: ${innerSize}px; border-radius: 50%; overflow: hidden; background: #111; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: ${innerSize * 0.35}px; border: 2px solid #0a0a0a;">
+          ${avatarUrl ? `<img src="${esc(avatarUrl)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(ign)}
+        </div>
+      </div>
+    `;
+  };
+
+  // Frame picker with all premium frames
+  window.openAvatarFramePicker = function() {
+    const isPro = State.profile?.isPro;
+    const currentFrame = State.profile?.avatarFrame || 'none';
+
+    openSheet(`
+      <div class="space-y-4">
+        <div class="text-center text-xs text-gray-500">
+          ${isPro ? '👑 Pro — all frames unlocked' : 'Free — frames are a Pro feature'}
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          ${Object.entries(PREMIUM_FRAMES).map(([key, frame]) => {
+            const isSelected = currentFrame === key;
+            const isLocked = frame.pro && !isPro;
+            const preview = frame.css
+              ? `<div style="${frame.css} width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; border-radius: 50%; position: relative;">
+                   <div style="width: 50px; height: 50px; border-radius: 50%; background: #111; display: flex; align-items: center; justify-content: center; border: 2px solid #0a0a0a; overflow: hidden;">
+                     ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width:100%;height:100%;object-fit:cover;" />` : '🐼'}
+                   </div>
+                 </div>`
+              : `<div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(255,107,0,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 20px;">
+                   ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width:100%;height:100%;object-fit:cover;" />` : '🐼'}
+                 </div>`;
+            return `
+              <button class="frame-pick-btn btn-press flex flex-col items-center gap-2 p-3 rounded-2xl ${isSelected ? 'bg-primary/10 border-2 border-primary' : 'bg-card border border-border'}" data-frame="${key}" data-locked="${isLocked}">
+                ${preview}
+                <span class="text-[9px] font-bold ${isSelected ? 'text-primary' : 'text-gray-400'} text-center leading-tight">${frame.name}</span>
+                ${isLocked ? '<span class="text-[8px] text-gold font-black">👑 PRO</span>' : ''}
+              </button>
+            `;
+          }).join('')}
+        </div>
+
+        ${!isPro ? `
+          <button id="frame-upgrade" class="btn-press w-full py-3.5 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
+            👑 Unlock All Frames — Go Pro
+          </button>
+        ` : ''}
+      </div>
+    `, '✨ Avatar Frames');
+
+    document.querySelectorAll('.frame-pick-btn').forEach(btn => {
+      btn.onclick = async () => {
+        if (btn.dataset.locked === 'true') {
+          showProPaywall('Unlock premium frames with Pro.');
+          return;
+        }
+        try {
+          await updateDoc(doc(db, 'users', State.user.uid), {
+            avatarFrame: btn.dataset.frame
+          });
+          State.profile.avatarFrame = btn.dataset.frame;
+          toast('✨ Frame applied!', 'success');
+          closeSheet();
+          if (State.currentTab === 'you') setTimeout(renderYouTab, 300);
+        } catch (e) {
+          toast('Failed: ' + e.message, 'error');
+        }
+      };
+    });
+
+    const upBtn = document.getElementById('frame-upgrade');
+    if (upBtn) upBtn.onclick = () => { closeSheet(); goPro(); };
+
+    if (window.lucide) window.lucide.createIcons();
+  };
+
+  // ============================================
+  // PART 5: REACTIONS ON VAULT / CLIP / LEAK CARDS
+  // ============================================
+  // Same long-press picker for other card types
+
+  function attachReactionLongPress(root) {
+    if (!root) return;
+    const btns = root.querySelectorAll('.like-btn, .like-clip, .hype-leak, .post-like-btn');
+    btns.forEach(btn => {
+      if (btn.dataset.reactionBound) return;
+      btn.dataset.reactionBound = '1';
+
+      let itemType = btn.dataset.type;
+      if (!itemType) {
+        if (btn.classList.contains('like-btn')) itemType = 'vault';
+        else if (btn.classList.contains('like-clip')) itemType = 'clip';
+        else if (btn.classList.contains('hype-leak')) itemType = 'leak';
+        else if (btn.classList.contains('post-like-btn')) itemType = 'post';
+      }
+      const itemId = btn.dataset.id;
+      if (!itemType || !itemId) return;
+
+      let pressTimer = null;
+      const startPress = () => {
+        pressTimer = setTimeout(() => {
+          getUserReaction(itemType, itemId).then(current => {
+            openReactionPicker(itemType, itemId, current, async (reactionKey) => {
+              const result = await reactToItem(itemType, itemId, reactionKey);
+              if (result) {
+                toast(`${REACTIONS.find(r => r.key === reactionKey).emoji} ${result.action === 'removed' ? 'Removed' : 'Reacted'}`, 'success', 1200);
+                refreshHomeReactions();
+              }
+            });
+          });
+        }, 500);
+      };
+      const cancelPress = () => { if (pressTimer) clearTimeout(pressTimer); };
+
+      btn.addEventListener('touchstart', startPress, { passive: true });
+      btn.addEventListener('touchend', cancelPress);
+      btn.addEventListener('touchcancel', cancelPress);
+      btn.addEventListener('mousedown', startPress);
+      btn.addEventListener('mouseup', cancelPress);
+      btn.addEventListener('mouseleave', cancelPress);
+    });
+  }
+
+  // Periodic sweep to attach to newly rendered buttons
+  setInterval(() => {
+    attachReactionLongPress(document.body);
+  }, 3000);
+
+  // ============================================
+  // PART 6: HOOKS
+  // ============================================
+
+  // Re-render YOU tab when returning so new frame shows
+  const _origSwitch57 = window.switchTab;
+  window.switchTab = function(t) {
+    const r = _origSwitch57.apply(this, arguments);
+    if (t === 'you') setTimeout(() => attachReactionLongPress(document.body), 500);
+    return r;
+  };
+
+  console.log('✅ [57] 5 reactions + 10 premium frames loaded');
+  console.log('   - Long-press any heart to open reaction picker');
+  console.log('   - Free: ❤️ 🔥 💀');
+  console.log('   - Pro: ❤️ 🔥 💀 🎯 👑');
+  console.log('   - 10 premium frames including Molten, Tesla, Crystal, Void Walker');
+
+})();
+
+/* END OF CHUNK 57 */
