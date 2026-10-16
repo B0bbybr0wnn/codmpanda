@@ -21247,7 +21247,7 @@ function openPostDetail(post) {
 let mentionFriends = [];
 let mentionDropdownEl = null;
 
-async function loadMentionFriends() {
+async function loadMentionFriendsV2() {
   if (mentionFriends.length > 0) return mentionFriends;
   try {
     const snap = await getDoc(doc(db, 'users', State.user.uid));
@@ -21341,7 +21341,7 @@ function insertMention(inputEl, ign) {
   inputEl.setSelectionRange(newCursor, newCursor);
 }
 
-function setupMentionListener(inputEl) {
+function setupMentionListenerV2(inputEl) {
   if (!inputEl || inputEl.dataset.mentionSetup) return;
   inputEl.dataset.mentionSetup = '1';
 
@@ -21362,7 +21362,7 @@ function setupMentionListener(inputEl) {
       return;
     }
 
-    await loadMentionFriends();
+    await loadMentionFriendsV2();
     showMentionDropdown(inputEl, afterAt);
   });
 
@@ -21372,7 +21372,7 @@ function setupMentionListener(inputEl) {
 }
 
 // ---------- MENTION NOTIFICATIONS ----------
-async function notifyMentions(text, sourceType, sourceId) {
+async function notifyMentionsV2(text, sourceType, sourceId) {
   try {
     const mentionRegex = /@([A-Za-z0-9_]{2,24})/g;
     const mentions = new Set();
@@ -21382,7 +21382,7 @@ async function notifyMentions(text, sourceType, sourceId) {
     }
     if (mentions.size === 0) return;
 
-    await loadMentionFriends();
+    await loadMentionFriendsV2();
 
     for (const ign of mentions) {
       const friend = mentionFriends.find(f => f.ign.toLowerCase() === ign.toLowerCase());
@@ -21408,9 +21408,9 @@ async function notifyMentions(text, sourceType, sourceId) {
 // Export
 window.openPostDetail = openPostDetail;
 window.openImageViewer = openImageViewer;
-window.setupMentionListener = setupMentionListener;
-window.loadMentionFriends = loadMentionFriends;
-window.notifyMentions = notifyMentions;
+window.setupMentionListener = setupMentionListenerV2;
+window.loadMentionFriends = loadMentionFriendsV2;
+window.notifyMentions = notifyMentionsV2;
 
 console.log('✅ Chunk 60 loaded — Post Detail + Zoom + Mentions');
 
@@ -21713,7 +21713,7 @@ console.log('✅ Chunk 61 loaded — Reactions + Long Press');
 // ============================================
 
 // ---------- CANVAS HELPERS ----------
-function loadImage(src) {
+function loadImageV2(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -21723,7 +21723,7 @@ function loadImage(src) {
   });
 }
 
-function roundRect(ctx, x, y, w, h, r) {
+function roundRectV2(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -21743,7 +21743,7 @@ function drawInitials(ctx, name, x, y, r) {
   ctx.textBaseline = 'alphabetic';
 }
 
-function truncateText(ctx, text, maxWidth) {
+function truncateTextV2(ctx, text, maxWidth) {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let truncated = text;
   while (ctx.measureText(truncated + '...').width > maxWidth && truncated.length > 0) {
