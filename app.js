@@ -19721,7 +19721,7 @@ async function renderFriendsBody() {
     } else if (friendsTab === 'requests') {
       await renderRequestsList(body, incomingReqs, outgoingReqs);
     } else if (friendsTab === 'activity') {
-      await renderFriendActivity(body, friendUids);
+      await renderFriendActivityList(body, friendUids);
     } else {
       renderSearchBody(body);
     }
