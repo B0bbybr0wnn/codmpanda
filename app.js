@@ -19928,7 +19928,7 @@ async function renderRequestsList(body, incomingReqs, outgoingReqs) {
 }
 
 // ---------- ACTIVITY ----------
-async function renderFriendActivity(body, friendUids) {
+async function renderFriendActivityList(body, friendUids) {
   if (friendUids.length === 0) {
     body.innerHTML = `
       <div class="text-center py-12">
