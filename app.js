@@ -20353,7 +20353,7 @@ async function openUserProfile(uid) {
 }
 
 // ---------- DM THREAD ----------
-async function openDMThread(friendUid, friendIgn) {
+async function openDMThreadV2(friendUid, friendIgn) {
   const chatId = [State.user.uid, friendUid].sort().join('_');
 
   openSheet(`
@@ -20464,7 +20464,7 @@ async function openDMThread(friendUid, friendIgn) {
 
 // Export
 window.openUserProfile = openUserProfile;
-window.openDMThread = openDMThread;
+window.openDMThread = openDMThreadV2;
 
 console.log('✅ Chunk 57 loaded — Profile View + DMs');
 
