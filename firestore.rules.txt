@@ -1,0 +1,234 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() {
+      return isSignedIn() && request.auth.uid == 'ItqEYihqxYW4HGm7i8bBYky8XNw1';
+    }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+
+    // ---------- USERS ----------
+    match /users/{userId} {
+      allow get, list: if isSignedIn();
+      allow create: if isOwner(userId)
+        && (!('isPro' in request.resource.data) || request.resource.data.isPro == false)
+        && (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false);
+      allow update: if isAdmin()
+        || (isOwner(userId)
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['banned','banReason','bannedAt','bannedBy','isPro','isAdmin','role','proExpiresAt','proStatus'])
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['avatarFrame'])
+                || request.resource.data.avatarFrame == 'none'
+                || resource.data.isPro == true))
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['friendRequests','friendRequestsSent','friends']));
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // ---------- LOBBIES ----------
+    match /lobbies/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['players','isPro','reactions'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
+    }
+
+    // ---------- VAULTS ----------
+    match /vaults/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes','reactions'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
+    }
+
+    // ---------- CAMOS ----------
+    match /camos/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // ---------- CLANS ----------
+    match /clans/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.ownerUid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.ownerUid == request.auth.uid);
+    }
+
+    // ---------- SCRIMS ----------
+    match /scrims/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
+    }
+
+    // ---------- CLIPS ----------
+    match /clips/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes','reactions'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
+    }
+
+    // ---------- LEAKS ----------
+    match /leaks/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hypes','reactions'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
+    }
+
+    // ---------- POSTS ----------
+    match /posts/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes','commentCount','reactions'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
+    }
+
+    // ---------- COMMENTS ----------
+    match /comments/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes','reactions'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
+    }
+
+    // ---------- LIKES / REACTIONS ----------
+    match /likes/{id} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && (!(request.resource.data.reaction in ['goat', 'crown'])
+            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isPro == true);
+      allow delete: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // ---------- NOTIFICATIONS ----------
+    match /notifications/{id} {
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn()
+        && request.query.filters.containsKey('userId')
+        && request.query.filters.userId[1] == request.auth.uid;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // ---------- MESSAGES ----------
+    match /messages/{id} {
+      allow get: if isSignedIn() && (
+        resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        (request.query.filters.containsKey('fromUid')
+          && request.query.filters.fromUid[1] == request.auth.uid)
+        || (request.query.filters.containsKey('toUid')
+          && request.query.filters.toUid[1] == request.auth.uid)
+        || (request.query.filters.containsKey('chatId'))
+      );
+      allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
+      allow update, delete: if isSignedIn() && (resource.data.fromUid == request.auth.uid || isAdmin());
+    }
+
+    // ---------- REPORTS ----------
+    match /reports/{id} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- TOURNAMENTS ----------
+    match /tournaments/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.creatorUid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teams','bracket','currentRound','status','winner','completedAt'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.creatorUid == request.auth.uid);
+    }
+
+    // ---------- CLAN WARS ----------
+    match /clanWarsLog/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+    match /clanWarsHistory/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- SUBMISSIONS ----------
+    match /vault_submissions/{id} {
+      allow read: if isSignedIn() && (resource.data.submitterUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+    match /leak_submissions/{id} {
+      allow read: if isSignedIn() && (resource.data.submitterUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+    match /clip_submissions/{id} {
+      allow read: if isSignedIn() && (resource.data.submitterUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- PARTIES ----------
+    match /parties/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.leaderUid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.leaderUid == request.auth.uid);
+    }
+
+    // ---------- TIER VOTES ----------
+    match /tierVotes/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // ---------- RATINGS ----------
+    match /ratings/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
+      allow update, delete: if isAdmin() || resource.data.fromUid == request.auth.uid;
+    }
+
+    // ---------- DEFAULT DENY ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
