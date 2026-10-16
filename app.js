@@ -21268,14 +21268,14 @@ async function loadMentionFriendsV2() {
   }
 }
 
-function closeMentionDropdown() {
+function closeMentionDropdownV2() {
   if (mentionDropdownEl) {
     mentionDropdownEl.remove();
     mentionDropdownEl = null;
   }
 }
 
-function showMentionDropdown(inputEl, filter) {
+function showMentionDropdownV2(inputEl, filter) {
   closeMentionDropdown();
 
   const matches = mentionFriends.filter(f =>
