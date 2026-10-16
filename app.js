@@ -21243,12 +21243,12 @@ function openPostDetail(post) {
   }, false);
 })();
 
-// ---------- @MENTIONS SYSTEM ----------
+// ---------- @MENTIONS SYSTEM (Chunk 60) ----------
 let mentionFriendsV2 = [];
 let mentionDropdownElV2 = null;
 
 async function loadMentionFriendsV2() {
-  if (mentionFriends.length > 0) return mentionFriends;
+  if (mentionFriendsV2.length > 0) return mentionFriendsV2;
   try {
     const snap = await getDoc(doc(db, 'users', State.user.uid));
     const data = snap.exists() ? snap.data() : {};
@@ -21261,7 +21261,7 @@ async function loadMentionFriendsV2() {
         if (s.exists()) friends.push({ uid, ign: s.data().ign, avatar: s.data().avatar });
       } catch (e) { /* skip */ }
     }
-    mentionFriends = friends;
+    mentionFriendsV2 = friends;
     return friends;
   } catch (e) {
     return [];
@@ -21269,16 +21269,16 @@ async function loadMentionFriendsV2() {
 }
 
 function closeMentionDropdownV2() {
-  if (mentionDropdownEl) {
-    mentionDropdownEl.remove();
-    mentionDropdownEl = null;
+  if (mentionDropdownElV2) {
+    mentionDropdownElV2.remove();
+    mentionDropdownElV2 = null;
   }
 }
 
 function showMentionDropdownV2(inputEl, filter) {
-  closeMentionDropdown();
+  closeMentionDropdownV2();
 
-  const matches = mentionFriends.filter(f =>
+  const matches = mentionFriendsV2.filter(f =>
     f.ign.toLowerCase().includes((filter || '').toLowerCase())
   ).slice(0, 6);
 
@@ -21314,17 +21314,17 @@ function showMentionDropdownV2(inputEl, filter) {
   `).join('');
 
   document.body.appendChild(dropdown);
-  mentionDropdownEl = dropdown;
+  mentionDropdownElV2 = dropdown;
 
   dropdown.querySelectorAll('.mention-opt').forEach(btn => {
     btn.onclick = () => {
-      insertMention(inputEl, btn.dataset.ign);
-      closeMentionDropdown();
+      insertMentionV2(inputEl, btn.dataset.ign);
+      closeMentionDropdownV2();
     };
   });
 }
 
-function insertMention(inputEl, ign) {
+function insertMentionV2(inputEl, ign) {
   const value = inputEl.value;
   const cursorPos = inputEl.selectionStart || value.length;
   const beforeCursor = value.slice(0, cursorPos);
@@ -21352,22 +21352,22 @@ function setupMentionListenerV2(inputEl) {
     const atIndex = beforeCursor.lastIndexOf('@');
 
     if (atIndex === -1) {
-      closeMentionDropdown();
+      closeMentionDropdownV2();
       return;
     }
 
     const afterAt = beforeCursor.slice(atIndex + 1);
     if (afterAt.includes(' ') || afterAt.includes('\n')) {
-      closeMentionDropdown();
+      closeMentionDropdownV2();
       return;
     }
 
     await loadMentionFriendsV2();
-    showMentionDropdown(inputEl, afterAt);
+    showMentionDropdownV2(inputEl, afterAt);
   });
 
   inputEl.addEventListener('blur', () => {
-    setTimeout(closeMentionDropdown, 200);
+    setTimeout(closeMentionDropdownV2, 200);
   });
 }
 
@@ -21385,7 +21385,7 @@ async function notifyMentionsV2(text, sourceType, sourceId) {
     await loadMentionFriendsV2();
 
     for (const ign of mentions) {
-      const friend = mentionFriends.find(f => f.ign.toLowerCase() === ign.toLowerCase());
+      const friend = mentionFriendsV2.find(f => f.ign.toLowerCase() === ign.toLowerCase());
       if (!friend) continue;
       if (friend.uid === State.user.uid) continue;
 
