@@ -20142,7 +20142,7 @@ async function sendFriendRequest(targetUid, targetIgn) {
 // Export
 window.showFriendsPanel = showFriendsPanel;
 window.sendFriendRequest = sendFriendRequest;
-window.renderFriendActivity = renderFriendActivity;
+window.renderFriendActivityList = renderFriendActivityList;
 
 console.log('✅ Chunk 56 loaded — Friends Core');
 
