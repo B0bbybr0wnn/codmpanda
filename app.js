@@ -21244,8 +21244,8 @@ function openPostDetail(post) {
 })();
 
 // ---------- @MENTIONS SYSTEM ----------
-let mentionFriends = [];
-let mentionDropdownEl = null;
+let mentionFriendsV2 = [];
+let mentionDropdownElV2 = null;
 
 async function loadMentionFriendsV2() {
   if (mentionFriends.length > 0) return mentionFriends;
