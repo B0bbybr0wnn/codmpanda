@@ -1,7 +1,7 @@
 /* CODMPanda Service Worker v2.0.0
    Cache-first for app shell, network-first for Firebase calls */
 
-const CACHE_NAME = 'codmpanda-v12.0.0';
+const CACHE_NAME = 'codmpanda-v13.0.0';
 const APP_SHELL = [
   '/',
   '/index.html',
