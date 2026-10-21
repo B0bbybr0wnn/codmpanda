@@ -25589,8 +25589,20 @@ window.performGlobalSearch = performGlobalSearch;
   };
   // Publish the registry for the later integration IIFE; JS block scope otherwise hides it.
   window.CODM_WAR_ARTIFACT_FRAMES = WAR_ARTIFACT_FRAMES;
+  function normalizeCODMFrameKey(value) {
+    const key = String(value || 'none').trim().toLowerCase().replace(/[\\s-]+/g, '_');
+    const aliases = {
+      gold_laurel: 'legendary_rank', golden_laurel: 'legendary_rank', laurel_gold: 'legendary_rank',
+      laurel: 'legendary_rank', gold_rank: 'legendary_rank', legendary_gold: 'legendary_rank',
+      champion: 'ranked_champion', champion_frame: 'ranked_champion',
+      ghostops: 'ghost_ops', mythic: 'mythic_crystal', crystal: 'mythic_crystal',
+      frost: 'frost_division', dragon: 'dragon_blade', cosmic: 'cosmic_vanguard'
+    };
+    return aliases[key] || key || 'none';
+  }
+  window.CODMNormalizeFrameKey = normalizeCODMFrameKey;
   function renderFramedAvatar(user,size=44){
-    const storedFrame=user?.avatarFrame||user?.equippedFrame||user?.frame||user?.profileFrame||'none';
+    const storedFrame=normalizeCODMFrameKey(user?.avatarFrame||user?.equippedFrame||user?.frame||user?.profileFrame||'none');
     // Old CSS/SVG frame IDs are retired. Pro-only PNG artwork must not render for a Free profile.
     const candidate=WAR_ARTIFACT_FRAMES[storedFrame];
     const hasPro= user?.isPro===true || user?.pro===true || user?.subscription==='pro' || user?.proStatus==='active';
@@ -26014,15 +26026,15 @@ window.performGlobalSearch = performGlobalSearch;
       if(!rect||rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
       if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.querySelector('img'))continue;
       const u=await publicProfile(uid);if(!u)continue;
-      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};let frame=u.avatarFrame||u.equippedFrame||u.frame||u.profileFrame||'none';if(frame!=='none'&&!frameCatalog[frame])frame='none';if(!window.CODMRenderFramedAvatar)continue;
+      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};let frame=window.CODMNormalizeFrameKey ? window.CODMNormalizeFrameKey(u.avatarFrame||u.equippedFrame||u.frame||u.profileFrame||'none') : (u.avatarFrame||u.equippedFrame||u.frame||u.profileFrame||'none');if(frame!=='none'&&!frameCatalog[frame])frame='none';if(!window.CODMRenderFramedAvatar)continue;
       const img=el.querySelector('img');const avatar=u.avatar||u.photoURL||u.photoUrl||img?.getAttribute('src')||'';
       const name=u.ign||u.displayName||'Operator';
-      if(frame==='none'){if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
+      if(frame==='none'){el.style.borderRadius='50%';el.style.clipPath='circle(50% at 50% 50%)';if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;clip-path:circle(50% at 50% 50%)">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
       if(frameDone===frame)continue;
       const shell=document.createElement('div');shell.innerHTML=window.CODMRenderFramedAvatar({...u,avatar,ign:name},Math.max(28,Math.min(72,Math.round(Math.min(rect.width,rect.height)))));
       const rendered=shell.firstElementChild;if(!rendered)continue;
       // Only replace the contents of a compact avatar node, never a card or profile wrapper.
-      el.innerHTML='';el.appendChild(rendered);el.dataset.cpFrameApplied=frame;el.style.overflow='visible';el.classList.add('cp-avatar-framed-host');
+      el.innerHTML='';el.appendChild(rendered);el.dataset.cpFrameApplied=frame;el.style.overflow='visible';el.style.borderRadius='50%';el.style.clipPath='none';el.classList.add('cp-avatar-framed-host');
     }
   }
   window.__codmpandaRefreshNamesAndAvatars=refreshPublicNamesAndAvatars;
@@ -27043,6 +27055,7 @@ window.performGlobalSearch = performGlobalSearch;
     style.id = styleId;
     style.textContent = `
       .cp-avatar-shell,.cp-avatar-no-frame,.cp-avatar-framed-host { border-radius:50%!important; }
+      .w-16.h-16>img,.w-12.h-12>img,.w-11.h-11>img,.w-10.h-10>img,.w-9.h-9>img,.w-8.h-8>img { border-radius:50%!important; clip-path:circle(50% at 50% 50%); object-fit:cover!important; }
       .cp-avatar-shell { overflow:visible!important; position:relative!important; }
       .cp-avatar-core,.cp-avatar-core img,.cp-avatar-no-frame img { border-radius:50%!important; overflow:hidden!important; }
       .cp-avatar-core { clip-path:circle(50% at 50% 50%); }
