@@ -25,6 +25,11 @@ export default {
       });
     }
 
+    if (url.pathname === '/briefings' && request.method === 'GET') {
+      const briefings = await fetchOfficialBriefings();
+      return json({ success: briefings.length > 0, updatedAt: new Date().toISOString(), briefings });
+    }
+
     if (request.method !== 'POST') {
       return json({ error: 'POST only' }, 405);
     }
@@ -240,6 +245,64 @@ async function getAccessToken(serviceAccount) {
     console.error('Token error:', e);
     return null;
   }
+}
+
+
+async function fetchOfficialBriefings() {
+  const sources = [
+    { name: 'Official CODM News', url: 'https://www.callofduty.com/blog/mobile', news: true },
+    { name: 'COD Mobile Support', url: 'https://support.activision.com/cod-mobile', news: false },
+    { name: 'Official CODM Game Page', url: 'https://www.callofduty.com/mobile', news: false }
+  ];
+  const clean = value => String(value || '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  const meta = (html, key) => {
+    const tags = html.match(/<meta\b[^>]*>/gi) || [];
+    for (const tag of tags) {
+      const name = (tag.match(/(?:name|property)=["']([^"']+)["']/i) || [])[1];
+      const content = (tag.match(/content=["']([^"']*)["']/i) || [])[1];
+      if (name && content && name.toLowerCase() === key.toLowerCase()) return clean(content);
+    }
+    return '';
+  };
+  const getPage = async url => {
+    const response = await fetch(url, { headers: { 'Accept': 'text/html,application/xhtml+xml', 'User-Agent': 'CODMPandaBriefings/1.0' }, cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!response.ok) throw new Error('Source returned ' + response.status);
+    return await response.text();
+  };
+  const results = [];
+  await Promise.all(sources.map(async source => {
+    try {
+      const html = await getPage(source.url);
+      if (source.news) {
+        const links = []; const anchorPattern = /<a\b[^>]*href=["']([^"']*\/blog\/mobile\/[^"'#?]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+        let match;
+        while ((match = anchorPattern.exec(html)) && links.length < 4) {
+          const title = clean(match[2]); let url = match[1];
+          if (url.startsWith('/')) url = 'https://www.callofduty.com' + url;
+          if (!/^https:\/\/www\.callofduty\.com\/blog\/mobile\//i.test(url) || title.length < 8) continue;
+          if (!links.some(item => item.url === url)) links.push({ title, url });
+        }
+        await Promise.all(links.slice(0,4).map(async link => {
+          try {
+            const articleHtml = await getPage(link.url);
+            const title = meta(articleHtml,'og:title') || (articleHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || link.title;
+            const description = meta(articleHtml,'og:description') || meta(articleHtml,'description') || clean((articleHtml.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || [])[1]).slice(0,360) || link.title;
+            const published = meta(articleHtml,'article:published_time') || meta(articleHtml,'date');
+            results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description).slice(0,520), url:link.url, publishedAt:published ? clean(published).slice(0,30) : 'Latest official article' });
+          } catch (_) {}
+        }));
+      }
+      const title = meta(html,'og:title') || (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || source.name;
+      const description = meta(html,'og:description') || meta(html,'description') || clean((html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || [])[1]).slice(0,360);
+      if (!source.news || !results.some(item => item.sourceName === source.name)) {
+        results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description || 'Open the official page for current support information and announcements.').slice(0,520), url:source.url, publishedAt:'Official source snapshot' });
+      }
+    } catch (error) { console.warn('[briefings] Source unavailable:', source.url, error?.message || error); }
+  }));
+  const seen = new Set();
+  return results.filter(item => { if (!item.url || seen.has(item.url)) return false; seen.add(item.url); return true; }).slice(0,8);
 }
 
 // ============================================

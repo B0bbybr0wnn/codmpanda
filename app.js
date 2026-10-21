@@ -986,7 +986,7 @@ function renderLobbies() {
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
-              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
+              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -5376,7 +5376,7 @@ renderLobbies = function() {
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
-              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
+              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -13935,7 +13935,7 @@ renderLobbies = function() {
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
-              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
+              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -16245,23 +16245,28 @@ openDMThread = async function(friendUid, friendIgn) {
 function highlightMentions(text) {
   if (!text) return '';
   const escaped = esc(text);
-  return escaped.replace(/@([A-Za-z0-9_]{2,24})/g, '<span class="mention-text text-primary font-bold">@$1</span>');
+  return escaped.replace(/@([A-Za-z0-9_]{2,24})/g, '<a href="#" role="link" aria-label="Open @$1 profile" data-mention-name="$1" class="mention-text text-sky-400 font-bold hover:underline" style="color:#38bdf8;cursor:pointer;text-decoration:none">@$1</a>');
 }
 
 // Make mentions tappable
 document.addEventListener('click', async (e) => {
   const mention = e.target.closest('.mention-text');
   if (!mention) return;
-  e.stopPropagation();
-
-  const ign = mention.textContent.replace('@', '').trim();
-  await loadMentionFriends();
-  const friend = mentionFriends.find(f => f.ign.toLowerCase() === ign.toLowerCase());
-  if (friend) {
-    openUserProfile(friend.uid);
-  } else {
-    toast('User not found', 'info');
-  }
+  e.preventDefault(); e.stopPropagation();
+  const ign = String(mention.dataset.mentionName || mention.textContent.replace(/^@/, '')).trim();
+  if (!ign) return;
+  try {
+    await loadMentionFriends();
+    const friend = mentionFriends.find(f => String(f.ign || '').toLowerCase() === ign.toLowerCase());
+    if (friend?.uid) { await openUserProfile(friend.uid); return; }
+    const [byIgn, byUsername] = await Promise.all([
+      getDocs(query(collection(db, 'users'), where('ign', '==', ign), limit(1))).catch(() => null),
+      getDocs(query(collection(db, 'users'), where('username', '==', ign), limit(1))).catch(() => null)
+    ]);
+    const found = byIgn && !byIgn.empty ? byIgn.docs[0] : byUsername && !byUsername.empty ? byUsername.docs[0] : null;
+    if (found) { await openUserProfile(found.id); return; }
+    toast('Could not find that profile', 'info');
+  } catch (error) { console.warn('[CODMPanda] Mention profile lookup failed:', error); toast('Could not open that profile. Try again.', 'info'); }
 });
 
 window.openMessageOptions = openMessageOptions;
@@ -18566,7 +18571,7 @@ function renderHomeLobbyCard(l) {
 
       <div class="flex items-start gap-3 mb-3">
         <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0">
-          ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
+          ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
@@ -22328,7 +22333,7 @@ renderLobbies = function() {
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
-              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
+              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -22926,7 +22931,7 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
         <div class="flex items-start gap-3 mb-3">
             <div class="relative">
               <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
-                ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
+                ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
               </div>
               ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
             </div>
@@ -25585,7 +25590,7 @@ window.performGlobalSearch = performGlobalSearch;
   // Publish the registry for the later integration IIFE; JS block scope otherwise hides it.
   window.CODM_WAR_ARTIFACT_FRAMES = WAR_ARTIFACT_FRAMES;
   function renderFramedAvatar(user,size=44){
-    const storedFrame=user?.avatarFrame||'none';
+    const storedFrame=user?.avatarFrame||user?.equippedFrame||user?.frame||user?.profileFrame||'none';
     // Old CSS/SVG frame IDs are retired. Pro-only PNG artwork must not render for a Free profile.
     const candidate=WAR_ARTIFACT_FRAMES[storedFrame];
     const hasPro= user?.isPro===true || user?.pro===true || user?.subscription==='pro' || user?.proStatus==='active';
@@ -26009,7 +26014,7 @@ window.performGlobalSearch = performGlobalSearch;
       if(!rect||rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
       if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.querySelector('img'))continue;
       const u=await publicProfile(uid);if(!u)continue;
-      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};let frame=u.avatarFrame||'none';if(frame!=='none'&&!frameCatalog[frame])frame='none';if(!window.CODMRenderFramedAvatar)continue;
+      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};let frame=u.avatarFrame||u.equippedFrame||u.frame||u.profileFrame||'none';if(frame!=='none'&&!frameCatalog[frame])frame='none';if(!window.CODMRenderFramedAvatar)continue;
       const img=el.querySelector('img');const avatar=u.avatar||u.photoURL||u.photoUrl||img?.getAttribute('src')||'';
       const name=u.ign||u.displayName||'Operator';
       if(frame==='none'){if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
@@ -26272,53 +26277,61 @@ window.performGlobalSearch = performGlobalSearch;
   async function cpV4LoadIntelArticles() {
     const host = document.getElementById('cp-v4-intel-articles');
     if (!host) return;
-    host.innerHTML = '<div class="text-center py-6 text-xs text-gray-500">Loading intel…</div>';
-    try {
-      const snap = await getDocs(query(collection(db, 'intelArticles'), orderBy('createdAt', 'desc'), limit(50)));
-      if (!document.getElementById('cp-v4-intel-articles')) return;
-      const articles = [];
-      snap.forEach(d => articles.push({ id: d.id, ...d.data() }));
-      if (!articles.length) {
-        host.innerHTML = `<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="text-3xl mb-2">📰</div><div class="font-bold mb-1">No curated briefings yet</div><p class="text-xs text-gray-500">Official source links are ready above. CODMPanda summaries will appear here when published.</p></div>`;
-        return;
-      }
-      const saved = new Set(State.profile?.savedIntelIds || []);
-      host.innerHTML = articles.map(article => {
-        const category = ['News','Patch Notes','Events','Ranked','Meta','Notice'].includes(article.category) ? article.category : 'News';
-        const isSaved = saved.has(article.id);
-        const weapons = Array.isArray(article.weapons) ? article.weapons : [];
-        const source = /^https?:\/\//i.test(article.sourceURL || '') ? article.sourceURL : '';
-        return `<article class="bg-card border border-border rounded-2xl overflow-hidden">
-          <div class="p-4">
-            <div class="flex items-center justify-between gap-2 mb-2"><span class="text-[9px] uppercase font-black tracking-widest px-2 py-1 rounded-full bg-primary/15 text-primary">${escV4(category)}</span><span class="text-[10px] text-gray-500">${escV4(cpV4Date(article.createdAt))}</span></div>
-            <h3 class="font-black text-base mb-2">${escV4(article.title || 'CODM Update')}</h3>
-            <p class="text-sm text-gray-300 whitespace-pre-wrap break-words">${escV4(article.summary || article.body || '')}</p>
-            ${weapons.length ? `<div class="flex flex-wrap gap-1.5 mt-3">${weapons.slice(0,8).map(w => `<span class="text-[10px] bg-cardAlt border border-border rounded-full px-2 py-1">${escV4(w)}</span>`).join('')}</div>` : ''}
-            <div class="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-border">
-              <span class="text-[10px] text-gray-500">${article.authorIgn ? `By ${escV4(article.authorIgn)}` : 'CODMPanda Intel'}</span>
-              <div class="flex items-center gap-3">${source ? `<a href="${escV4(source)}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-primary">Open source ↗</a>` : ''}<button class="cp-v4-save-intel text-xs font-bold ${isSaved ? 'text-gold' : 'text-gray-400'}" data-id="${escV4(article.id)}">${isSaved ? '★ Saved' : '☆ Save'}</button></div>
-            </div>
-          </div>
-        </article>`;
-      }).join('');
-      host.querySelectorAll('.cp-v4-save-intel').forEach(button => button.onclick = async () => {
-        if (!State.user) { if (typeof showAuthGate === 'function') showAuthGate(); return; }
-        const id = button.dataset.id;
-        const currentlySaved = (State.profile?.savedIntelIds || []).includes(id);
-        try {
-          await updateDoc(doc(db, 'users', State.user.uid), { savedIntelIds: currentlySaved ? arrayRemove(id) : arrayUnion(id) });
-          const current = new Set(State.profile?.savedIntelIds || []);
-          currentlySaved ? current.delete(id) : current.add(id);
-          State.profile = { ...(State.profile || {}), savedIntelIds: Array.from(current) };
-          button.textContent = currentlySaved ? '☆ Save' : '★ Saved';
-          button.classList.toggle('text-gold', !currentlySaved);
-          button.classList.toggle('text-gray-400', currentlySaved);
-        } catch (e) { console.warn('[CODMPanda] intel bookmark failed', e); toast('Could not save this briefing', 'error'); }
-      });
-    } catch (error) {
-      console.error('[CODMPanda] Intel feed failed', error);
-      host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-4 text-sm text-red-300">Could not load CODMPanda briefings. You can still use the official source links above.</div>';
+    host.innerHTML = '<div class="text-center py-6 text-xs text-gray-500">Loading official briefings…</div>';
+    const officialPromise = fetch(NOTIFY_WORKER_URL + '/briefings', { method: 'GET', cache: 'no-store' })
+      .then(async response => { if (!response.ok) throw new Error('Briefings service returned ' + response.status); const data = await response.json(); return Array.isArray(data.briefings) ? data.briefings : []; })
+      .catch(error => { console.warn('[CODMPanda] Official briefing service unavailable:', error); return []; });
+    const curatedPromise = getDocs(query(collection(db, 'intelArticles'), orderBy('createdAt', 'desc'), limit(50)))
+      .then(snap => snap.docs.map(d => ({ id: d.id, ...d.data(), _kind: 'curated' })))
+      .catch(error => { console.warn('[CODMPanda] Curated Intel unavailable:', error); return []; });
+    const [official, curated] = await Promise.all([officialPromise, curatedPromise]);
+    if (!document.getElementById('cp-v4-intel-articles')) return;
+    const saved = new Set(State.profile?.savedIntelIds || []);
+    const officialHtml = official.map(item => {
+      const title = escV4(item.title || 'Official CODM update');
+      const summary = escV4(item.summary || item.description || 'Open the official source for the latest announcement.');
+      const url = /^https:\/\//i.test(item.url || '') ? escV4(item.url) : '';
+      const source = escV4(item.sourceName || 'Official CODM source');
+      const date = escV4(item.publishedAt || item.updatedAt || 'Latest source snapshot');
+      return `<article class="bg-card border border-border rounded-2xl overflow-hidden"><div class="p-4">
+        <div class="flex items-center justify-between gap-2 mb-2"><span class="text-[9px] uppercase font-black tracking-widest px-2 py-1 rounded-full bg-green-500/15 text-green-300">Official source</span><span class="text-[10px] text-gray-500">${date}</span></div>
+        <div class="text-[10px] text-primary font-bold mb-1">${source}</div><h3 class="font-black text-base mb-2">${title}</h3><p class="text-sm text-gray-300 whitespace-pre-wrap break-words">${summary}</p>
+        ${url ? `<div class="mt-4 pt-3 border-t border-border"><a href="${url}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-primary">Read official update ↗</a></div>` : ''}
+      </div></article>`;
+    }).join('');
+    const curatedHtml = curated.map(article => {
+      const category = ['News','Patch Notes','Events','Ranked','Meta','Notice'].includes(article.category) ? article.category : 'News';
+      const isSaved = saved.has(article.id);
+      const source = /^https?:\/\//i.test(article.sourceURL || '') ? escV4(article.sourceURL) : '';
+      const weapons = Array.isArray(article.weapons) ? article.weapons : [];
+      return `<article class="bg-card border border-border rounded-2xl overflow-hidden"><div class="p-4">
+        <div class="flex items-center justify-between gap-2 mb-2"><span class="text-[9px] uppercase font-black tracking-widest px-2 py-1 rounded-full bg-primary/15 text-primary">${escV4(category)}</span><span class="text-[10px] text-gray-500">${escV4(cpV4Date(article.createdAt))}</span></div>
+        <h3 class="font-black text-base mb-2">${escV4(article.title || 'CODM Update')}</h3><p class="text-sm text-gray-300 whitespace-pre-wrap break-words">${escV4(article.summary || article.body || '')}</p>
+        ${weapons.length ? `<div class="flex flex-wrap gap-1.5 mt-3">${weapons.slice(0,8).map(w => `<span class="text-[10px] bg-cardAlt border border-border rounded-full px-2 py-1">${escV4(w)}</span>`).join('')}</div>` : ''}
+        <div class="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-border"><span class="text-[10px] text-gray-500">${article.authorIgn ? 'By ' + escV4(article.authorIgn) : 'CODMPanda Intel'}</span>
+        <div class="flex items-center gap-3">${source ? `<a href="${source}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-primary">Open source ↗</a>` : ''}<button class="cp-v4-save-intel text-xs font-bold ${isSaved ? 'text-gold' : 'text-gray-400'}" data-id="${escV4(article.id)}">${isSaved ? '★ Saved' : '☆ Save'}</button></div></div>
+      </div></article>`;
+    }).join('');
+    if (!officialHtml && !curatedHtml) {
+      host.innerHTML = `<div class="bg-card border border-border rounded-2xl p-5"><div class="font-bold mb-1">Briefings are temporarily unavailable</div><p class="text-xs text-gray-400">Use the three official source links above. Tap Refresh to try again.</p><button id="cp-v4-retry-briefings" class="mt-3 text-xs font-bold text-primary">Try again</button></div>`;
+      document.getElementById('cp-v4-retry-briefings')?.addEventListener('click', cpV4LoadIntelArticles);
+      return;
     }
+    host.innerHTML = (officialHtml ? '<div class="text-[10px] uppercase tracking-widest text-gray-500 font-black mt-1">Official source briefings</div>' + officialHtml : '') +
+      (curatedHtml ? '<div class="text-[10px] uppercase tracking-widest text-gray-500 font-black mt-4">Community briefings</div>' + curatedHtml : '');
+    host.querySelectorAll('.cp-v4-save-intel').forEach(button => button.onclick = async () => {
+      if (!State.user) { if (typeof showAuthGate === 'function') showAuthGate(); return; }
+      const id = button.dataset.id, currentlySaved = (State.profile?.savedIntelIds || []).includes(id);
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), { savedIntelIds: currentlySaved ? arrayRemove(id) : arrayUnion(id) });
+        const current = new Set(State.profile?.savedIntelIds || []);
+        currentlySaved ? current.delete(id) : current.add(id);
+        State.profile = { ...(State.profile || {}), savedIntelIds: Array.from(current) };
+        button.textContent = currentlySaved ? '☆ Save' : '★ Saved';
+        button.classList.toggle('text-gold', !currentlySaved); button.classList.toggle('text-gray-400', currentlySaved);
+      } catch (e) { console.warn('[CODMPanda] intel bookmark failed', e); toast('Could not save this briefing', 'error'); }
+    });
+    if (window.lucide) window.lucide.createIcons();
   }
   function cpV4OpenPublishIntel() {
     if (State.user?.uid !== ADMIN_UID) { toast('Only the CODMPanda admin can publish Intel updates.', 'error'); return; }
@@ -26967,11 +26980,9 @@ window.performGlobalSearch = performGlobalSearch;
     button.id = 'cp-ai-coach-launch'; button.type='button'; button.textContent='🎯 Coach';
     button.setAttribute('aria-label','Open CODMPanda Coach');
     button.style.cssText='position:fixed;right:14px;bottom:calc(78px + env(safe-area-inset-bottom));z-index:9990;background:#ff6b00;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:11px 15px;font-weight:900;font-size:12px;box-shadow:0 5px 18px rgba(0,0,0,.35)';
-    button.onclick = cpOpenCoach; document.body.appendChild(button);
+    window.openCODMPandaCoach = cpOpenCoach; // Opened from the pinned Inbox row.
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', cpInstallCoachButton, { once: true });
-  else cpInstallCoachButton();
-  setTimeout(cpInstallCoachButton, 1200);
+  window.openCODMPandaCoach = cpOpenCoach;
 
   console.log('[CODMPanda] Vault recovery, card opening, clickable mentions and Coach patch loaded.');
 })();
@@ -26994,7 +27005,7 @@ window.performGlobalSearch = performGlobalSearch;
         const data = snap.exists() ? snap.data() : {};
         const profile = {
           verified: data.verified === true,
-          avatarFrame: data.avatarFrame || 'none',
+          avatarFrame: data.avatarFrame || data.equippedFrame || data.frame || data.profileFrame || 'none',
           isPro: data.isPro === true || data.pro === true || data.subscription === 'pro' || data.proStatus === 'active',
           avatar: lobby.avatar || data.avatar || data.photoURL || data.photoUrl || '',
           ign: lobby.ign || data.ign || data.displayName || 'Operator'
@@ -27019,4 +27030,43 @@ window.performGlobalSearch = performGlobalSearch;
   };
   window.renderLobbies = renderLobbies;
   console.log('[CODMPanda] Lobby verified status and avatar-frame profile hydration enabled.');
+})();
+
+
+// ============================================
+// CODMPanda regression fixes: pinned Coach + circular avatar safety
+// ============================================
+(function cpPinnedCoachAndAvatarSafety() {
+  const styleId = 'cp-avatar-rounding-regression-fix';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .cp-avatar-shell,.cp-avatar-no-frame,.cp-avatar-framed-host { border-radius:50%!important; }
+      .cp-avatar-shell { overflow:visible!important; position:relative!important; }
+      .cp-avatar-core,.cp-avatar-core img,.cp-avatar-no-frame img { border-radius:50%!important; overflow:hidden!important; }
+      .cp-avatar-core { clip-path:circle(50% at 50% 50%); }
+      .cp-avatar-shell>.cp-war-artifact-frame { position:absolute!important; inset:-10%!important; width:120%!important; height:120%!important; object-fit:contain!important; z-index:10!important; pointer-events:none!important; }
+      .cp-avatar-framed-host { overflow:visible!important; }
+      #cp-ai-coach-launch { display:none!important; }
+    `;
+    document.head.appendChild(style);
+  }
+  if (typeof renderMessagesTabFast === 'function') {
+    const previousMessagesRenderer = renderMessagesTabFast;
+    renderMessagesTabFast = async function() {
+      await previousMessagesRenderer.apply(this, arguments);
+      const body = document.getElementById('inbox-full-body');
+      if (!body || document.getElementById('cp-coach-pinned-row')) return;
+      const row = document.createElement('button');
+      row.id = 'cp-coach-pinned-row'; row.type = 'button';
+      row.style.cssText = 'width:100%;display:flex;align-items:center;gap:12px;text-align:left;padding:13px;margin:0 0 10px;background:linear-gradient(120deg,rgba(255,107,0,.17),rgba(255,215,0,.05));border:1px solid rgba(255,107,0,.42);border-radius:14px;color:#fff;cursor:pointer;';
+      row.innerHTML = '<span style="width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#ff6b00;font-size:23px">🎯</span><span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:900">CODMPanda Coach <span style="font-size:9px;background:#ff6b00;color:white;border-radius:5px;padding:2px 5px;margin-left:4px">PINNED</span></span><span style="display:block;font-size:11px;color:#aaa;margin-top:3px">Your CODM practice assistant · Tap to chat</span></span><span style="color:#ff6b00;font-size:18px">›</span>';
+      row.addEventListener('click', () => {
+        if (typeof window.openCODMPandaCoach === 'function') window.openCODMPandaCoach();
+        else if (typeof toast === 'function') toast('Coach is still loading. Please try again.', 'info');
+      });
+      body.prepend(row);
+    };
+  }
 })();
