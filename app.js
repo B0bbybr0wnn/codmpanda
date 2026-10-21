@@ -985,8 +985,8 @@ function renderLobbies() {
       <div class="bg-card border border-border rounded-2xl p-4 fade-in">
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
-              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -5375,8 +5375,8 @@ renderLobbies = function() {
       <div class="bg-card border border-border rounded-2xl p-4 fade-in">
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
-              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -13934,8 +13934,8 @@ renderLobbies = function() {
       <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : 'border-border'} rounded-2xl p-4 fade-in">
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
-              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -18565,8 +18565,8 @@ function renderHomeLobbyCard(l) {
       </div>
 
       <div class="flex items-start gap-3 mb-3">
-        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0">
-          ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0">
+          ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
@@ -18610,7 +18610,7 @@ function renderHomeVaultCard(v) {
       </div>
 
       <div class="flex items-start gap-3 mb-3">
-        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0">
+        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0">
           ${v.avatar ? `<img src="${esc(v.avatar)}" class="w-full h-full object-cover" />` : getInitials(v.ign)}
         </div>
         <div class="flex-1 min-w-0">
@@ -20147,7 +20147,7 @@ function renderHomePostCard(post) {
   return `
     <div class="home-card bg-card border border-border rounded-2xl p-4 mb-3 fade-in" data-type="post" data-id="${post.id}">
       <div class="flex items-start gap-3 mb-3">
-        <div data-uid="${esc(post.uid || '')}" class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0 cursor-pointer">
+        <div data-uid="${esc(post.uid || '')}" class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0 cursor-pointer">
           ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
         </div>
         <div class="flex-1 min-w-0">
@@ -22327,8 +22327,8 @@ renderLobbies = function() {
       <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : isProLobby ? 'border-gold' : 'border-border'} rounded-2xl p-4 fade-in ${isProLobby ? 'relative' : ''}" ${isProLobby ? 'style="box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);"' : ''}>
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
-              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -22925,8 +22925,8 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
         <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : isProLobby ? 'border-gold' : 'border-border'} rounded-2xl p-4 fade-in ${isProLobby ? 'relative' : ''}" ${isProLobby ? 'style="box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);"' : ''}>
         <div class="flex items-start gap-3 mb-3">
             <div class="relative">
-              <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
-                ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+              <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+                ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign))}
               </div>
               ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
             </div>
@@ -24887,7 +24887,7 @@ window.performGlobalSearch = performGlobalSearch;
       <div class="space-y-4">
         <!-- Author header -->
         <div class="flex items-center gap-3">
-          <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
+          <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
             ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
           </div>
           <div class="flex-1 min-w-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
@@ -26974,4 +26974,49 @@ window.performGlobalSearch = performGlobalSearch;
   setTimeout(cpInstallCoachButton, 1200);
 
   console.log('[CODMPanda] Vault recovery, card opening, clickable mentions and Coach patch loaded.');
+})();
+
+
+// ============================================
+// CODMPanda lobby profile hydration patch
+// ============================================
+(function cpLobbyProfileHydration() {
+  const profileCache = new Map();
+  const pending = new Map();
+  async function enrichLobby(lobby) {
+    if (!lobby?.uid) return false;
+    if (profileCache.has(lobby.uid)) {
+      Object.assign(lobby, profileCache.get(lobby.uid));
+      return false;
+    }
+    if (!pending.has(lobby.uid)) {
+      pending.set(lobby.uid, getDoc(doc(db, 'users', lobby.uid)).then(snap => {
+        const data = snap.exists() ? snap.data() : {};
+        const profile = {
+          verified: data.verified === true,
+          avatarFrame: data.avatarFrame || 'none',
+          isPro: data.isPro === true || data.pro === true || data.subscription === 'pro' || data.proStatus === 'active',
+          avatar: lobby.avatar || data.avatar || data.photoURL || data.photoUrl || '',
+          ign: lobby.ign || data.ign || data.displayName || 'Operator'
+        };
+        profileCache.set(lobby.uid, profile);
+        pending.delete(lobby.uid);
+        Object.assign(lobby, profile);
+        return true;
+      }).catch(error => { pending.delete(lobby.uid); console.warn('[CODMPanda] Lobby profile hydrate failed', error); return false; }));
+    }
+    return pending.get(lobby.uid);
+  }
+  const previousRenderLobbies = renderLobbies;
+  renderLobbies = function() {
+    const result = previousRenderLobbies.apply(this, arguments);
+    const items = (State.cache.lobbies || []).slice();
+    const jobs = items.filter(l => l?.uid && !profileCache.has(l.uid)).map(enrichLobby);
+    if (jobs.length) Promise.all(jobs).then(changed => {
+      if (changed.some(Boolean) && document.getElementById('lobbies-feed')) previousRenderLobbies.call(this);
+    });
+    return result;
+  };
+  window.renderLobbies = renderLobbies;
+  console.log('[CODMPanda] Lobby verified status and avatar-frame profile hydration enabled.');
 })();
