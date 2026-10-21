@@ -992,7 +992,7 @@ function renderLobbies() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
             </div>
             <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
@@ -1313,27 +1313,45 @@ function renderVaultSub() {
   if (window.lucide) window.lucide.createIcons();
 }
 
-function loadVaults() {
-  const q = query(
-    collection(db, 'vaults'),
-    orderBy('createdAt', 'desc'),
-    limit(60)
-  );
+function cpNormalizeVaultRecord(id, raw) {
+  const d = { id, ...(raw || {}) };
+  const rawType = String(d.type || d.vaultType || d.category || d.kind || '').toLowerCase().trim();
+  d.type = /sens|sensitivity/.test(rawType) ? 'sens'
+    : /hud|layout/.test(rawType) ? 'hud'
+    : /gun.?smith|build|loadout/.test(rawType) ? 'gunsmith'
+    : rawType || 'gunsmith';
+  if (!d.attachments || typeof d.attachments !== 'object') {
+    d.attachments = d.sensitivitySettings || d.sensitivities || d.settings || d.values || d.controls || {};
+  }
+  d.gunsmithCode = d.gunsmithCode || d.shareCode || d.code || d.loadoutCode || '';
+  d.imageUrl = d.imageUrl || d.imageURL || d.image || d.screenshotUrl || d.screenshot || d.url || '';
+  d.gunName = d.gunName || d.gun || d.weapon || d.title || 'Unknown';
+  d.uid = d.uid || d.userId || d.ownerUid || '';
+  return d;
+}
 
-  State.vaultsUnsub = onSnapshot(q, (snap) => {
+function loadVaults() {
+  if (State.vaultsUnsub) { try { State.vaultsUnsub(); } catch (_) {} }
+  // Do not limit/order before filtering: older records may have no createdAt field.
+  State.vaultsUnsub = onSnapshot(collection(db, 'vaults'), (snap) => {
     const vaults = [];
-    snap.forEach(doc => {
-      const d = doc.data();
-      if (d.type === vaultTypeFilter) vaults.push({ id: doc.id, ...d });
+    snap.forEach(docSnap => {
+      const v = cpNormalizeVaultRecord(docSnap.id, docSnap.data());
+      if (v.type === vaultTypeFilter) vaults.push(v);
+    });
+    vaults.sort((a, b) => {
+      const at = a.createdAt?.toMillis ? a.createdAt.toMillis() : (Date.parse(a.createdAt || '') || 0);
+      const bt = b.createdAt?.toMillis ? b.createdAt.toMillis() : (Date.parse(b.createdAt || '') || 0);
+      return bt - at;
     });
     State.cache.vaults = vaults;
     renderVaults();
   }, (err) => {
-    console.error('Vaults error:', err);
+    console.error('[CODMPanda] Full vault read failed:', err);
     const feed = document.getElementById('vault-feed');
     if (feed) {
       feed.className = '';
-      feed.innerHTML = emptyState('package-open', 'No vaults yet', 'Share your first build', 'Add Build', openAddVaultSheet);
+      feed.innerHTML = emptyState('package-open', 'Vault could not load', 'Check your connection and Firebase access, then retry.', 'Retry', loadVaults);
     }
     if (window.lucide) window.lucide.createIcons();
   });
@@ -5364,7 +5382,7 @@ renderLobbies = function() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
             </div>
             <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
@@ -13923,7 +13941,7 @@ renderLobbies = function() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
               ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
             </div>
@@ -18552,7 +18570,7 @@ function renderHomeLobbyCard(l) {
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+            <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
             ${l.uid === ADMIN_UID ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑</span>' : ''}
           </div>
@@ -22307,7 +22325,6 @@ renderLobbies = function() {
 
     return `
       <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : isProLobby ? 'border-gold' : 'border-border'} rounded-2xl p-4 fade-in ${isProLobby ? 'relative' : ''}" ${isProLobby ? 'style="box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);"' : ''}>
-        ${isProLobby ? `<div class="absolute top-2 right-2 text-[9px] px-2 py-0.5 rounded-full bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑 PRIORITY</div>` : ''}
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
@@ -22317,7 +22334,7 @@ renderLobbies = function() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               ${getBadgeHTML(l)}
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
               ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
@@ -22906,8 +22923,7 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
 
       return `
         <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : isProLobby ? 'border-gold' : 'border-border'} rounded-2xl p-4 fade-in ${isProLobby ? 'relative' : ''}" ${isProLobby ? 'style="box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);"' : ''}>
-          ${isProLobby ? `<div class="absolute top-2 right-2 text-[9px] px-2 py-0.5 rounded-full bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑 PRIORITY</div>` : ''}
-          <div class="flex items-start gap-3 mb-3">
+        <div class="flex items-start gap-3 mb-3">
             <div class="relative">
               <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
                 ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
@@ -22916,7 +22932,7 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5 flex-wrap">
-                <span class="font-bold text-sm user-name-link" data-uid="${l.uid}" style="cursor: pointer; text-decoration: underline; text-decoration-color: rgba(255, 107, 0, 0.3); text-underline-offset: 2px;">${esc(l.ign || 'Unknown')}</span>
+                <span class="font-bold text-sm user-name-link" data-uid="${l.uid}" style="cursor: pointer; text-decoration: underline; text-decoration-color: rgba(255, 107, 0, 0.3); text-underline-offset: 2px;">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
                 ${getBadgeHTML(l)}
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
                 ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
@@ -26403,8 +26419,8 @@ window.performGlobalSearch = performGlobalSearch;
   async function cpV4RenderPopularBuilds() {
     const host = document.getElementById('cp-v4-meta-builds'); if (!host) return;
     try {
-      const snap = await getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(60)));
-      const builds = []; snap.forEach(d => { const v = { id:d.id, ...d.data() }; if (!v.type || v.type === 'gunsmith') builds.push(v); });
+      const snap = await getDocs(collection(db, 'vaults'));
+      const builds = []; snap.forEach(d => { const v = { id:d.id, ...d.data() }; const normalized = cpNormalizeVaultRecord(v.id, v); if (normalized.type === 'gunsmith') builds.push(normalized); });
       builds.sort((a,b) => (Number(b.likes)||0)-(Number(a.likes)||0));
       if (!builds.length) { host.innerHTML = '<div class="bg-card border border-border rounded-xl p-4 text-xs text-gray-500">No community gunsmith builds yet. Create one in Loadout Lab to start the collection.</div>'; return; }
       host.innerHTML = builds.slice(0,6).map(v => `<button class="cp-v4-meta-build bg-card border border-border rounded-xl p-3 w-full text-left flex items-center gap-3" data-gun="${escV4(v.gunName || '')}"><span class="w-9 h-9 rounded-xl bg-primary/15 text-primary flex items-center justify-center">🔧</span><span class="min-w-0 flex-1"><strong class="block text-xs truncate">${escV4(v.gunName || 'Unknown weapon')}</strong><small class="block text-[10px] text-gray-500">${escV4(v.ign || 'Community')} · ♥ ${Number(v.likes)||0}</small></span><span class="text-[10px] text-primary font-bold">View</span></button>`).join('');
@@ -26827,4 +26843,135 @@ window.performGlobalSearch = performGlobalSearch;
   // Preserve the consolidated window-level clip renderer from the existing app. The local
   // Clips-tab renderer is enhanced above; do not replace the merged renderer with an older one.
   console.log('[CODMPanda] Companion Upgrade Pack v4 loaded: Intel, Meta Tracker, map-aware LFG, upgraded loadouts/clips, achievements, notification preferences, profile contributions and Pro watchlist.');
+})();
+
+
+// ============================================
+// CODMPanda maintenance patch — 2026-10-21
+// ============================================
+(function cpMaintenancePatch() {
+  // Opening any vault card now uses the detail view. Map visible cards to the filtered records
+  // after the existing renderer runs, avoiding a duplicate renderer or changes to card controls.
+  const cpPreviousRenderVaults = renderVaults;
+  renderVaults = function() {
+    cpPreviousRenderVaults.apply(this, arguments);
+    const feed = document.getElementById('vault-feed');
+    if (!feed) return;
+    let visible = (State.cache.vaults || []).slice();
+    const search = String(State.filters?.vaults?.search || '').toLowerCase();
+    if (search) visible = visible.filter(v =>
+      String(v.gunName || '').toLowerCase().includes(search) ||
+      String(v.gunsmithCode || '').toLowerCase().includes(search)
+    );
+    const cards = Array.from(feed.children);
+    cards.forEach((card, index) => {
+      const vault = visible[index];
+      if (!vault) return;
+      card.dataset.vaultId = vault.id;
+      card.style.cursor = 'pointer';
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      const open = () => openVaultDetail(vault.id);
+      card.addEventListener('click', event => {
+        if (event.target.closest('button,a,input,select,textarea')) return;
+        open();
+      });
+      card.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          if (event.target === card) { event.preventDefault(); open(); }
+        }
+      });
+    });
+  };
+  window.renderVaults = renderVaults;
+
+  // Direct-fetch fallback makes shared/deep-linked builds open even when the current cache is filtered.
+  const cpPreviousOpenVaultDetail = openVaultDetail;
+  openVaultDetail = async function(vaultId) {
+    let found = (State.cache.vaults || []).find(v => v.id === vaultId);
+    if (!found) {
+      try {
+        const snap = await getDoc(doc(db, 'vaults', vaultId));
+        if (snap.exists()) {
+          found = cpNormalizeVaultRecord(snap.id, snap.data());
+          State.cache.vaults = [...(State.cache.vaults || []).filter(v => v.id !== found.id), found];
+        }
+      } catch (error) {
+        console.warn('[CODMPanda] Direct vault fetch failed', error);
+      }
+    }
+    if (!found) { toast('Build could not be loaded. Check your connection or access.', 'error'); return; }
+    return cpPreviousOpenVaultDetail.call(this, vaultId);
+  };
+  window.openVaultDetail = openVaultDetail;
+
+  // Make @mentions open any matching public user profile, not only a friend-list match.
+  document.addEventListener('click', async function cpMentionProfileFallback(event) {
+    const mention = event.target.closest('.mention-text');
+    if (!mention) return;
+    const ign = mention.textContent.replace('@', '').trim();
+    if (!ign) return;
+    try {
+      const snap = await getDocs(query(collection(db, 'users'), where('ign', '==', ign), limit(1)));
+      if (!snap.empty) {
+        const userDoc = snap.docs[0];
+        const profile = userDoc.data();
+        if (typeof openUserProfile === 'function') openUserProfile(userDoc.id);
+        else if (typeof showUserProfile === 'function') showUserProfile(userDoc.id);
+      }
+    } catch (error) {
+      console.warn('[CODMPanda] Mention profile lookup failed', error);
+    }
+  });
+
+  // A useful built-in coach shell. It clearly labels itself as local guidance, not live AI/data.
+  function cpCoachReply(question) {
+    const q = question.toLowerCase();
+    if (/sens|sensitivity|gyro|gyroscope/.test(q))
+      return 'For sensitivity, change one group at a time and test in Training Range: camera first, then firing, then gyro if you use it. Track your device, FPS, and whether you play thumbs, claw, or gyro so the settings are repeatable.';
+    if (/hud|layout|button|claw/.test(q))
+      return 'For HUD setup, keep your aim area clear, place fire/ADS/jump/crouch where your fingers naturally rest, and test movement + slide-jumps before ranked. Save a screenshot or backup before changing your layout.';
+    if (/gunsmith|build|attachment|weapon/.test(q))
+      return 'Build advice depends on mode. MP usually rewards ADS speed, sprint-to-fire, and recoil control; BR often benefits from range, bullet velocity, and steadier recoil. Tell me the weapon and MP/BR to narrow it down.';
+    if (/rank|practice|improve|aim|movement/.test(q))
+      return 'Try a short routine: 5 minutes tracking, 5 minutes recoil control, 5 minutes slide-jump/centering, then 2–3 matches focusing on one mistake. Review deaths instead of changing every setting at once.';
+    if (/meta|season|update|latest|current/.test(q))
+      return 'I can help reason about CODM strategy, but this built-in coach has no live game-news feed connected. Check the in-app Intel/Meta sections for current entries, and share what you see if you want me to compare options.';
+    return 'I’m your CODMPanda practice coach. Tell me your weapon, mode (MP or BR), device/FPS, control style (thumbs/claw/gyro), and what feels wrong—recoil, tracking, movement, or survivability—and I’ll help you tune one thing at a time. This version uses built-in guidance, not a live AI service.';
+  }
+  function cpOpenCoach() {
+    let overlay = document.getElementById('cp-ai-coach');
+    if (overlay) { overlay.style.display = 'flex'; return; }
+    overlay = document.createElement('div');
+    overlay.id = 'cp-ai-coach';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;padding:12px';
+    overlay.innerHTML = '<section style="width:min(100%,520px);max-height:82vh;background:#101116;border:1px solid #343640;border-radius:20px;display:flex;flex-direction:column;overflow:hidden;color:#fff"><header style="padding:14px 16px;border-bottom:1px solid #343640;display:flex;justify-content:space-between;align-items:center"><div><b>🎯 CODMPanda Coach</b><div style="font-size:11px;color:#a1a1aa;margin-top:3px">Practice & loadout guidance · not live AI</div></div><button id="cp-coach-close" aria-label="Close coach" style="font-size:24px;padding:0 6px">×</button></header><div id="cp-coach-chat" style="padding:14px;overflow:auto;min-height:180px;display:flex;flex-direction:column;gap:10px"><div style="background:#20212a;border-radius:12px;padding:11px;font-size:13px">Yo operator 👋 What are we tuning today—sensitivity, HUD, gunsmith, aim, or movement?</div></div><form id="cp-coach-form" style="display:flex;gap:8px;padding:12px;border-top:1px solid #343640"><input id="cp-coach-input" maxlength="500" placeholder="Ask your CODM coach…" style="flex:1;min-width:0;background:#20212a;border:1px solid #3a3b45;border-radius:10px;padding:11px;color:white"><button style="background:#ff6b00;border-radius:10px;padding:0 15px;font-weight:800">Send</button></form></section>';
+    document.body.appendChild(overlay);
+    overlay.querySelector('#cp-coach-close').onclick = () => overlay.remove();
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#cp-coach-form').onsubmit = e => {
+      e.preventDefault();
+      const input = overlay.querySelector('#cp-coach-input');
+      const value = input.value.trim();
+      if (!value) return;
+      const chat = overlay.querySelector('#cp-coach-chat');
+      const userLine = document.createElement('div'); userLine.style.cssText='align-self:flex-end;max-width:90%;background:#71320d;border-radius:12px;padding:10px;font-size:13px'; userLine.textContent=value; chat.appendChild(userLine);
+      const reply = document.createElement('div'); reply.style.cssText='align-self:flex-start;max-width:95%;background:#20212a;border-radius:12px;padding:11px;font-size:13px;line-height:1.5'; reply.textContent=cpCoachReply(value); chat.appendChild(reply);
+      input.value=''; chat.scrollTop=chat.scrollHeight; input.focus();
+    };
+    overlay.querySelector('#cp-coach-input').focus();
+  }
+  function cpInstallCoachButton() {
+    if (!document.body || document.getElementById('cp-ai-coach-launch')) return;
+    const button = document.createElement('button');
+    button.id = 'cp-ai-coach-launch'; button.type='button'; button.textContent='🎯 Coach';
+    button.setAttribute('aria-label','Open CODMPanda Coach');
+    button.style.cssText='position:fixed;right:14px;bottom:calc(78px + env(safe-area-inset-bottom));z-index:9990;background:#ff6b00;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:11px 15px;font-weight:900;font-size:12px;box-shadow:0 5px 18px rgba(0,0,0,.35)';
+    button.onclick = cpOpenCoach; document.body.appendChild(button);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', cpInstallCoachButton, { once: true });
+  else cpInstallCoachButton();
+  setTimeout(cpInstallCoachButton, 1200);
+
+  console.log('[CODMPanda] Vault recovery, card opening, clickable mentions and Coach patch loaded.');
 })();
