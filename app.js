@@ -26949,20 +26949,16 @@ window.performGlobalSearch = performGlobalSearch;
     }
   });
 
-  // A useful built-in coach shell. It clearly labels itself as local guidance, not live AI/data.
-  function cpCoachReply(question) {
-    const q = question.toLowerCase();
-    if (/sens|sensitivity|gyro|gyroscope/.test(q))
-      return 'For sensitivity, change one group at a time and test in Training Range: camera first, then firing, then gyro if you use it. Track your device, FPS, and whether you play thumbs, claw, or gyro so the settings are repeatable.';
-    if (/hud|layout|button|claw/.test(q))
-      return 'For HUD setup, keep your aim area clear, place fire/ADS/jump/crouch where your fingers naturally rest, and test movement + slide-jumps before ranked. Save a screenshot or backup before changing your layout.';
-    if (/gunsmith|build|attachment|weapon/.test(q))
-      return 'Build advice depends on mode. MP usually rewards ADS speed, sprint-to-fire, and recoil control; BR often benefits from range, bullet velocity, and steadier recoil. Tell me the weapon and MP/BR to narrow it down.';
-    if (/rank|practice|improve|aim|movement/.test(q))
-      return 'Try a short routine: 5 minutes tracking, 5 minutes recoil control, 5 minutes slide-jump/centering, then 2–3 matches focusing on one mistake. Review deaths instead of changing every setting at once.';
-    if (/meta|season|update|latest|current/.test(q))
-      return 'I can help reason about CODM strategy, but this built-in coach has no live game-news feed connected. Check the in-app Intel/Meta sections for current entries, and share what you see if you want me to compare options.';
-    return 'I’m your CODMPanda practice coach. Tell me your weapon, mode (MP or BR), device/FPS, control style (thumbs/claw/gyro), and what feels wrong—recoil, tracking, movement, or survivability—and I’ll help you tune one thing at a time. This version uses built-in guidance, not a live AI service.';
+  async function cpCoachReply(question, history) {
+    const response = await fetch(NOTIFY_WORKER_URL + '/coach', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: question, history: history.slice(-10) })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'AI Coach request failed');
+    if (!data.reply) throw new Error('AI Coach returned an empty reply');
+    return data.reply;
   }
   function cpOpenCoach() {
     let overlay = document.getElementById('cp-ai-coach');
@@ -26970,19 +26966,46 @@ window.performGlobalSearch = performGlobalSearch;
     overlay = document.createElement('div');
     overlay.id = 'cp-ai-coach';
     overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;padding:12px';
-    overlay.innerHTML = '<section style="width:min(100%,520px);max-height:82vh;background:#101116;border:1px solid #343640;border-radius:20px;display:flex;flex-direction:column;overflow:hidden;color:#fff"><header style="padding:14px 16px;border-bottom:1px solid #343640;display:flex;justify-content:space-between;align-items:center"><div><b>🎯 CODMPanda Coach</b><div style="font-size:11px;color:#a1a1aa;margin-top:3px">Practice & loadout guidance · not live AI</div></div><button id="cp-coach-close" aria-label="Close coach" style="font-size:24px;padding:0 6px">×</button></header><div id="cp-coach-chat" style="padding:14px;overflow:auto;min-height:180px;display:flex;flex-direction:column;gap:10px"><div style="background:#20212a;border-radius:12px;padding:11px;font-size:13px">Yo operator 👋 What are we tuning today—sensitivity, HUD, gunsmith, aim, or movement?</div></div><form id="cp-coach-form" style="display:flex;gap:8px;padding:12px;border-top:1px solid #343640"><input id="cp-coach-input" maxlength="500" placeholder="Ask your CODM coach…" style="flex:1;min-width:0;background:#20212a;border:1px solid #3a3b45;border-radius:10px;padding:11px;color:white"><button style="background:#ff6b00;border-radius:10px;padding:0 15px;font-weight:800">Send</button></form></section>';
+    overlay.innerHTML = '<section style="width:min(100%,520px);max-height:82vh;background:#101116;border:1px solid #343640;border-radius:20px;display:flex;flex-direction:column;overflow:hidden;color:#fff"><header style="padding:14px 16px;border-bottom:1px solid #343640;display:flex;justify-content:space-between;align-items:center"><div><b>🎯 CODMPanda Coach</b><div style="font-size:11px;color:#a1a1aa;margin-top:3px">AI-powered CODM practice & loadout coach</div></div><button id="cp-coach-close" aria-label="Close coach" style="font-size:24px;padding:0 6px">×</button></header><div id="cp-coach-chat" style="padding:14px;overflow:auto;min-height:180px;display:flex;flex-direction:column;gap:10px"><div style="background:#20212a;border-radius:12px;padding:11px;font-size:13px">Yo operator 👋 What are we tuning today—sensitivity, HUD, gunsmith, aim, or movement?</div></div><form id="cp-coach-form" style="display:flex;gap:8px;padding:12px;border-top:1px solid #343640"><input id="cp-coach-input" maxlength="500" placeholder="Ask your CODM coach…" style="flex:1;min-width:0;background:#20212a;border:1px solid #3a3b45;border-radius:10px;padding:11px;color:white"><button style="background:#ff6b00;border-radius:10px;padding:0 15px;font-weight:800">Send</button></form></section>';
     document.body.appendChild(overlay);
     overlay.querySelector('#cp-coach-close').onclick = () => overlay.remove();
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    overlay.querySelector('#cp-coach-form').onsubmit = e => {
+    const history = [];
+    overlay.querySelector('#cp-coach-form').onsubmit = async e => {
       e.preventDefault();
       const input = overlay.querySelector('#cp-coach-input');
+      const form = overlay.querySelector('#cp-coach-form');
+      const sendButton = form.querySelector('button');
       const value = input.value.trim();
-      if (!value) return;
+      if (!value || sendButton.disabled) return;
       const chat = overlay.querySelector('#cp-coach-chat');
-      const userLine = document.createElement('div'); userLine.style.cssText='align-self:flex-end;max-width:90%;background:#71320d;border-radius:12px;padding:10px;font-size:13px'; userLine.textContent=value; chat.appendChild(userLine);
-      const reply = document.createElement('div'); reply.style.cssText='align-self:flex-start;max-width:95%;background:#20212a;border-radius:12px;padding:11px;font-size:13px;line-height:1.5'; reply.textContent=cpCoachReply(value); chat.appendChild(reply);
-      input.value=''; chat.scrollTop=chat.scrollHeight; input.focus();
+      const userLine = document.createElement('div');
+      userLine.style.cssText='align-self:flex-end;max-width:90%;background:#71320d;border-radius:12px;padding:10px;font-size:13px;white-space:pre-wrap';
+      userLine.textContent=value;
+      chat.appendChild(userLine);
+      const reply = document.createElement('div');
+      reply.style.cssText='align-self:flex-start;max-width:95%;background:#20212a;border-radius:12px;padding:11px;font-size:13px;line-height:1.5;white-space:pre-wrap';
+      reply.textContent='Thinking…';
+      chat.appendChild(reply);
+      input.value='';
+      input.disabled=true;
+      sendButton.disabled=true;
+      sendButton.textContent='…';
+      chat.scrollTop=chat.scrollHeight;
+      try {
+        const answer = await cpCoachReply(value, history);
+        history.push({ role:'user', text:value }, { role:'model', text:answer });
+        reply.textContent=answer;
+      } catch (error) {
+        console.warn('[CODMPanda Coach] Request failed:', error);
+        reply.textContent=error.message || 'I could not reach the AI Coach. Please try again.';
+      } finally {
+        input.disabled=false;
+        sendButton.disabled=false;
+        sendButton.textContent='Send';
+        chat.scrollTop=chat.scrollHeight;
+        input.focus();
+      }
     };
     overlay.querySelector('#cp-coach-input').focus();
   }

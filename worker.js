@@ -26,8 +26,45 @@ export default {
     }
 
     if (url.pathname === '/briefings' && request.method === 'GET') {
-      const briefings = await fetchOfficialBriefings();
-      return json({ success: briefings.length > 0, updatedAt: new Date().toISOString(), briefings });
+      try {
+        const rawBriefings = await fetchOfficialBriefings();
+        const briefings = await summarizeOfficialBriefings(rawBriefings, env);
+        return json({
+          success: briefings.some(item => item.isArticle),
+          aiConfigured: !!env.GEMINI_API_KEY,
+          updatedAt: new Date().toISOString(),
+          briefings: briefings.map(({ articleText, isArticle, ...item }) => item)
+        });
+      } catch (error) {
+        console.error('[briefings] Failed:', error);
+        return json({ success: false, error: 'Could not load official CODM briefings.' }, 502);
+      }
+    }
+
+    if (url.pathname === '/coach' && request.method === 'POST') {
+      if (!env.GEMINI_API_KEY) {
+        return json({ error: 'AI is not configured yet. Add the GEMINI_API_KEY secret to this Worker.' }, 503);
+      }
+      try {
+        const body = await request.json();
+        const message = String(body.message || '').trim().slice(0, 1200);
+        if (!message) return json({ error: 'Please enter a message.' }, 400);
+        const history = Array.isArray(body.history) ? body.history.slice(-10).map(item => ({
+          role: item && item.role === 'model' ? 'model' : 'user',
+          parts: [{ text: String(item && item.text || '').slice(0, 1200) }]
+        })).filter(item => item.parts[0].text) : [];
+        const answer = await callGemini(env, {
+          systemInstruction: {
+            parts: [{ text: 'You are CODMPanda Coach, a friendly, skilled Call of Duty: Mobile coach. Speak naturally like a helpful teammate, not a corporate chatbot. Answer the exact question first, be practical and specific, ask one focused follow-up only when needed, and remember the recent conversation provided. Do not invent current patch notes, weapon stats, or meta claims; say when you are unsure or lack live data. For sensitivity, HUD, gunsmith, aim, movement, ranked, and BR/MP questions, give actionable CODM-specific advice. Keep most replies concise but useful. Do not claim to be a human.' }]
+          },
+          contents: [...history, { role: 'user', parts: [{ text: message }] }],
+          generationConfig: { temperature: 0.8, maxOutputTokens: 650 }
+        });
+        return json({ success: true, reply: answer });
+      } catch (error) {
+        console.error('[coach] Gemini request failed:', error?.message || error);
+        return json({ error: 'The AI Coach could not respond right now. Please try again shortly.' }, 502);
+      }
     }
 
     if (request.method !== 'POST') {
@@ -288,21 +325,74 @@ async function fetchOfficialBriefings() {
           try {
             const articleHtml = await getPage(link.url);
             const title = meta(articleHtml,'og:title') || (articleHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || link.title;
-            const description = meta(articleHtml,'og:description') || meta(articleHtml,'description') || clean((articleHtml.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || [])[1]).slice(0,360) || link.title;
+            const description = meta(articleHtml,'og:description') || meta(articleHtml,'description') || clean((articleHtml.match(/<article\\b[^>]*>([\\s\\S]*?)<\\/article>/i) || [])[1]).slice(0,360) || link.title;
+            const articleBlock = (articleHtml.match(/<article\\b[^>]*>([\\s\\S]*?)<\\/article>/i) || articleHtml.match(/<main\\b[^>]*>([\\s\\S]*?)<\\/main>/i) || [])[1] || '';
+            const articleText = clean(articleBlock.replace(/<(script|style|nav|header|footer|aside)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi, ' ')).slice(0,10000);
             const published = meta(articleHtml,'article:published_time') || meta(articleHtml,'date');
-            results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description).slice(0,520), url:link.url, publishedAt:published ? clean(published).slice(0,30) : 'Latest official article' });
+            results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description).slice(0,520), articleText, isArticle:true, url:link.url, publishedAt:published ? clean(published).slice(0,30) : 'Latest official article' });
           } catch (_) {}
         }));
       }
       const title = meta(html,'og:title') || (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || source.name;
       const description = meta(html,'og:description') || meta(html,'description') || clean((html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || [])[1]).slice(0,360);
       if (!source.news || !results.some(item => item.sourceName === source.name)) {
-        results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description || 'Open the official page for current support information and announcements.').slice(0,520), url:source.url, publishedAt:'Official source snapshot' });
+        results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description || 'Open the official page for current support information and announcements.').slice(0,520), isArticle:false, url:source.url, publishedAt:'Official source snapshot' });
       }
     } catch (error) { console.warn('[briefings] Source unavailable:', source.url, error?.message || error); }
   }));
   const seen = new Set();
   return results.filter(item => { if (!item.url || seen.has(item.url)) return false; seen.add(item.url); return true; }).slice(0,8);
+}
+
+// ============================================
+// GEMINI AI HELPERS
+// ============================================
+async function callGemini(env, payload) {
+  const model = String(env.GEMINI_MODEL || 'gemini-3.8-flash').replace(/^models\\//, '');
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': env.GEMINI_API_KEY
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.error('[Gemini] API status:', response.status, data?.error?.message || '');
+    throw new Error('Gemini API returned ' + response.status);
+  }
+  const text = (data.candidates || []).flatMap(candidate => candidate.content?.parts || [])
+    .map(part => part.text || '').join('\\n').trim();
+  if (!text) throw new Error('Gemini returned an empty response');
+  return text;
+}
+
+async function summarizeOfficialBriefings(items, env) {
+  if (!env.GEMINI_API_KEY) {
+    return items.map(item => ({ ...item, aiSummary:false }));
+  }
+  return Promise.all(items.map(async item => {
+    if (!item.isArticle || !item.articleText || item.articleText.length < 180) {
+      return { ...item, aiSummary:false };
+    }
+    try {
+      const summary = await callGemini(env, {
+        systemInstruction: {
+          parts: [{ text: 'You summarize official Call of Duty: Mobile news for players. Use only the supplied article text. Write 2-4 natural sentences explaining what is actually announced and why players should care. Preserve dates, season names, modes, rewards, and availability details when stated. Do not add speculation or facts not in the article. If the article text is too thin, say so briefly.' }]
+        },
+        contents: [{
+          role: 'user',
+          parts: [{ text: 'Official source: ' + item.sourceName + '\\nTitle: ' + item.title + '\\nPublished: ' + item.publishedAt + '\\nArticle text:\\n' + item.articleText.slice(0, 9000) }]
+        }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 220 }
+      });
+      return { ...item, summary, aiSummary:true };
+    } catch (error) {
+      console.warn('[briefings] AI summary failed for', item.url, error?.message || error);
+      return { ...item, aiSummary:false };
+    }
+  }));
 }
 
 // ============================================
