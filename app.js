@@ -27271,3 +27271,40 @@ window.performGlobalSearch = performGlobalSearch;
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>cpHydrateMentionText(document),{once:true});
   else setTimeout(()=>cpHydrateMentionText(document),0);
 
+
+
+/* Hydrate lobby authors in the HOME feed too. The lobby screen had its own hydrator,
+   but Home cards were rendering lobby documents before profile cosmetics were attached. */
+(function cpHomeFeedLobbyHydration(){
+  const cache=new Map(),pending=new Map();
+  async function enrich(item){
+    if(!item||item.type!=='lobby'||!item.uid)return false;
+    if(cache.has(item.uid)){Object.assign(item,cache.get(item.uid));return false;}
+    if(!pending.has(item.uid)){
+      pending.set(item.uid,getDoc(doc(db,'users',item.uid)).then(snap=>{
+        const u=snap.exists()?snap.data():{};
+        const profile={
+          avatarFrame:u.avatarFrame||u.equippedFrame||u.frame||u.profileFrame||item.avatarFrame||item.equippedFrame||item.frame||item.profileFrame||'none',
+          equippedFrame:u.equippedFrame||u.avatarFrame||u.frame||u.profileFrame||item.equippedFrame||item.avatarFrame||item.frame||item.profileFrame||'none',
+          isPro:u.isPro===true||u.pro===true||u.subscription==='pro'||u.proStatus==='active',
+          pro:u.pro===true||u.isPro===true||u.subscription==='pro'||u.proStatus==='active',
+          avatar:item.avatar||u.avatar||u.photoURL||u.photoUrl||'',
+          ign:item.ign||u.ign||u.displayName||'Operator',
+          verified:u.verified===true
+        };
+        cache.set(item.uid,profile);pending.delete(item.uid);Object.assign(item,profile);return true;
+      }).catch(err=>{pending.delete(item.uid);console.warn('[CODMPanda] Home lobby profile hydration failed',err);return false;}));
+    }
+    return pending.get(item.uid);
+  }
+  const original=renderHomeFeed;
+  renderHomeFeed=function(){
+    const result=original.apply(this,arguments);
+    const items=(homeCache?.feed||[]).filter(item=>item?.type==='lobby'&&item.uid&&!cache.has(item.uid));
+    if(items.length)Promise.all(items.map(enrich)).then(changed=>{
+      if(changed.some(Boolean)&&document.getElementById('home-feed'))original.call(this);
+    });
+    return result;
+  };
+  window.renderHomeFeed=renderHomeFeed;
+})();
