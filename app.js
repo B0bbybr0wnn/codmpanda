@@ -935,16 +935,43 @@ function skeletonLobby() {
   `;
 }
 
+function cpLobbyTimestampMillis(value) {
+  if (value == null) return null;
+  try {
+    if (typeof value.toMillis === 'function') return value.toMillis();
+  } catch (_) {}
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'object') {
+    const seconds = Number(value.seconds ?? value._seconds);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return value < 1e12 ? value * 1000 : value;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// A lobby is active only while its real creation timestamp is less than two hours old.
+// Missing/invalid createdAt values are treated as expired rather than left visible forever.
+function cpLobbyIsExpired(lobby, now = Date.now()) {
+  if (!lobby) return true;
+  const createdAt = cpLobbyTimestampMillis(lobby.createdAt ?? lobby.created_at);
+  if (!Number.isFinite(createdAt) || createdAt <= 0) return true;
+  if (now - createdAt >= 2 * 60 * 60 * 1000) return true;
+  const expiresAt = cpLobbyTimestampMillis(lobby.expiresAt ?? lobby.expires_at);
+  if (expiresAt !== null && Number.isFinite(expiresAt) && expiresAt <= now) return true;
+  return false;
+}
+
 function loadLobbies() {
-  const now = Date.now();
   const q = query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(50));
 
   State.lobbiesUnsub = onSnapshot(q, (snap) => {
     const lobbies = [];
     snap.forEach(doc => {
       const data = doc.data();
-      const expires = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
-      if (expires > now) lobbies.push({ id: doc.id, ...data });
+      const lobby = { id: doc.id, ...data };
+      if (!cpLobbyIsExpired(lobby)) lobbies.push(lobby);
     });
     State.cache.lobbies = lobbies;
     renderLobbies();
@@ -959,7 +986,7 @@ function loadLobbies() {
 function renderLobbies() {
   const feed = document.getElementById('lobbies-feed');
   if (!feed) return;
-  let lobbies = State.cache.lobbies;
+  let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
   const f = State.filters.lobbies;
   if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
@@ -5349,7 +5376,7 @@ const _origRenderLobbies = renderLobbies;
 renderLobbies = function() {
   const feed = document.getElementById('lobbies-feed');
   if (!feed) return;
-  let lobbies = State.cache.lobbies;
+  let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
   const f = State.filters.lobbies;
   if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
@@ -13902,7 +13929,7 @@ openPostLobbySheet = function() {
 renderLobbies = function() {
   const feed = document.getElementById('lobbies-feed');
   if (!feed) return;
-  let lobbies = State.cache.lobbies;
+  let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
   const f = State.filters.lobbies;
   if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
@@ -14466,7 +14493,7 @@ const _origRenderLobbiesEmpty = renderLobbies;
 renderLobbies = function() {
   const feed = document.getElementById('lobbies-feed');
   if (!feed) return;
-  let lobbies = State.cache.lobbies;
+  let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
   const f = State.filters.lobbies;
   if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
@@ -18602,6 +18629,7 @@ function renderHomeCard(item) {
 }
 
 function renderHomeLobbyCard(l) {
+  if (cpLobbyIsExpired(l)) return '';
   const isMine = l.uid === State.user.uid;
   const playersText = `${l.players || 1}/5`;
   return `
@@ -21619,19 +21647,20 @@ async function checkVerifiedStatus() {
 
 function renderVerifiedBadge(user) {
   if (!user || !user.verified) return '';
-  return `<span class="verified-badge" title="Verified Creator" style="
+  return `<span class="verified-badge" title="Verified Creator" aria-label="Verified Creator" style="
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    height: 14px;
+    width: 15px;
+    height: 15px;
     border-radius: 50%;
-    background: #1DA1F2;
-    color: #fff;
-    font-size: 9px;
+    background: linear-gradient(135deg, #FFE9A8 0%, #F6C453 45%, #B87908 100%);
+    color: #241600;
+    font-size: 10px;
     font-weight: 900;
     flex-shrink: 0;
-    box-shadow: 0 0 8px rgba(29, 161, 242, 0.5);
+    box-shadow: 0 0 8px rgba(246, 196, 83, 0.42);
+    vertical-align: middle;
   ">✓</span>`;
 }
 
@@ -22371,9 +22400,8 @@ function getBadgeHTML(item) {
   } else if (item.isPro) {
     badges += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex-shrink-0">👑 PRO</span>';
   }
-  if (item.verified) {
-    badges += '<span class="verified-badge" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: #1DA1F2; color: #fff; font-size: 9px; font-weight: 900; flex-shrink: 0; box-shadow: 0 0 8px rgba(29, 161, 242, 0.5);">✓</span>';
-  }
+  // The verified check is rendered once beside the name by renderVerifiedBadge().
+  // Do not add a second check here; this helper only adds the separate Founder/Pro label.
   return badges;
 }
 
@@ -22385,7 +22413,7 @@ var _origRenderLobbiesPriority = renderLobbies;
 renderLobbies = function() {
   const feed = document.getElementById('lobbies-feed');
   if (!feed) return;
-  let lobbies = State.cache.lobbies;
+  let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
   const f = State.filters.lobbies;
   if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
@@ -22957,7 +22985,7 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
     const feed = document.getElementById('lobbies-feed');
     if (!feed) return;
 
-    let lobbies = State.cache.lobbies;
+    let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
     // Apply filters (from all merged chunks — same logic)
     const f = State.filters.lobbies;
@@ -25001,13 +25029,13 @@ window.performGlobalSearch = performGlobalSearch;
         </div>
 
         <!-- Post text and tappable hashtags -->
-        <p class="text-sm text-gray-200 whitespace-pre-wrap break-words">${esc(cpPostTextWithoutHashtags(post.text || ''))}</p>
+        <p class="text-base leading-relaxed text-gray-100 whitespace-pre-wrap break-words" style="font-size:16px;line-height:1.55;">${esc(cpPostTextWithoutHashtags(post.text || ''))}</p>
         ${(() => { const tags = cpExtractHashtags(post.text, post.hashtags); return tags.length ? `<div class="flex flex-wrap gap-1.5">${tags.map(tag => `<button type="button" class="post-hashtag text-[10px] font-bold text-primary bg-primary/10 rounded-full px-2 py-1" data-tag="${esc(tag)}">#${esc(tag)}</button>`).join('')}</div>` : ''; })()}
 
         <!-- Post image — full width, zoomable -->
         ${post.imageUrl ? `
-          <div class="post-image-wrap" style="cursor:zoom-in;">
-            <img src="${esc(post.imageUrl)}" class="w-full rounded-xl" data-zoomable />
+          <div class="post-image-wrap" style="width:100%;cursor:zoom-in;">
+            <img src="${esc(post.imageUrl)}" class="w-full rounded-xl" style="display:block;width:100%;height:auto;max-height:72vh;object-fit:contain;background:#000;border-radius:12px;" data-zoomable />
           </div>
         ` : ''}
 
@@ -25041,6 +25069,16 @@ window.performGlobalSearch = performGlobalSearch;
     const postSheet = sheetContainer?.querySelector('.sheet');
     const postHeader = postSheet?.querySelector(':scope > .sticky');
     const postSheetBody = postSheet?.querySelector(':scope > .px-5');
+    const detailPostImage = postSheetBody?.querySelector('.post-image-wrap img[data-zoomable]');
+    if (detailPostImage) {
+      detailPostImage.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof window.openImageViewer === 'function') {
+          window.openImageViewer(detailPostImage.currentSrc || detailPostImage.src);
+        }
+      });
+    }
 
     if (postBackdrop) {
       Object.assign(postBackdrop.style, {
@@ -25062,23 +25100,24 @@ window.performGlobalSearch = performGlobalSearch;
     }
     if (postHeader) {
       postHeader.className = 'cp-post-detail-header';
-      postHeader.innerHTML = `<button type="button" class="cp-post-back" aria-label="Back to feed"><span aria-hidden="true">‹</span></button><h3>Post</h3><span class="cp-post-header-spacer" aria-hidden="true"></span>`;
+      postHeader.innerHTML = `<button type="button" class="cp-post-back" aria-label="Back to feed"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5 M12 19l-7-7 7-7"/></svg></button><h3>Post</h3><span class="cp-post-header-spacer" aria-hidden="true"></span>`;
       Object.assign(postHeader.style, {
         position: 'relative', inset: 'auto', flex: '0 0 auto', zIndex: '2',
         display: 'flex', alignItems: 'center', gap: '12px', width: '100%',
-        minHeight: 'calc(54px + env(safe-area-inset-top, 0px))',
-        padding: 'env(safe-area-inset-top, 0px) 16px 0', boxSizing: 'border-box',
+        minHeight: 'calc(44px + env(safe-area-inset-top, 0px))',
+        height: 'calc(44px + env(safe-area-inset-top, 0px))',
+        padding: 'env(safe-area-inset-top, 0px) 12px 0', boxSizing: 'border-box',
         background: '#09090b', borderBottom: '1px solid #202024', color: '#fff'
       });
       const back = postHeader.querySelector('.cp-post-back');
       if (back) {
-        back.style.cssText = 'width:40px;height:40px;flex:0 0 40px;border:0;border-radius:12px;background:transparent;color:#f4f4f5;font-size:36px;line-height:1;display:grid;place-items:center;padding:0;';
+        back.style.cssText = 'width:36px;height:36px;flex:0 0 36px;border:0;border-radius:10px;background:transparent;color:#f4f4f5;font-size:0;line-height:1;display:grid;place-items:center;padding:0;';
         back.addEventListener('click', () => closeSheet());
       }
       const heading = postHeader.querySelector('h3');
       if (heading) heading.style.cssText = 'font-size:17px;font-weight:800;margin:0;line-height:1.2;flex:1;color:#fff;';
       const spacer = postHeader.querySelector('.cp-post-header-spacer');
-      if (spacer) spacer.style.cssText = 'width:40px;flex:0 0 40px;';
+      if (spacer) spacer.style.cssText = 'width:36px;flex:0 0 36px;';
     }
     let postComposer = postSheetBody?.querySelector('section .sticky.bottom-0');
     if (postSheetBody) {
@@ -27417,3 +27456,21 @@ window.performGlobalSearch = performGlobalSearch;
   `;
   (document.head||document.documentElement).appendChild(style);
 })();
+
+
+// Remove lobbies at the two-hour boundary even when Firestore has no new snapshot.
+if (!window.__cpLobbyExpirationSweep) {
+  window.__cpLobbyExpirationSweep = setInterval(() => {
+    const cached = Array.isArray(State.cache?.lobbies) ? State.cache.lobbies : [];
+    const active = cached.filter(lobby => !cpLobbyIsExpired(lobby));
+    if (active.length !== cached.length) {
+      State.cache.lobbies = active;
+      if (document.getElementById('lobbies-feed')) renderLobbies();
+      const homeLobbyCards = document.querySelectorAll('#content .home-card[data-type="lobby"]');
+      homeLobbyCards.forEach(card => {
+        const lobby = (homeCache?.feed || []).find(item => item.id === card.dataset.id && item.type === 'lobby');
+        if (!lobby || cpLobbyIsExpired(lobby)) card.remove();
+      });
+    }
+  }, 15000);
+}
