@@ -21836,39 +21836,70 @@ function openThemePicker() {
 // ============================================
 
 function openAvatarFramePicker() {
-  const isPro = State.profile?.isPro;
-  const currentFrame = State.profile?.avatarFrame || 'none';
+  const frameCatalog = window.CODM_WAR_ARTIFACT_FRAMES || {};
+  const normalize = window.CODMNormalizeFrameKey || (value => String(value || 'none').trim().toLowerCase());
+  const hasPro = () => State.profile?.isPro === true
+    || State.profile?.pro === true
+    || State.profile?.subscription === 'pro'
+    || State.profile?.proStatus === 'active';
+  const isPro = hasPro();
+  const rawCurrentFrame = State.profile?.avatarFrame
+    || State.profile?.equippedAvatarFrame
+    || State.profile?.equippedFrame
+    || State.profile?.selectedFrame
+    || State.profile?.frameId
+    || State.profile?.frame
+    || State.profile?.profileFrame
+    || 'none';
+  const currentFrame = normalize(rawCurrentFrame);
+  const entries = [['none', { name: 'No Frame', tier: 'FREE', file: null }], ...Object.entries(frameCatalog)];
+
+  if (!Object.keys(frameCatalog).length || typeof window.CODMRenderFramedAvatar !== 'function') {
+    toast('Avatar frames are still loading. Please reopen the picker.', 'info');
+    return;
+  }
 
   openSheet(`
     <div class="space-y-4">
-      <div class="text-xs text-gray-500">${isPro ? '👑 Pro — All frames unlocked' : 'Free — frames are a Pro feature'}</div>
-
+      <div class="text-xs text-gray-500">
+        ${isPro ? '👑 Pro — all avatar frames unlocked' : 'Free — 10 free frames available; Pro unlocks the premium frames'}
+      </div>
       <div class="grid grid-cols-3 gap-3">
-        ${Object.entries(AVATAR_FRAMES).map(([key, frame]) => {
+        ${entries.map(([key, frame]) => {
           const isSelected = currentFrame === key;
-          const isLocked = false;
+          const isLocked = frame.tier === 'PRO' && !isPro;
+          const selected = isSelected && !isLocked;
+          const preview = window.CODMRenderFramedAvatar({
+            ...(State.profile || {}),
+            // Premium artwork is preview-only for Free users; clicking still opens the upgrade wall.
+            ...((frame.tier === 'PRO') ? { isPro: true, pro: true, subscription: 'pro', proStatus: 'active' } : {}),
+            avatar: State.profile?.avatar || '',
+            avatarFrame: key,
+            equippedAvatarFrame: key,
+            equippedFrame: key,
+            selectedFrame: key,
+            frameId: key,
+            frame: key,
+            profileFrame: key
+          }, 50);
           return `
-            <button class="frame-pick-btn btn-press flex flex-col items-center gap-2 p-3 rounded-2xl ${isSelected ? 'bg-primary/10 border-2 border-primary' : 'bg-card border border-border'}" data-frame="${key}" data-locked="${isLocked}">
-              <div style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                ${frame.style ? `
-                  <div style="${frame.style} width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; position: relative;">
-                    <div style="width: 44px; height: 44px; border-radius: 50%; background: #111; display: flex; align-items: center; justify-content: center; font-size: 14px;">
-                      ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />` : 'CP'}
-                    </div>
-                    ${isLocked ? `<div style="position: absolute; top: -4px; right: -4px; font-size: 12px;">🔒</div>` : ''}
-                  </div>
-                ` : `
-                  <div style="width: 50px; height: 50px; border-radius: 50%; background: rgba(255, 107, 0, 0.15); display: flex; align-items: center; justify-content: center; font-size: 20px;">
-                    ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />` : 'CP'}
-                  </div>
-                `}
+            <button type="button"
+              class="frame-pick-btn btn-press flex flex-col items-center gap-2 p-3 rounded-2xl ${selected ? 'bg-primary/10 border-2 border-primary' : 'bg-card border border-border'} ${isLocked ? 'opacity-80' : ''}"
+              data-frame="${key}"
+              data-locked="${isLocked}"
+              aria-pressed="${selected ? 'true' : 'false'}"
+              title="${isLocked ? 'Pro frame — tap to see upgrade options' : 'Preview and apply ' + frame.name}">
+              <div class="relative flex items-center justify-center" style="width:50px;height:50px;overflow:visible">
+                ${preview}
+                ${isLocked ? '<span aria-hidden="true" style="position:absolute;right:-6px;top:-6px;width:19px;height:19px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#171719;border:1px solid #555;font-size:11px;z-index:5">🔒</span>' : ''}
+                ${selected ? '<span aria-hidden="true" style="position:absolute;right:-6px;bottom:-6px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#FF6B00;color:#fff;font-size:10px;font-weight:900;z-index:6">✓</span>' : ''}
               </div>
-              <span class="text-[10px] font-bold ${isSelected ? 'text-primary' : 'text-gray-400'}">${frame.name}</span>
+              <span class="text-[10px] font-bold ${selected ? 'text-primary' : 'text-gray-400'}">${frame.name}</span>
+              ${isLocked ? '<span class="text-[9px] font-bold text-gold">PRO</span>' : ''}
             </button>
           `;
         }).join('')}
       </div>
-
       ${!isPro ? `
         <button id="frame-upgrade-btn" class="btn-press w-full py-3.5 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
           👑 Unlock All Frames — Go Pro
@@ -21879,38 +21910,56 @@ function openAvatarFramePicker() {
 
   document.querySelectorAll('.frame-pick-btn').forEach(btn => {
     btn.onclick = async () => {
-      const frameKey = btn.dataset.frame;
-      const isLocked = btn.dataset.locked === 'true';
+      const frameKey = normalize(btn.dataset.frame || 'none');
+      const frameInfo = frameKey === 'none' ? { name: 'No Frame', tier: 'FREE' } : frameCatalog[frameKey];
+      const isLocked = frameInfo?.tier === 'PRO' && !hasPro();
 
-      if (isLocked) {
-        showProPaywall('Unlock animated avatar frames with Pro.');
+      if (!frameInfo || (frameKey !== 'none' && !frameCatalog[frameKey])) {
+        toast('That frame is unavailable. Choose another frame.', 'error');
+        return;
+      }
+      if (isLocked || btn.dataset.locked === 'true') {
+        showProPaywall('Unlock this premium avatar frame with Pro.');
+        return;
+      }
+      if (!State.user?.uid) {
+        toast('Sign in to apply an avatar frame.', 'error');
         return;
       }
 
+      const frameName = frameInfo.name || 'Avatar Frame';
+      document.querySelectorAll('.frame-pick-btn').forEach(item => { item.disabled = true; });
       try {
-        await updateDoc(doc(db, 'users', State.user.uid), {
-          avatarFrame: frameKey, equippedFrame: frameKey, frame: frameKey, profileFrame: frameKey
-        });
-        State.profile.avatarFrame = frameKey;
-        State.profile.equippedFrame = frameKey;
-        State.profile.frame = frameKey;
-        State.profile.profileFrame = frameKey;
-        window.dispatchEvent(new CustomEvent('codmpanda:avatar-frame-updated',{detail:{uid:State.user.uid,avatarFrame:frameKey}}));
-        toast('✨ Frame applied!', 'success');
+        const savedFields = {
+          avatarFrame: frameKey,
+          equippedAvatarFrame: frameKey,
+          equippedFrame: frameKey,
+          selectedFrame: frameKey,
+          frameId: frameKey,
+          frame: frameKey,
+          profileFrame: frameKey
+        };
+        await updateDoc(doc(db, 'users', State.user.uid), savedFields);
+        State.profile = State.profile || {};
+        Object.assign(State.profile, savedFields);
+        window.dispatchEvent(new CustomEvent('codmpanda:avatar-frame-updated', {
+          detail: { uid: State.user.uid, avatarFrame: frameKey }
+        }));
         closeSheet();
-        if (State.currentTab === 'you') renderYouTab();
+        if (State.currentTab === 'you' && typeof renderYouTab === 'function') renderYouTab();
+        toast(frameKey === 'none' ? 'Avatar frame removed.' : '✨ ' + frameName + ' applied!', 'success');
       } catch (e) {
-        toast('Failed: ' + e.message, 'error');
+        console.error('[CODMPanda] Avatar frame save failed:', e);
+        toast('Frame was not saved: ' + (e?.message || 'Please try again.'), 'error');
+        document.querySelectorAll('.frame-pick-btn').forEach(item => { item.disabled = false; });
       }
     };
   });
 
   const upgradeBtn = document.getElementById('frame-upgrade-btn');
   if (upgradeBtn) upgradeBtn.onclick = goPro;
-
   if (window.lucide) window.lucide.createIcons();
 }
-
 // ============================================
 // PART 8: PATCH PROFILE HEADER (YOU tab)
 // ============================================
@@ -25538,12 +25587,6 @@ window.performGlobalSearch = performGlobalSearch;
   if (window.__codmpandaVisualUpgrade) return;
   window.__codmpandaVisualUpgrade = true;
   const css = `
-  .cp-avatar-shell{position:relative!important;overflow:visible!important;isolation:isolate;flex-shrink:0}
-  .cp-avatar-core{position:absolute!important;z-index:8!important;left:10%;top:10%;width:80%;height:80%;margin:0!important;overflow:hidden;border-radius:50%;background:#101014;box-sizing:border-box;border:1px solid rgba(255,255,255,.16);}
-  .cp-avatar-core img{width:100%;height:100%;object-fit:cover;display:block}
-  .cp-frame-art{position:absolute;inset:-12%;width:124%;height:124%;z-index:10;pointer-events:none;overflow:visible;filter:drop-shadow(0 0 4px var(--cp-glow,#ff5a1f));}
-  .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;inset:-12%!important;width:124%!important;height:124%!important;object-fit:contain!important;object-position:center!important;z-index:10!important;pointer-events:none!important;display:block!important;}
-  .cp-avatar-shell>.cp-avatar-core{inset:10%!important;width:80%!important;height:80%!important;}
   .cp-frame-art path,.cp-frame-art circle{vector-effect:non-scaling-stroke}.cp-frame-art-fire,.cp-frame-art-mythic{filter:drop-shadow(0 0 5px var(--cp-glow,#ff5a1f)) drop-shadow(0 0 2px #ffb12c)}.cp-frame-art-darkmatter,.cp-frame-art-neon{filter:drop-shadow(0 0 5px var(--cp-glow,#b34cff)) drop-shadow(0 0 2px #fff)}.cp-frame-art-gold,.cp-frame-art-championship{filter:drop-shadow(0 0 4px var(--cp-glow,#ffd45e))}.cp-frame-art-ice,.cp-frame-art-diamond,.cp-frame-art-aether{filter:drop-shadow(0 0 5px var(--cp-glow,#6beaff))}
   .cp-frame-inferno{--cp-glow:#ff4b18}.cp-frame-darkmatter{--cp-glow:#b34cff}.cp-frame-diamond{--cp-glow:#6beaff}.cp-frame-dragon{--cp-glow:#ffb000}.cp-frame-championship{--cp-glow:#ffd45e}.cp-frame-reaper{--cp-glow:#e33c59}.cp-frame-aether{--cp-glow:#49ffc5}.cp-frame-neon{--cp-glow:#ff36c7}
   .cp-theme-profile{position:relative;overflow:hidden;background-size:cover!important;border-color:var(--cp-theme-border,#292929)!important;box-shadow:0 0 28px var(--cp-theme-glow,transparent)!important}
@@ -25643,10 +25686,14 @@ window.performGlobalSearch = performGlobalSearch;
   function normalizeCODMFrameKey(value) {
     const key = String(value || 'none').trim().toLowerCase().replace(/[\\s-]+/g, '_');
     const aliases = {
-      gold_laurel: 'legendary_rank', golden_laurel: 'legendary_rank', laurel_gold: 'legendary_rank',
+      // Legacy style-only IDs must resolve to real PNG assets instead of silently rendering no frame.
+      gold: 'legendary_rank', gold_laurel: 'legendary_rank', golden_laurel: 'legendary_rank', laurel_gold: 'legendary_rank',
       laurel: 'legendary_rank', gold_rank: 'legendary_rank', legendary_gold: 'legendary_rank',
+      fire: 'inferno', ice: 'frost_division', neon: 'ghost_ops', mythic: 'mythic_crystal',
+      diamond: 'frost_division', darkmatter: 'mythic_crystal', championship: 'ranked_champion',
+      reaper: 'zombie_hunter', aether: 'ghost_ops',
       champion: 'ranked_champion', champion_frame: 'ranked_champion',
-      ghostops: 'ghost_ops', mythic: 'mythic_crystal', crystal: 'mythic_crystal',
+      ghostops: 'ghost_ops', crystal: 'mythic_crystal',
       frost: 'frost_division', dragon: 'dragon_blade', cosmic: 'cosmic_vanguard'
     };
     return aliases[key] || key || 'none';
@@ -26257,7 +26304,7 @@ window.performGlobalSearch = performGlobalSearch;
   } catch (mentionError) { console.warn('[CODMPanda] final mention wiring failed', mentionError); }
 
   // Keep ad injection idempotent across repeated feed renders.
-  const adStyle=document.createElement('style');adStyle.id='cp-integration-repair-style';adStyle.textContent=`.cp-avatar-framed-host{position:relative!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;overflow:visible!important;isolation:isolate;flex-shrink:0;line-height:0!important;box-shadow:none!important;outline:0!important;border:0!important;background:transparent!important;padding:0!important;margin:0!important}.cp-avatar-profile-frame-host{position:relative!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:visible!important;flex-shrink:0;line-height:0!important;background:transparent!important;border:0!important;outline:0!important;box-shadow:none!important;border-radius:0!important;padding:0!important;margin:0!important}.cp-avatar-framed-host>.cp-avatar-shell{width:100%;height:100%;position:relative!important}.cp-avatar-shell>.cp-avatar-core{position:absolute!important;inset:22%!important;width:56%!important;height:56%!important;overflow:hidden!important;border-radius:50%!important;z-index:8!important;background:#171719!important;border:0!important;outline:0!important;box-shadow:none!important}.cp-avatar-core img{display:block!important;width:100%!important;height:100%!important;object-fit:cover!important;position:relative!important;z-index:9!important}.cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;inset:-10%!important;width:120%!important;height:120%!important;object-fit:contain!important;pointer-events:none!important;z-index:10!important;border:0!important;outline:0!important;box-shadow:none!important;filter:none!important}.cp-avatar-shell>.cp-frame-art{position:absolute!important;inset:-4%!important;width:108%!important;height:108%!important;pointer-events:none!important;z-index:10!important;overflow:visible!important}.cp-post-detail-sheet{inset:0!important;width:100vw!important;height:100dvh!important;max-height:100dvh!important;border-radius:0!important}.cp-post-detail-sheet>.px-5{min-height:0!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important}.cp-reaction-emoji{line-height:1}.cp-reaction-choice:active,.cp-frame-choice:active{transform:scale(.97)}#ad-banner.cp-ad-banner{min-height:36px!important;padding:4px 8px!important}`;document.head.appendChild(adStyle);
+  const adStyle=document.createElement('style');adStyle.id='cp-integration-repair-style';adStyle.textContent=`.cp-post-detail-sheet{inset:0!important;width:100vw!important;height:100dvh!important;max-height:100dvh!important;border-radius:0!important}.cp-post-detail-sheet>.px-5{min-height:0!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important}.cp-reaction-emoji{line-height:1}.cp-reaction-choice:active,.cp-frame-choice:active{transform:scale(.97)}#ad-banner.cp-ad-banner{min-height:36px!important;padding:4px 8px!important}`;document.head.appendChild(adStyle);
   setTimeout(refreshPublicNamesAndAvatars,1000);
   console.log('[CODMPanda] integration repair loaded: unified reactions, frames, live names, themes and verification');
 })();
@@ -27152,17 +27199,7 @@ window.performGlobalSearch = performGlobalSearch;
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = `
-      .cp-avatar-shell,.cp-avatar-no-frame,.cp-avatar-framed-host { border-radius:50%!important; }
       .w-16.h-16>img,.w-12.h-12>img,.w-11.h-11>img,.w-10.h-10>img,.w-9.h-9>img,.w-8.h-8>img { border-radius:50%!important; clip-path:circle(50% at 50% 50%); object-fit:cover!important; }
-      .cp-avatar-shell { overflow:visible!important; position:relative!important; }
-      .cp-avatar-core,.cp-avatar-core img,.cp-avatar-no-frame img { border-radius:50%!important; overflow:hidden!important; }
-      .cp-avatar-core { clip-path:circle(50% at 50% 50%); }
-      .cp-avatar-shell>.cp-war-artifact-frame { position:absolute!important; inset:-10%!important; width:120%!important; height:120%!important; max-width:none!important; max-height:none!important; object-fit:contain!important; object-position:center!important; z-index:10!important; pointer-events:none!important; }
-      .cp-avatar-shell { width:var(--cp-avatar-size,44px); height:var(--cp-avatar-size,44px); flex:0 0 auto!important; isolation:isolate; }
-      .cp-avatar-core { position:absolute!important; inset:19%!important; width:auto!important; height:auto!important; overflow:hidden!important; }
-      .cp-avatar-core img { width:100%!important; height:100%!important; object-fit:cover!important; display:block!important; }
-      .cp-avatar-no-frame img { width:100%!important; height:100%!important; object-fit:cover!important; display:block!important; }
-      .cp-avatar-framed-host { overflow:visible!important; }
       #cp-ai-coach-launch { display:none!important; }
     `;
     document.head.appendChild(style);
@@ -27192,14 +27229,6 @@ window.performGlobalSearch = performGlobalSearch;
   const style=document.createElement('style');
   style.id='cp-avatar-frame-fit-final';
   style.textContent=`
-    .cp-avatar-shell{position:relative!important;display:flex!important;justify-content:center!important;align-items:center!important;flex:0 0 auto!important;overflow:visible!important;isolation:isolate!important;vertical-align:middle!important}
-    .cp-avatar-shell.cp-avatar-no-frame{overflow:hidden!important}
-    /* Keep the avatar centered on the frame's exact center; preserve the established 74% photo size. */
-    .cp-avatar-shell>.cp-avatar-core{position:absolute!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;width:74%!important;height:74%!important;border-radius:50%!important;overflow:hidden!important;z-index:1!important}
-    .cp-avatar-shell>.cp-avatar-core img{position:absolute!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;border-radius:50%!important;clip-path:circle(50% at 50% 50%)!important;box-shadow:inset 0 0 12px rgba(0,0,0,.9)!important;display:block!important}
-    .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;width:128%!important;height:128%!important;max-width:none!important;max-height:none!important;object-fit:contain!important;object-position:center!important;z-index:2!important;display:block!important;pointer-events:none!important}
-    .cp-avatar-framed-host{overflow:visible!important;clip-path:none!important;border-radius:50%!important}
-    .cp-avatar-framed-host>.cp-avatar-shell{margin:0 auto!important}
     .mention-text{position:relative!important;z-index:20!important;display:inline!important;pointer-events:auto!important;cursor:pointer!important;touch-action:manipulation!important}
   `;
   (document.head||document.documentElement).appendChild(style);
@@ -27337,4 +27366,54 @@ window.performGlobalSearch = performGlobalSearch;
       if(typeof window.__codmpandaRefreshNamesAndAvatars==='function')window.__codmpandaRefreshNamesAndAvatars();
     },0);
   });
+})();
+
+/* Canonical avatar-frame geometry: all screens use the same centered photo aperture and transparent frame layer. */
+(function cpAvatarFrameGeometryV2(){
+  const id='cp-avatar-frame-geometry-v2';
+  let style=document.getElementById(id);
+  if(!style){style=document.createElement('style');style.id=id;}
+  style.textContent=`
+    .cp-avatar-framed-host{
+      position:relative!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;
+      overflow:visible!important;vertical-align:middle!important;line-height:0!important;padding:0!important;border:0!important;
+      outline:0!important;box-shadow:none!important;background:transparent!important;isolation:isolate!important;flex:0 0 auto!important;
+    }
+    .cp-avatar-framed-host>.cp-avatar-shell{
+      position:relative!important;display:flex!important;align-items:center!important;justify-content:center!important;
+      overflow:visible!important;margin:0!important;flex:0 0 auto!important;isolation:isolate!important;
+    }
+    .cp-avatar-shell{
+      position:relative!important;display:flex!important;justify-content:center!important;align-items:center!important;
+      flex:0 0 auto!important;overflow:visible!important;isolation:isolate!important;vertical-align:middle!important;
+    }
+    .cp-avatar-shell.cp-avatar-no-frame{overflow:hidden!important;border-radius:50%!important}
+    .cp-avatar-shell>.cp-avatar-core{
+      position:absolute!important;inset:auto!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;
+      transform:translate(-50%, -50%)!important;width:74%!important;height:74%!important;margin:0!important;box-sizing:border-box!important;
+      border:0!important;outline:0!important;border-radius:50%!important;overflow:hidden!important;background:#111!important;
+      box-shadow:inset 0 0 10px rgba(0,0,0,.45)!important;clip-path:circle(50% at 50% 50%)!important;z-index:1!important;
+    }
+    .cp-avatar-shell>.cp-avatar-core img{
+      position:absolute!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;
+      transform:translate(-50%, -50%)!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;
+      margin:0!important;display:block!important;object-fit:cover!important;object-position:center center!important;border:0!important;
+      outline:0!important;border-radius:50%!important;clip-path:circle(50% at 50% 50%)!important;
+      box-shadow:inset 0 0 12px rgba(0,0,0,.9)!important;z-index:1!important;
+    }
+    .cp-avatar-shell>.cp-war-artifact-frame,.cp-avatar-shell>.cp-frame-art{
+      position:absolute!important;inset:auto!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;
+      transform:translate(-50%, -50%)!important;width:128%!important;height:128%!important;max-width:none!important;max-height:none!important;
+      margin:0!important;display:block!important;object-fit:contain!important;object-position:center center!important;
+      border:0!important;outline:0!important;box-shadow:none!important;z-index:2!important;overflow:visible!important;pointer-events:none!important;
+    }
+    .cp-avatar-shell>.cp-frame-art{width:108%!important;height:108%!important}
+    .cp-avatar-no-frame img{
+      width:100%!important;height:100%!important;display:block!important;object-fit:cover!important;object-position:center center!important;
+      border-radius:50%!important;clip-path:circle(50% at 50% 50%)!important;
+    }
+    .cp-avatar-framed-host{overflow:visible!important;clip-path:none!important;border-radius:50%!important}
+    .cp-avatar-framed-host>.cp-avatar-shell{margin:0 auto!important}
+  `;
+  (document.head||document.documentElement).appendChild(style);
 })();
