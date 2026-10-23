@@ -26059,7 +26059,8 @@ window.performGlobalSearch = performGlobalSearch;
       header.innerHTML='<div><strong style="font-size:19px">✨ Avatar Frames</strong><div style="font-size:12px;color:#aaa;margin-top:4px">Choose a frame for your profile picture</div></div><button type="button" aria-label="Close frames" style="width:38px;height:38px;border:0;border-radius:50%;background:#222;color:#fff;font-size:24px">×</button>';
       header.querySelector('button').onclick=()=>overlay.remove();panel.appendChild(header);
       const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;';
-      const choices=[['none','No Frame','FREE',null],...Object.entries(frameCatalog).map(([k,v])=>[k,v.name,v.tier,v.file])];
+      const frameEntries=Object.entries(frameCatalog).sort((a,b)=>{const tierA=a[1].tier==='PRO'?1:0;const tierB=b[1].tier==='PRO'?1:0;return tierA-tierB||String(a[1].name).localeCompare(String(b[1].name));});
+      const choices=[['none','No Frame','FREE',null],...frameEntries.map(([k,v])=>[k,v.name,v.tier,v.file])];
       for(const [key,name,tier,file] of choices){
         const locked=tier==='PRO'&&!pro,selected=current===key;
         const button=document.createElement('button');button.type='button';button.dataset.frame=key;
@@ -26069,9 +26070,9 @@ window.performGlobalSearch = performGlobalSearch;
           const plain=document.createElement('div');plain.style.cssText='position:absolute;inset:8px;border-radius:50%;overflow:hidden;background:#29292d;display:grid;place-items:center;color:#aaa;font-weight:800;';
           if(avatar){const img=document.createElement('img');img.src=avatar;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover';plain.appendChild(img)}else plain.textContent='×';preview.appendChild(plain);
         } else {
-          const core=document.createElement('div');core.style.cssText='position:absolute;left:22%;top:22%;width:56%;height:56%;border-radius:50%;overflow:hidden;background:#222;display:grid;place-items:center;color:#aaa;font-size:11px;';
+          const core=document.createElement('div');core.style.cssText='position:absolute;left:19%;top:19%;width:62%;height:62%;border-radius:50%;overflow:hidden;background:#222;display:grid;place-items:center;color:#aaa;font-size:11px;';
           if(avatar){const img=document.createElement('img');img.src=avatar;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover';core.appendChild(img)}else core.textContent='CP';
-          const frame=document.createElement('img');frame.src='/frames/'+file;frame.alt='';frame.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;';
+          const frame=document.createElement('img');frame.src='/frames/'+file;frame.alt='';frame.style.cssText='position:absolute;inset:-10%;width:120%;height:120%;object-fit:contain;object-position:center;pointer-events:none;';
           frame.onerror=()=>{frame.style.display='none';};preview.append(core,frame);
         }
         const label=document.createElement('strong');label.textContent=name;label.style.cssText='font-size:10px;line-height:1.2;text-align:center;';
@@ -26970,7 +26971,24 @@ window.performGlobalSearch = performGlobalSearch;
     document.body.appendChild(overlay);
     overlay.querySelector('#cp-coach-close').onclick = () => overlay.remove();
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    const history = [];
+    const coachUid = State.user?.uid || 'guest';
+    const coachHistoryKey = 'cp_coach_history_v1_' + coachUid;
+    const coachMaxAge = 48 * 60 * 60 * 1000;
+    let history = [];
+    try {
+      const saved = JSON.parse(localStorage.getItem(coachHistoryKey) || 'null');
+      if (saved && Number.isFinite(saved.updatedAt) && Date.now() - saved.updatedAt < coachMaxAge && Array.isArray(saved.messages)) {
+        history = saved.messages.filter(m => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string').slice(-20);
+        history.forEach(m => {
+          const line = document.createElement('div');
+          line.style.cssText = m.role === 'user' ? 'align-self:flex-end;max-width:90%;background:#71320d;border-radius:12px;padding:10px;font-size:13px;white-space:pre-wrap' : 'align-self:flex-start;max-width:95%;background:#20212a;border-radius:12px;padding:11px;font-size:13px;line-height:1.5;white-space:pre-wrap';
+          line.textContent = m.text; overlay.querySelector('#cp-coach-chat').appendChild(line);
+        });
+      } else if (saved) localStorage.removeItem(coachHistoryKey);
+    } catch (_) { try { localStorage.removeItem(coachHistoryKey); } catch (_) {} }
+    const coachName = State.profile?.ign || State.profile?.displayName || State.user?.displayName || '';
+    const welcome = overlay.querySelector('#cp-coach-chat')?.firstElementChild;
+    if (welcome && coachName) welcome.textContent = `Yo ${coachName} 👋 Good to see you. What are we tuning today—aim, sensitivity, HUD, loadout, or movement?`;
     overlay.querySelector('#cp-coach-form').onsubmit = async e => {
       e.preventDefault();
       const input = overlay.querySelector('#cp-coach-input');
@@ -26995,6 +27013,8 @@ window.performGlobalSearch = performGlobalSearch;
       try {
         const answer = await cpCoachReply(value, history);
         history.push({ role:'user', text:value }, { role:'model', text:answer });
+        history = history.slice(-20);
+        try { localStorage.setItem(coachHistoryKey, JSON.stringify({ updatedAt:Date.now(), messages:history })); } catch (_) { /* local storage may be full or disabled */ }
         reply.textContent=answer;
       } catch (error) {
         console.warn('[CODMPanda Coach] Request failed:', error);
@@ -27082,7 +27102,11 @@ window.performGlobalSearch = performGlobalSearch;
       .cp-avatar-shell { overflow:visible!important; position:relative!important; }
       .cp-avatar-core,.cp-avatar-core img,.cp-avatar-no-frame img { border-radius:50%!important; overflow:hidden!important; }
       .cp-avatar-core { clip-path:circle(50% at 50% 50%); }
-      .cp-avatar-shell>.cp-war-artifact-frame { position:absolute!important; inset:-10%!important; width:120%!important; height:120%!important; object-fit:contain!important; z-index:10!important; pointer-events:none!important; }
+      .cp-avatar-shell>.cp-war-artifact-frame { position:absolute!important; inset:-14%!important; width:128%!important; height:128%!important; max-width:none!important; max-height:none!important; object-fit:contain!important; object-position:center!important; z-index:10!important; pointer-events:none!important; }
+      .cp-avatar-shell { width:var(--cp-avatar-size,44px); height:var(--cp-avatar-size,44px); flex:0 0 auto!important; isolation:isolate; }
+      .cp-avatar-core { position:absolute!important; inset:19%!important; width:auto!important; height:auto!important; overflow:hidden!important; }
+      .cp-avatar-core img { width:100%!important; height:100%!important; object-fit:cover!important; display:block!important; }
+      .cp-avatar-no-frame img { width:100%!important; height:100%!important; object-fit:cover!important; display:block!important; }
       .cp-avatar-framed-host { overflow:visible!important; }
       #cp-ai-coach-launch { display:none!important; }
     `;
