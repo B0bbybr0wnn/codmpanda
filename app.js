@@ -962,7 +962,9 @@ function cpLobbyIsExpired(lobby, now = Date.now()) {
 }
 
 function loadLobbies() {
-  const q = query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(50));
+  // Query active records by their immutable creation time, then re-check expiry as time passes.
+  const cutoff = Timestamp.fromMillis(Date.now() - 2 * 60 * 60 * 1000);
+  const q = query(collection(db, 'lobbies'), where('createdAt', '>', cutoff), orderBy('createdAt', 'desc'), limit(50));
 
   State.lobbiesUnsub = onSnapshot(q, (snap) => {
     const lobbies = [];
@@ -12917,10 +12919,7 @@ renderYouTab = function() {
 setInterval(() => {
   if (State.currentTab === 'play' && State.cache.lobbies.length > 0) {
     const now = Date.now();
-    const stillValid = State.cache.lobbies.filter(l => {
-      const exp = l.expiresAt?.toMillis ? l.expiresAt.toMillis() : (l.expiresAt?.seconds ? l.expiresAt.seconds * 1000 : Infinity);
-      return exp > now;
-    });
+    const stillValid = State.cache.lobbies.filter(l => !cpLobbyIsExpired(l));
     if (stillValid.length !== State.cache.lobbies.length) {
       State.cache.lobbies = stillValid;
       renderLobbies();
@@ -13950,8 +13949,7 @@ renderLobbies = function() {
   const now = Date.now();
 
   feed.innerHTML = lobbies.map(l => {
-    const expiresAt = l.expiresAt?.toMillis ? l.expiresAt.toMillis() : (l.expiresAt?.seconds ? l.expiresAt.seconds * 1000 : Infinity);
-    const isExpired = expiresAt < now;
+    const isExpired = cpLobbyIsExpired(l);
     const isMine = l.uid === State.user.uid;
     const playersText = `${l.players || 1}/5`;
 
@@ -14385,8 +14383,11 @@ async function cleanupExpiredContent() {
     const lobbiesToDelete = [];
     lobbiesSnap.forEach(d => {
       const data = d.data();
-      const exp = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
-      if (exp + graceMs < now) lobbiesToDelete.push(d.id);
+      const createdAt = cpLobbyTimestampMillis(data.createdAt ?? data.created_at);
+      const expiresAt = Number.isFinite(createdAt) && createdAt > 0
+        ? createdAt + 2 * 60 * 60 * 1000
+        : Infinity;
+      if (expiresAt + graceMs < now) lobbiesToDelete.push(d.id);
     });
     if (lobbiesToDelete.length > 0) {
       await Promise.all(lobbiesToDelete.map(id => deleteDoc(doc(db, 'lobbies', id))));
@@ -18402,7 +18403,7 @@ async function fetchHomeFeed() {
 
     // Parallel fetch all 4 sources
     const [lobbiesSnap, vaultsSnap, clipsSnap, leaksSnap] = await Promise.all([
-      getDocs(query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'lobbies'), where('createdAt', '>', Timestamp.fromMillis(now - 2 * 60 * 60 * 1000)), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'clips'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'leaks'), limit(20))).catch(() => ({ forEach: () => {} }))
@@ -18413,8 +18414,7 @@ async function fetchHomeFeed() {
     // Lobbies → feed
     lobbiesSnap.forEach(d => {
       const data = d.data();
-      const expiresAt = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
-      if (expiresAt < now) return; // Skip expired
+      if (cpLobbyIsExpired({ id: d.id, ...data })) return; // Strict two-hour lifetime from creation
       feed.push({
         id: d.id,
         type: 'lobby',
@@ -20149,7 +20149,7 @@ fetchHomeFeed = async function() {
     const now = Date.now();
 
     const [lobbiesSnap, vaultsSnap, clipsSnap, leaksSnap, postsSnap] = await Promise.all([
-      getDocs(query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'lobbies'), where('createdAt', '>', Timestamp.fromMillis(now - 2 * 60 * 60 * 1000)), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'clips'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'leaks'), limit(20))).catch(() => ({ forEach: () => {} })),
@@ -20160,8 +20160,7 @@ fetchHomeFeed = async function() {
 
     lobbiesSnap.forEach(d => {
       const data = d.data();
-      const expiresAt = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
-      if (expiresAt < now) return;
+      if (cpLobbyIsExpired({ id: d.id, ...data })) return;
       feed.push({ id: d.id, type: 'lobby', ...data, _sortTime: data.createdAt?.seconds || 0 });
     });
 
@@ -21159,6 +21158,12 @@ const _origJoinLobbyVoice = joinLobby;
 joinLobby = async function(lobbyId) {
   const lobby = State.cache.lobbies.find(l => l.id === lobbyId);
   if (!lobby) { toast('Lobby not found', 'error'); return; }
+  if (cpLobbyIsExpired(lobby)) {
+    State.cache.lobbies = State.cache.lobbies.filter(item => item.id !== lobbyId && !cpLobbyIsExpired(item));
+    if (document.getElementById('lobbies-feed')) renderLobbies();
+    toast('This lobby has expired.', 'warning');
+    return;
+  }
 
   // Increment player count
   try {
@@ -22442,8 +22447,7 @@ renderLobbies = function() {
   const now = Date.now();
 
   feed.innerHTML = lobbies.map(l => {
-    const expiresAt = l.expiresAt?.toMillis ? l.expiresAt.toMillis() : (l.expiresAt?.seconds ? l.expiresAt.seconds * 1000 : Infinity);
-    const isExpired = expiresAt < now;
+    const isExpired = cpLobbyIsExpired(l);
     const isMine = l.uid === State.user.uid;
     const isProLobby = l.isPro || false;
     const playersText = `${l.players || 1}/5`;
@@ -22595,8 +22599,7 @@ function checkCustomLobbyUrl() {
 
       if (!snap.empty) {
         const lobby = { id: snap.docs[0].id, ...snap.docs[0].data() };
-        const expiresAt = lobby.expiresAt?.toMillis ? lobby.expiresAt.toMillis() : (lobby.expiresAt?.seconds ? lobby.expiresAt.seconds * 1000 : Infinity);
-        if (expiresAt > Date.now()) {
+        if (!cpLobbyIsExpired(lobby)) {
           // Show join prompt
           openSheet(`
             <div class="text-center space-y-4 py-4">
@@ -23040,8 +23043,7 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
     const now = Date.now();
 
     feed.innerHTML = lobbies.map(l => {
-      const expiresAt = l.expiresAt?.toMillis ? l.expiresAt.toMillis() : (l.expiresAt?.seconds ? l.expiresAt.seconds * 1000 : Infinity);
-      const isExpired = expiresAt < now;
+      const isExpired = cpLobbyIsExpired(l);
       const isMine = l.uid === State.user.uid;
       const isProLobby = l.isPro || false;
       const playersText = `${l.players || 1}/5`;
@@ -25027,7 +25029,7 @@ window.performGlobalSearch = performGlobalSearch;
         </div>
 
         <!-- Post text and tappable hashtags -->
-        <p class="text-base leading-relaxed text-gray-100 whitespace-pre-wrap break-words" style="font-size:17px;line-height:1.6;">${esc(cpPostTextWithoutHashtags(post.text || ''))}</p>
+        <p class="text-base leading-relaxed text-gray-100 whitespace-pre-wrap break-words" style="font-size:18px;line-height:1.65;">${esc(cpPostTextWithoutHashtags(post.text || ''))}</p>
         ${(() => { const tags = cpExtractHashtags(post.text, post.hashtags); return tags.length ? `<div class="flex flex-wrap gap-1.5">${tags.map(tag => `<button type="button" class="post-hashtag text-[10px] font-bold text-primary bg-primary/10 rounded-full px-2 py-1" data-tag="${esc(tag)}">#${esc(tag)}</button>`).join('')}</div>` : ''; })()}
 
         <!-- Post image — full width, zoomable -->
@@ -25121,7 +25123,7 @@ window.performGlobalSearch = performGlobalSearch;
     if (postSheetBody) {
       Object.assign(postSheetBody.style, {
         position: 'relative', flex: '1 1 auto', minHeight: '0', height: 'auto', maxHeight: 'none',
-        overflowY: 'auto', overflowX: 'hidden', margin: '0', padding: '16px 16px 22px',
+        overflowY: 'auto', overflowX: 'hidden', margin: '0', padding: '10px 16px 22px',
         display: 'block', boxSizing: 'border-box', overscrollBehavior: 'contain',
         scrollPaddingBottom: '24px', WebkitOverflowScrolling: 'touch'
       });
@@ -27598,11 +27600,11 @@ if (!window.__cpLobbyExpirationSweep) {
     const style=document.createElement('style');style.id=styleId;
     style.textContent=`
       .verified-badge.cp-gold-verified,.verified-badge{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:15px!important;height:15px!important;min-width:15px!important;box-sizing:border-box!important;border-radius:50%!important;background:linear-gradient(145deg,#fff0b0 0%,#f6c453 48%,#a96a00 100%)!important;color:#2b1a00!important;border:1px solid #ffe49a!important;font-size:10px!important;line-height:1!important;font-weight:1000!important;flex:0 0 15px!important;box-shadow:0 0 7px rgba(246,196,83,.38),inset 0 1px 1px rgba(255,255,255,.65)!important;vertical-align:middle!important}
-      #sheet-container .cp-post-detail-header{min-height:calc(38px + env(safe-area-inset-top,0px))!important;height:calc(38px + env(safe-area-inset-top,0px))!important;padding:env(safe-area-inset-top,0px) 10px 0!important;gap:8px!important}
+      #sheet-container .cp-post-detail-header{min-height:calc(36px + env(safe-area-inset-top,0px))!important;height:calc(36px + env(safe-area-inset-top,0px))!important;padding:env(safe-area-inset-top,0px) 10px 0!important;gap:7px!important}
       #sheet-container .cp-post-detail-header .cp-post-back{width:30px!important;height:30px!important;flex:0 0 30px!important;border-radius:8px!important}
       #sheet-container .cp-post-detail-header .cp-post-back svg{width:19px!important;height:19px!important}
       #sheet-container .cp-post-detail-header .cp-post-header-spacer{width:30px!important;flex:0 0 30px!important}
-      #sheet-container .cp-post-detail-sheet p.text-base.leading-relaxed{font-size:17px!important;line-height:1.6!important;overflow-wrap:anywhere!important}
+      #sheet-container .cp-post-detail-sheet p.text-base.leading-relaxed{font-size:18px!important;line-height:1.65!important;overflow-wrap:anywhere!important}
       #sheet-container .cp-post-detail-sheet .cp-post-detail-image{display:block!important;width:100%!important;height:auto!important;max-width:100%!important;max-height:none!important;object-fit:contain!important;object-position:center!important}
       #image-viewer{padding:0!important;background:#050505!important;cursor:zoom-out!important}
       #image-viewer>img{width:100%!important;height:100%!important;max-width:100vw!important;max-height:100dvh!important;object-fit:contain!important;border-radius:0!important;box-shadow:none!important}
@@ -27613,9 +27615,14 @@ if (!window.__cpLobbyExpirationSweep) {
     root.querySelectorAll('#lobbies-feed .bg-card').forEach(card=>{
       const line=card.querySelector('.flex.items-center.gap-1\\.5.flex-wrap,.flex.items-center.gap-2.flex-wrap');
       if(!line)return;
+      // Some legacy blue checks are siblings of the username, so clean only this lobby name row.
+      line.querySelectorAll('[data-lucide="badge-check"],[data-lucide="check-circle"],[data-lucide="check-circle-2"],.lucide-badge-check,.lucide-check-circle,.lucide-check-circle-2,.verification-badge,.verified-check,.blue-verified-badge,[title*="verif" i]:not(.verified-badge),[aria-label*="verif" i]:not(.verified-badge)').forEach(mark=>mark.remove());
+      const name=line.querySelector('.user-name-link, .font-bold.text-sm');
+      if(!name)return;
       const marks=Array.from(line.querySelectorAll('.verified-badge'));
-      marks.slice(1).forEach(mark=>mark.remove());
-      if(marks[0]){marks[0].classList.add('cp-gold-verified');marks[0].setAttribute('title','Verified Creator');marks[0].setAttribute('aria-label','Verified Creator');}
+      const keep=name.querySelector('.verified-badge')||marks[0];
+      marks.forEach(mark=>{if(mark!==keep)mark.remove();});
+      if(keep){keep.classList.add('cp-gold-verified');keep.setAttribute('title','Verified Creator');keep.setAttribute('aria-label','Verified Creator');}
     });
   }
   if(typeof renderLobbies==='function'&&!renderLobbies.__cpGoldBadgeDedupe){
@@ -27635,12 +27642,14 @@ if (!window.__cpLobbyExpirationSweep) {
   window.openImageViewer=function(src){
     if(!src)return;
     document.getElementById('image-viewer')?.remove();
-    const overlay=document.createElement('div');overlay.id='image-viewer';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-label','Full-screen image viewer');
+    const overlay=document.createElement('div');overlay.id='image-viewer';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-label','Full-screen image viewer');overlay.setAttribute('aria-modal','true');
     overlay.style.cssText='position:fixed;inset:0;width:100vw;height:100dvh;z-index:2147483600;background:#050505;display:flex;align-items:center;justify-content:center;padding:0;cursor:zoom-out;';
     const img=document.createElement('img');img.src=src;img.alt='Expanded post image';img.style.cssText='display:block;width:100%;height:100%;max-width:100vw;max-height:100dvh;object-fit:contain;object-position:center;border-radius:0;';overlay.appendChild(img);
+    function onKey(event){if(event.key==='Escape')closeViewer();}
+    const closeViewer=()=>{overlay.remove();document.removeEventListener('keydown',onKey);};
     const close=document.createElement('button');close.type='button';close.setAttribute('aria-label','Close image viewer');close.textContent='✕';close.style.cssText='position:absolute;top:calc(env(safe-area-inset-top,0px) + 14px);right:14px;width:40px;height:40px;border:1px solid rgba(255,255,255,.22);border-radius:50%;background:rgba(25,25,25,.82);color:#fff;font-size:20px;display:grid;place-items:center;';
-    close.onclick=e=>{e.stopPropagation();overlay.remove();};overlay.appendChild(close);overlay.onclick=()=>overlay.remove();img.onclick=e=>e.stopPropagation();
-    const onKey=e=>{if(e.key==='Escape'){overlay.remove();document.removeEventListener('keydown',onKey);}};document.addEventListener('keydown',onKey);overlay.appendChild(close);
+    close.onclick=event=>{event.stopPropagation();closeViewer();};overlay.appendChild(close);overlay.onclick=closeViewer;img.onclick=event=>event.stopPropagation();
+    document.addEventListener('keydown',onKey);
     document.body.appendChild(overlay);
   };
 })();
