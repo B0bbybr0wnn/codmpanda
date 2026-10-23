@@ -26974,6 +26974,17 @@ window.performGlobalSearch = performGlobalSearch;
     const coachUid = State.user?.uid || 'guest';
     const coachHistoryKey = 'cp_coach_history_v1_' + coachUid;
     const coachMaxAge = 48 * 60 * 60 * 1000;
+    // Remove expired caches for every local account, not just the account currently signed in.
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith('cp_coach_history_v1_')) continue;
+        try {
+          const cached = JSON.parse(localStorage.getItem(key) || 'null');
+          if (!cached || !Number.isFinite(cached.updatedAt) || Date.now() - cached.updatedAt >= coachMaxAge) localStorage.removeItem(key);
+        } catch (_) { localStorage.removeItem(key); }
+      }
+    } catch (_) {}
     let history = [];
     try {
       const saved = JSON.parse(localStorage.getItem(coachHistoryKey) || 'null');
