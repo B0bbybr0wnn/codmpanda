@@ -16245,7 +16245,7 @@ openDMThread = async function(friendUid, friendIgn) {
 function highlightMentions(text) {
   if (!text) return '';
   const escaped = esc(text);
-  return escaped.replace(/@([A-Za-z0-9_]{2,24})/g, '<a href="#" role="link" aria-label="Open @$1 profile" data-mention-name="$1" class="mention-text text-sky-400 font-bold hover:underline" style="color:#38bdf8;cursor:pointer;text-decoration:none">@$1</a>');
+  return escaped.replace(/(^|[^A-Za-z0-9._%+-])@([A-Za-z0-9_]{2,24})/g, '$1<a href="#" role="link" aria-label="Open @$2 profile" data-mention-name="$2" class="mention-text text-sky-400 font-bold hover:underline" style="color:#38bdf8;cursor:pointer;text-decoration:none">@$2</a>');
 }
 
 // Resolve mentions in one capture-phase handler so card/feed click handlers cannot swallow taps.
@@ -16269,11 +16269,16 @@ document.addEventListener('click', async (event) => {
       ) : null;
       if (friend?.uid) { await openUserProfile(friend.uid); return; }
     } catch (_) {}
-    const [byIgn, byUsername] = await Promise.all([
+    const [byIgn, byUsername, byDisplay, byHandle] = await Promise.all([
       getDocs(query(collection(db, 'users'), where('ign', '==', ign), limit(1))).catch(() => null),
-      getDocs(query(collection(db, 'users'), where('username', '==', ign), limit(1))).catch(() => null)
+      getDocs(query(collection(db, 'users'), where('username', '==', ign), limit(1))).catch(() => null),
+      getDocs(query(collection(db, 'users'), where('displayName', '==', ign), limit(1))).catch(() => null),
+      getDocs(query(collection(db, 'users'), where('handle', '==', ign), limit(1))).catch(() => null)
     ]);
-    found = byIgn && !byIgn.empty ? byIgn.docs[0] : byUsername && !byUsername.empty ? byUsername.docs[0] : null;
+    found = (byIgn && !byIgn.empty ? byIgn.docs[0] : null) ||
+      (byUsername && !byUsername.empty ? byUsername.docs[0] : null) ||
+      (byDisplay && !byDisplay.empty ? byDisplay.docs[0] : null) ||
+      (byHandle && !byHandle.empty ? byHandle.docs[0] : null);
     if (!found) {
       // Case-insensitive fallback for usernames/IGNs whose capitalization differs.
       const all = await getDocs(query(collection(db, 'users'), limit(1000))).catch(() => null);
@@ -21878,9 +21883,13 @@ function openAvatarFramePicker() {
 
       try {
         await updateDoc(doc(db, 'users', State.user.uid), {
-          avatarFrame: frameKey
+          avatarFrame: frameKey, equippedFrame: frameKey, frame: frameKey, profileFrame: frameKey
         });
         State.profile.avatarFrame = frameKey;
+        State.profile.equippedFrame = frameKey;
+        State.profile.frame = frameKey;
+        State.profile.profileFrame = frameKey;
+        window.dispatchEvent(new CustomEvent('codmpanda:avatar-frame-updated',{detail:{uid:State.user.uid,avatarFrame:frameKey}}));
         toast('✨ Frame applied!', 'success');
         closeSheet();
         if (State.currentTab === 'you') renderYouTab();
@@ -25638,7 +25647,7 @@ window.performGlobalSearch = performGlobalSearch;
   }
   window.CODMNormalizeFrameKey = normalizeCODMFrameKey;
   function renderFramedAvatar(user,size=44){
-    const storedFrame=normalizeCODMFrameKey([user?.avatarFrame,user?.equippedFrame,user?.frame,user?.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none');
+    const storedFrame=([user?.avatarFrame,user?.equippedFrame,user?.frame,user?.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
     // Old CSS/SVG frame IDs are retired. Pro-only PNG artwork must not render for a Free profile.
     const candidate=WAR_ARTIFACT_FRAMES[storedFrame];
     const hasPro= user?.isPro===true || user?.pro===true || user?.subscription==='pro' || user?.proStatus==='active';
@@ -25688,7 +25697,7 @@ window.performGlobalSearch = performGlobalSearch;
       const rect=el.getBoundingClientRect();if(rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
       const uid=el.dataset.uid;if(!uid)continue;
       const user=await getPublicProfile(uid);if(!user)continue;
-      const frameKey=normalizeCODMFrameKey([user.avatarFrame,user.equippedFrame,user.frame,user.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none');
+      const frameKey=([user.avatarFrame,user.equippedFrame,user.frame,user.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
       if(frameKey==='none'||!WAR_ARTIFACT_FRAMES[frameKey])continue;
       if(el.dataset.cpFrameDone===frameKey)continue;
       const img=el.querySelector('img');
@@ -26063,7 +26072,7 @@ window.performGlobalSearch = performGlobalSearch;
       if(!rect||rect.width<24||rect.width>180||rect.height<24||rect.height>180)continue;
       if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.querySelector('img'))continue;
       const u=await publicProfile(uid);if(!u)continue;
-      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};const frameValue=[u.avatarFrame,u.equippedFrame,u.frame,u.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none';let frame=window.CODMNormalizeFrameKey ? window.CODMNormalizeFrameKey(frameValue) : frameValue;if(frame!=='none'&&!frameCatalog[frame])frame='none';if(!window.CODMRenderFramedAvatar)continue;
+      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};const frame=([u.avatarFrame,u.equippedFrame,u.frame,u.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&frameCatalog[key])||'none');if(!window.CODMRenderFramedAvatar)continue;
       const img=el.querySelector('img');const avatar=u.avatar||u.photoURL||u.photoUrl||img?.getAttribute('src')||'';
       const name=u.ign||u.displayName||'Operator';
       if(frame==='none'){el.style.borderRadius='50%';el.style.clipPath='circle(50% at 50% 50%)';if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;clip-path:circle(50% at 50% 50%)">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
@@ -26120,8 +26129,8 @@ window.performGlobalSearch = performGlobalSearch;
           if(!State.user){overlay.remove();if(typeof showAuthGate==='function')showAuthGate();return;}
           button.disabled=true;
           try{
-            await updateDoc(doc(db,'users',State.user.uid),{avatarFrame:key});
-            State.profile={...(State.profile||{}),avatarFrame:key};
+            await updateDoc(doc(db,'users',State.user.uid),{avatarFrame:key,equippedFrame:key,frame:key,profileFrame:key});
+            State.profile={...(State.profile||{}),avatarFrame:key,equippedFrame:key,frame:key,profileFrame:key};
             window.dispatchEvent(new CustomEvent('codmpanda:avatar-frame-updated',{detail:{uid:State.user.uid,avatarFrame:key}}));
             if(typeof profileCache!=='undefined')profileCache.delete(State.user.uid);
             overlay.remove();
@@ -27230,13 +27239,15 @@ window.performGlobalSearch = performGlobalSearch;
     });
     const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
     for(const node of nodes){
-      const value=node.nodeValue||'';const re=/@([A-Za-z0-9_]{2,24})/g;let match,last=0,found=false;
+      const value=node.nodeValue||'';const re=/(^|[^A-Za-z0-9._%+-])@([A-Za-z0-9_]{2,24})/g;let match,last=0,found=false;
       const frag=document.createDocumentFragment();
       while((match=re.exec(value))){
-        found=true;if(match.index>last)frag.appendChild(document.createTextNode(value.slice(last,match.index)));
-        const a=document.createElement('a');a.href='#';a.setAttribute('role','link');a.setAttribute('aria-label','Open @'+match[1]+' profile');a.dataset.mentionName=match[1];a.className='mention-text';a.textContent='@'+match[1];
+        const mentionStart=match.index+match[1].length;
+        if(mentionStart<last)continue;
+        found=true;if(mentionStart>last)frag.appendChild(document.createTextNode(value.slice(last,mentionStart)));
+        const a=document.createElement('a');a.href='#';a.setAttribute('role','link');a.setAttribute('tabindex','0');a.setAttribute('aria-label','Open @'+match[2]+' profile');a.dataset.mentionName=match[2];a.className='mention-text';a.textContent='@'+match[2];
         a.style.cssText='color:#38bdf8;font-weight:800;cursor:pointer;text-decoration:none;pointer-events:auto;touch-action:manipulation;';
-        frag.appendChild(a);last=match.index+match[0].length;
+        frag.appendChild(a);last=mentionStart+match[0].length-match[1].length;
       }
       if(found){if(last<value.length)frag.appendChild(document.createTextNode(value.slice(last)));node.parentNode?.replaceChild(frag,node);}
     }
@@ -27266,9 +27277,12 @@ window.performGlobalSearch = performGlobalSearch;
     if(pending.has(uid)) return pending.get(uid);
     const job=getDoc(doc(db,'users',uid)).then(snap=>{
       const u=snap.exists()?snap.data():{};
+      const frameKey=[u.avatarFrame,u.equippedFrame,u.frame,u.profileFrame,item.avatarFrame,item.equippedFrame,item.frame,item.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&window.CODM_WAR_ARTIFACT_FRAMES?.[key])||'none';
       const profile={
-        avatarFrame:u.avatarFrame || u.equippedFrame || u.frame || u.profileFrame || item.avatarFrame || item.equippedFrame || item.frame || item.profileFrame || 'none',
-        equippedFrame:u.equippedFrame || u.avatarFrame || u.frame || u.profileFrame || item.equippedFrame || item.avatarFrame || item.frame || item.profileFrame || 'none',
+        avatarFrame:frameKey,
+        equippedFrame:frameKey,
+        frame:frameKey,
+        profileFrame:frameKey,
         isPro:u.isPro===true || u.pro===true || u.subscription==='pro' || u.proStatus==='active',
         pro:u.pro===true || u.isPro===true || u.subscription==='pro' || u.proStatus==='active',
         avatar:item.avatar || u.avatar || u.photoURL || u.photoUrl || '',

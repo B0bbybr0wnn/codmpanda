@@ -362,8 +362,10 @@ async function fetchOfficialBriefings() {
       if (!href || href === source.url || !source.hosts.includes(new URL(href).hostname.toLowerCase())) continue;
       const title = textOf(match[4]) || readMeta(match[1] + match[3], ['aria-label', 'title']);
       if (title.length < 8 || title.length > 220) continue;
+      const articlePath = new URL(href).pathname;
+      if (source.name === 'COD Mobile Support' && /\/articles\/(?:all|index)\.html?$/i.test(articlePath)) continue;
       const urlAndTitle = href + ' ' + title;
-      const likelyArticle = source.article.test(new URL(href).pathname) &&
+      const likelyArticle = source.article.test(articlePath) &&
         (source.name === 'COD Mobile Support' || looksLikeCODM(urlAndTitle) ||
           /(?:season|patch|update|event|notes|announcement|news|roadmap|ranked|map|weapon|balance|redeem|community)/i.test(urlAndTitle));
       if (!likelyArticle) continue;
@@ -414,8 +416,20 @@ async function fetchOfficialBriefings() {
     seen.add(item.url);
     unique.push(item);
   }
+  // Reserve a few article slots for each official source so the largest listing cannot crowd out Support.
+  const selected = [];
+  const selectedUrls = new Set();
+  for (const source of sources) {
+    for (const link of unique.filter(item => item.sourceName === source.name).slice(0, 4)) {
+      if (!selectedUrls.has(link.url)) { selected.push(link); selectedUrls.add(link.url); }
+    }
+  }
+  for (const link of unique) {
+    if (selected.length >= 12) break;
+    if (!selectedUrls.has(link.url)) { selected.push(link); selectedUrls.add(link.url); }
+  }
   const articleResults = [];
-  await Promise.all(unique.slice(0, 12).map(async link => {
+  await Promise.all(selected.map(async link => {
     try {
       const html = await fetchText(link.url);
       const canonicalMatch = html.match(/<link\b[^>]*rel=[\"']canonical[\"'][^>]*href=[\"']([^\"']+)[\"']/i);
