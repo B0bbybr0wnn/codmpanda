@@ -26143,7 +26143,7 @@ window.performGlobalSearch = performGlobalSearch;
   window.openAvatarFramePicker=function(){
     try {
       const pro=!!(State.profile && (State.profile.isPro===true || State.profile.pro===true || State.profile.subscription==='pro' || State.profile.proStatus==='active'));
-      const stored=window.CODMNormalizeFrameKey?.([State.profile?.avatarFrame,State.profile?.equippedFrame,State.profile?.frame,State.profile?.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none')||'none';
+      const stored=window.CODMNormalizeFrameKey?.([State.profile?.avatarFrame,State.profile?.equippedAvatarFrame,State.profile?.equippedFrame,State.profile?.selectedFrame,State.profile?.frameId,State.profile?.frame,State.profile?.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none')||'none';
       const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};
       if(!Object.keys(frameCatalog).length)throw new Error('War Artifact frame catalogue is unavailable');
       const current=(stored==='none'||frameCatalog[stored])?stored:'none';
@@ -26181,8 +26181,9 @@ window.performGlobalSearch = performGlobalSearch;
           if(!State.user){overlay.remove();if(typeof showAuthGate==='function')showAuthGate();return;}
           button.disabled=true;
           try{
-            await updateDoc(doc(db,'users',State.user.uid),{avatarFrame:key,equippedFrame:key,frame:key,profileFrame:key});
-            State.profile={...(State.profile||{}),avatarFrame:key,equippedFrame:key,frame:key,profileFrame:key};
+            const savedFields={avatarFrame:key,equippedAvatarFrame:key,equippedFrame:key,selectedFrame:key,frameId:key,frame:key,profileFrame:key};
+            await updateDoc(doc(db,'users',State.user.uid),savedFields);
+            State.profile={...(State.profile||{}),...savedFields};
             window.dispatchEvent(new CustomEvent('codmpanda:avatar-frame-updated',{detail:{uid:State.user.uid,avatarFrame:key}}));
             if(typeof profileCache!=='undefined')profileCache.delete(State.user.uid);
             overlay.remove();
@@ -27277,14 +27278,17 @@ window.performGlobalSearch = performGlobalSearch;
     const uid=String(item.uid || item.userId || item.ownerUid || item.createdBy || item.authorUid || '').trim();
     if(!uid) return false;
     item.uid=uid;
-    if(cache.has(uid)){ const cached=cache.get(uid); if(Date.now()-cached.at<15000){ const keys=['avatarFrame','equippedFrame','frame','profileFrame','avatar','ign','isPro','pro','verified']; const before=keys.map(key=>item[key]); Object.assign(item,cached.profile); return keys.some((key,index)=>before[index]!==item[key]); } cache.delete(uid); }
+    if(cache.has(uid)){ const cached=cache.get(uid); if(Date.now()-cached.at<15000){ const keys=['avatarFrame','equippedAvatarFrame','equippedFrame','selectedFrame','frameId','frame','profileFrame','avatar','ign','isPro','pro','verified']; const before=keys.map(key=>item[key]); Object.assign(item,cached.profile); return keys.some((key,index)=>before[index]!==item[key]); } cache.delete(uid); }
     if(pending.has(uid)) return pending.get(uid);
     const job=getDoc(doc(db,'users',uid)).then(snap=>{
       const u=snap.exists()?snap.data():{};
       const frameKey=[u.avatarFrame,u.equippedAvatarFrame,u.equippedFrame,u.selectedFrame,u.frameId,u.frame,u.profileFrame,item.avatarFrame,item.equippedAvatarFrame,item.equippedFrame,item.selectedFrame,item.frameId,item.frame,item.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&window.CODM_WAR_ARTIFACT_FRAMES?.[key])||'none';
       const profile={
         avatarFrame:frameKey,
+        equippedAvatarFrame:frameKey,
         equippedFrame:frameKey,
+        selectedFrame:frameKey,
+        frameId:frameKey,
         frame:frameKey,
         profileFrame:frameKey,
         isPro:u.isPro===true || u.pro===true || u.subscription==='pro' || u.proStatus==='active',
@@ -27331,7 +27335,7 @@ window.performGlobalSearch = performGlobalSearch;
     const source=uid===State.user?.uid?(State.profile||{}):null;
     const rawFrame=event.detail?.avatarFrame||source?.avatarFrame||source?.equippedAvatarFrame||source?.equippedFrame||source?.selectedFrame||source?.frameId||source?.frame||source?.profileFrame||'none';
     const frameKey=window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(rawFrame):String(rawFrame||'none');
-    const frameFields={avatarFrame:frameKey,equippedFrame:frameKey,frame:frameKey,profileFrame:frameKey};
+    const frameFields={avatarFrame:frameKey,equippedAvatarFrame:frameKey,equippedFrame:frameKey,selectedFrame:frameKey,frameId:frameKey,frame:frameKey,profileFrame:frameKey};
     const updateItems=items=>{if(!Array.isArray(items))return;for(const item of items){const owner=String(item?.uid||item?.userId||item?.ownerUid||item?.createdBy||item?.authorUid||'');if(owner===uid)Object.assign(item,frameFields);}};
     updateItems(State.cache?.lobbies);
     if(typeof homeCache!=='undefined')updateItems(homeCache?.feed);
