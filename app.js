@@ -27194,9 +27194,10 @@ window.performGlobalSearch = performGlobalSearch;
   style.textContent=`
     .cp-avatar-shell{position:relative!important;display:inline-block!important;flex:0 0 auto!important;overflow:visible!important;isolation:isolate!important;vertical-align:middle!important}
     .cp-avatar-shell.cp-avatar-no-frame{overflow:hidden!important}
-    .cp-avatar-shell>.cp-avatar-core{position:absolute!important;inset:16%!important;width:auto!important;height:auto!important;border-radius:50%!important;overflow:hidden!important;z-index:5!important}
+    /* Canonical frame stack: photo stays circular underneath the transparent artwork. */
+    .cp-avatar-shell>.cp-avatar-core{position:absolute!important;inset:13%!important;width:auto!important;height:auto!important;border-radius:50%!important;overflow:hidden!important;z-index:2!important}
     .cp-avatar-shell>.cp-avatar-core img{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;border-radius:50%!important;clip-path:circle(50% at 50% 50%)!important;display:block!important}
-    .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;left:-14%!important;top:-14%!important;width:128%!important;height:128%!important;max-width:none!important;max-height:none!important;object-fit:contain!important;object-position:center!important;z-index:4!important;pointer-events:none!important}
+    .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;left:-14%!important;top:-14%!important;width:128%!important;height:128%!important;max-width:none!important;max-height:none!important;object-fit:contain!important;object-position:center!important;z-index:20!important;display:block!important;pointer-events:none!important}
     .cp-avatar-framed-host{overflow:visible!important;clip-path:none!important;border-radius:50%!important}
     .cp-avatar-framed-host>.cp-avatar-shell{margin:0 auto!important}
     .mention-text{position:relative!important;z-index:20!important;display:inline!important;pointer-events:auto!important;cursor:pointer!important;touch-action:manipulation!important}
