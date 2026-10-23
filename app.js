@@ -15242,7 +15242,7 @@ renderVaults = function() {
 // PART 2: UPDATE AVAILABLE BANNER
 // ============================================
 
-const APP_BUILD_DATE = '2026-10-06'; // Update this each deploy
+const APP_BUILD_DATE = '2026-10-23'; // Update this each deploy
 const STORED_BUILD_KEY = 'codmpanda_build_date';
 
 function checkForUpdates() {
