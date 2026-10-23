@@ -29,7 +29,7 @@ export default {
         serviceAccountConfigured: !!env.FIREBASE_SERVICE_ACCOUNT_JSON,
         aiConfigured: !!env.GEMINI_API_KEY,
         routes: ['GET /health', 'GET /briefings', 'POST /coach', 'POST /send'],
-        geminiModel: String(env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\\//, '')
+        geminiModel: String(env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//, '')
       });
     }
 
@@ -462,7 +462,7 @@ async function summarizeOfficialBriefings(items, env) {
         },
         contents: [{
           role: 'user',
-          parts: [{ text: 'Official source: ' + item.sourceName + '\\nTitle: ' + item.title + '\\nPublished: ' + item.publishedAt + '\\nArticle text:\\n' + item.articleText.slice(0, 9000) }]
+          parts: [{ text: 'Official source: ' + item.sourceName + '\nTitle: ' + item.title + '\nPublished: ' + item.publishedAt + '\nArticle text:\\n' + item.articleText.slice(0, 9000) }]
         }],
         generationConfig: { temperature: 0.2, maxOutputTokens: 220 }
       });
