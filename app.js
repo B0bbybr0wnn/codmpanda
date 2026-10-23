@@ -25699,8 +25699,8 @@ window.performGlobalSearch = performGlobalSearch;
     const storedFrame=([user?.avatarFrame,user?.equippedAvatarFrame,user?.equippedFrame,user?.selectedFrame,user?.frameId,user?.frame,user?.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
     // Old CSS/SVG frame IDs are retired. Pro-only PNG artwork must not render for a Free profile.
     const candidate=WAR_ARTIFACT_FRAMES[storedFrame];
-    const hasPro= user?.isPro===true || user?.pro===true || user?.subscription==='pro' || user?.proStatus==='active';
-    const frame=(storedFrame==='none'||(candidate&&(candidate.tier!=='PRO'||hasPro)))?storedFrame:'none';
+    // Picker enforces Pro access when equipping. A valid saved key must still render if a public profile omits plan fields.
+    const frame=(storedFrame==='none'||candidate)?storedFrame:'none';
     const name=user?.ign||user?.displayName||'Operator'; const url=user?.avatar||user?.photoURL||user?.photoUrl||''; const r=Math.max(26,Number(size)||44);
     const avatarContent=url?`<img src="${esc2(url)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block">`:esc2((typeof getInitials==='function'?getInitials(name):name.slice(0,2).toUpperCase()));
     if(frame==='none') return `<div class="cp-avatar-shell cp-avatar-no-frame" style="width:${r}px;height:${r}px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#202024;font-weight:900;font-size:${Math.round(r*.32)}px">${avatarContent}</div>`;
@@ -26146,7 +26146,7 @@ window.performGlobalSearch = performGlobalSearch;
       const stored=window.CODMNormalizeFrameKey?.([State.profile?.avatarFrame,State.profile?.equippedFrame,State.profile?.frame,State.profile?.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none')||'none';
       const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};
       if(!Object.keys(frameCatalog).length)throw new Error('War Artifact frame catalogue is unavailable');
-      const current=(stored==='none'||(frameCatalog[stored]&&(frameCatalog[stored].tier!=='PRO'||pro)))?stored:'none';
+      const current=(stored==='none'||frameCatalog[stored])?stored:'none';
       const avatar=State.profile?.avatar||State.profile?.photoURL||State.profile?.photoUrl||'';
       const old=document.getElementById('cp-war-frame-modal'); if(old)old.remove();
       const overlay=document.createElement('div'); overlay.id='cp-war-frame-modal';
@@ -26168,9 +26168,9 @@ window.performGlobalSearch = performGlobalSearch;
           const plain=document.createElement('div');plain.style.cssText='position:absolute;inset:8px;border-radius:50%;overflow:hidden;background:#29292d;display:grid;place-items:center;color:#aaa;font-weight:800;';
           if(avatar){const img=document.createElement('img');img.src=avatar;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover';plain.appendChild(img)}else plain.textContent='×';preview.appendChild(plain);
         } else {
-          const core=document.createElement('div');core.style.cssText='position:absolute;left:19%;top:19%;width:62%;height:62%;border-radius:50%;overflow:hidden;background:#222;display:grid;place-items:center;color:#aaa;font-size:11px;';
+          const core=document.createElement('div');core.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:74%;height:74%;border-radius:50%;overflow:hidden;background:#222;display:grid;place-items:center;color:#aaa;font-size:11px;';
           if(avatar){const img=document.createElement('img');img.src=avatar;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover';core.appendChild(img)}else core.textContent='CP';
-          const frame=document.createElement('img');frame.src='/frames/'+file;frame.alt='';frame.style.cssText='position:absolute;inset:-10%;width:120%;height:120%;object-fit:contain;object-position:center;pointer-events:none;';
+          const frame=document.createElement('img');frame.src='/frames/'+file;frame.alt='';frame.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:128%;height:128%;object-fit:contain;object-position:center;pointer-events:none;';
           frame.onerror=()=>{frame.style.display='none';};preview.append(core,frame);
         }
         const label=document.createElement('strong');label.textContent=name;label.style.cssText='font-size:10px;line-height:1.2;text-align:center;';
