@@ -26989,7 +26989,7 @@ window.performGlobalSearch = performGlobalSearch;
         const all = await getDocs(query(collection(db, 'users'), limit(200))).catch(() => null);
         userDoc = all?.docs.find(d => {
           const u = d.data() || {};
-          return [u.ign, u.username, u.displayName].some(v => String(v || '').replace(/^@/, '').toLowerCase() === normalized);
+          return [u.ign, u.username, u.displayName, u.handle, u.codmName].some(v => String(v || '').trim().replace(/^@/, '').toLowerCase() === normalized);
         }) || null;
       }
       if (userDoc) {
@@ -27003,11 +27003,11 @@ window.performGlobalSearch = performGlobalSearch;
     }
   });
 
-  async function cpCoachReply(question, history) {
+  async function cpCoachReply(question, history, playerName) {
     const response = await fetch(NOTIFY_WORKER_URL + '/coach', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: question, history: history.slice(-10) })
+      body: JSON.stringify({ message: question, history: history.slice(-10), playerName: String(playerName || '').slice(0, 40) })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || 'AI Coach request failed');
@@ -27075,7 +27075,7 @@ window.performGlobalSearch = performGlobalSearch;
       sendButton.textContent='…';
       chat.scrollTop=chat.scrollHeight;
       try {
-        const answer = await cpCoachReply(value, history);
+        const currentCoachName = State.profile?.ign || State.profile?.displayName || State.user?.displayName || '';\n        const answer = await cpCoachReply(value, history, currentCoachName);
         history.push({ role:'user', text:value }, { role:'model', text:answer });
         history = history.slice(-20);
         try { localStorage.setItem(coachHistoryKey, JSON.stringify({ updatedAt:Date.now(), messages:history })); } catch (_) { /* local storage may be full or disabled */ }
@@ -27211,37 +27211,6 @@ window.performGlobalSearch = performGlobalSearch;
     .mention-text{position:relative!important;z-index:20!important;display:inline!important;pointer-events:auto!important;cursor:pointer!important;touch-action:manipulation!important}
   `;
   (document.head||document.documentElement).appendChild(style);
-  // Allow username/IGN capitalization differences without making the visible mention non-clickable.
-  document.addEventListener('click', async function(event){
-    const a=event.target.closest?.('a.mention-text,[data-mention-name]');
-    if(!a)return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    const raw=String(a.dataset.mentionName||a.textContent||'').trim().replace(/^@/,'');
-    if(!raw)return;
-    if(a.dataset.cpMentionBusy==='1')return;
-    a.dataset.cpMentionBusy='1';
-    try{
-      const normalized=raw.toLowerCase();
-      let found=null;
-      try{
-        const snap=await getDocs(query(collection(db,'users'),limit(500)));
-        found=snap.docs.find(d=>{
-          const u=d.data()||{};
-          return [u.ign,u.username,u.displayName,u.handle,u.codmName].some(v=>String(v||'').trim().replace(/^@/,'').toLowerCase()===normalized);
-        })||null;
-      }catch(err){console.warn('[CODMPanda] mention lookup failed',err);}
-      if(found){
-        const uid=found.id;
-        if(typeof openUserProfile==='function')await openUserProfile(uid);
-        else if(typeof showUserProfile==='function')await showUserProfile(uid);
-        else if(typeof viewProfile==='function')await viewProfile(uid);
-        else toast('Profile viewer is unavailable right now','info');
-      }else toast('Could not find that profile. Check the exact @username.','info');
-    }catch(err){console.warn('[CODMPanda] Could not open mention',err);toast('Could not open that profile. Try again.','info');}
-    finally{delete a.dataset.cpMentionBusy;}
-  },true);
 })();
 
   // Convert rendered @handles into actual anchors across feed cards, comments, inbox and lobby posts.
@@ -27279,38 +27248,51 @@ window.performGlobalSearch = performGlobalSearch;
 
 
 
-/* Hydrate lobby authors in the HOME feed too. The lobby screen had its own hydrator,
-   but Home cards were rendering lobby documents before profile cosmetics were attached. */
+/* Home-feed lobby hydration: preserve the active renderer chain and enrich every lobby author before repainting. */
 (function cpHomeFeedLobbyHydration(){
-  const cache=new Map(),pending=new Map();
+  const cache=new Map(), pending=new Map();
+  const previousRender=window.renderHomeFeed || renderHomeFeed;
   async function enrich(item){
-    if(!item||item.type!=='lobby'||!item.uid)return false;
-    if(cache.has(item.uid)){Object.assign(item,cache.get(item.uid));return false;}
-    if(!pending.has(item.uid)){
-      pending.set(item.uid,getDoc(doc(db,'users',item.uid)).then(snap=>{
-        const u=snap.exists()?snap.data():{};
-        const profile={
-          avatarFrame:u.avatarFrame||u.equippedFrame||u.frame||u.profileFrame||item.avatarFrame||item.equippedFrame||item.frame||item.profileFrame||'none',
-          equippedFrame:u.equippedFrame||u.avatarFrame||u.frame||u.profileFrame||item.equippedFrame||item.avatarFrame||item.frame||item.profileFrame||'none',
-          isPro:u.isPro===true||u.pro===true||u.subscription==='pro'||u.proStatus==='active',
-          pro:u.pro===true||u.isPro===true||u.subscription==='pro'||u.proStatus==='active',
-          avatar:item.avatar||u.avatar||u.photoURL||u.photoUrl||'',
-          ign:item.ign||u.ign||u.displayName||'Operator',
-          verified:u.verified===true
-        };
-        cache.set(item.uid,profile);pending.delete(item.uid);Object.assign(item,profile);return true;
-      }).catch(err=>{pending.delete(item.uid);console.warn('[CODMPanda] Home lobby profile hydration failed',err);return false;}));
-    }
-    return pending.get(item.uid);
+    if(!item || item.type!=='lobby') return false;
+    const uid=String(item.uid || item.userId || item.ownerUid || item.createdBy || item.authorUid || '').trim();
+    if(!uid) return false;
+    item.uid=uid;
+    if(cache.has(uid)){ Object.assign(item,cache.get(uid)); return false; }
+    if(pending.has(uid)) return pending.get(uid);
+    const job=getDoc(doc(db,'users',uid)).then(snap=>{
+      const u=snap.exists()?snap.data():{};
+      const profile={
+        avatarFrame:u.avatarFrame || u.equippedFrame || u.frame || u.profileFrame || item.avatarFrame || item.equippedFrame || item.frame || item.profileFrame || 'none',
+        equippedFrame:u.equippedFrame || u.avatarFrame || u.frame || u.profileFrame || item.equippedFrame || item.avatarFrame || item.frame || item.profileFrame || 'none',
+        isPro:u.isPro===true || u.pro===true || u.subscription==='pro' || u.proStatus==='active',
+        pro:u.pro===true || u.isPro===true || u.subscription==='pro' || u.proStatus==='active',
+        avatar:item.avatar || u.avatar || u.photoURL || u.photoUrl || '',
+        ign:u.ign || u.displayName || u.username || item.ign || 'Operator',
+        verified:u.verified===true
+      };
+      cache.set(uid,profile);
+      Object.assign(item,profile);
+      return true;
+    }).catch(error=>{
+      console.warn('[CODMPanda] Home lobby profile hydration failed',error);
+      return false;
+    }).finally(()=>pending.delete(uid));
+    pending.set(uid,job);
+    return job;
   }
-  const original=renderHomeFeed;
-  renderHomeFeed=function(){
-    const result=original.apply(this,arguments);
-    const items=(homeCache?.feed||[]).filter(item=>item?.type==='lobby'&&item.uid&&!cache.has(item.uid));
-    if(items.length)Promise.all(items.map(enrich)).then(changed=>{
-      if(changed.some(Boolean)&&document.getElementById('home-feed'))original.call(this);
+  const wrappedRender=function(){
+    const result=previousRender.apply(this,arguments);
+    const feed=Array.isArray(homeCache?.feed)?homeCache.feed:[];
+    const jobs=feed.filter(item=>item?.type==='lobby').map(enrich);
+    if(jobs.length) Promise.all(jobs).then(results=>{
+      if(results.some(Boolean) && document.getElementById('home-feed')){
+        // Re-enter the latest renderer so ad/reaction and other feed hooks remain active.
+        if(typeof window.renderHomeFeed==='function') window.renderHomeFeed();
+        if(typeof window.__codmpandaRefreshNamesAndAvatars==='function') window.__codmpandaRefreshNamesAndAvatars();
+      }
     });
     return result;
   };
-  window.renderHomeFeed=renderHomeFeed;
+  renderHomeFeed=wrappedRender;
+  window.renderHomeFeed=wrappedRender;
 })();
