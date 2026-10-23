@@ -24,8 +24,8 @@ export default {
       return json({
         status: 'ok',
         service: 'codmpanda-notify',
-        build: 'codmpanda-coach-briefings-v4',
-        coachRouteConfigured: true,
+        build: 'codmpanda-coach-briefings-v5',
+        coachRouteConfigured: true,\n        coachRootCompatibility: true,\n        briefingDiscovery: 'official-html+sitemaps',
         serviceAccountConfigured: !!env.FIREBASE_SERVICE_ACCOUNT_JSON,
         aiConfigured: !!env.GEMINI_API_KEY,
         routes: ['GET /health', 'GET /briefings', 'POST /coach', 'POST /send'],
