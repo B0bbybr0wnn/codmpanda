@@ -18605,7 +18605,7 @@ function renderHomeLobbyCard(l) {
 
       <div class="flex items-start gap-3 mb-3">
         <div data-uid="${esc(l.uid)}" class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0">
-          ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
+          ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 44) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
