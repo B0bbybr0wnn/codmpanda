@@ -319,12 +319,14 @@ async function fetchOfficialBriefings() {
     try {
       const html = await getPage(source.url);
       if (source.news) {
-        const links = []; const anchorPattern = /<a\b[^>]*href=["']([^"']*\/blog\/[^"'#?]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+        const links = []; const anchorPattern = /<a\b[^>]*href=["']([^"'#?]*\/blog\/[^"'#?]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
         let match;
         while ((match = anchorPattern.exec(html)) && links.length < 4) {
           const title = clean(match[2]); let url = match[1];
           if (url.startsWith('/')) url = 'https://www.callofduty.com' + url;
-          if (!/^https:\/\/www\.callofduty\.com\/blog\/mobile\//i.test(url) || title.length < 8) continue;
+          if (!/^https:\/\/www\.callofduty\.com\/blog\//i.test(url) || title.length < 8) continue;
+          const isMobileArticle = /call.of.duty.mobile|cod\s?mobile|\bcodm\b|mobile/i.test(title + ' ' + url);
+          if (!isMobileArticle) continue;
           if (!links.some(item => item.url === url)) links.push({ title, url });
         }
         await Promise.all(links.slice(0,4).map(async link => {
@@ -332,8 +334,11 @@ async function fetchOfficialBriefings() {
             const articleHtml = await getPage(link.url);
             const title = meta(articleHtml,'og:title') || (articleHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || link.title;
             const description = meta(articleHtml,'og:description') || meta(articleHtml,'description') || clean((articleHtml.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || [])[1]).slice(0,360) || link.title;
-            const articleBlock = (articleHtml.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || articleHtml.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || [])[1] || '';
-            const articleText = clean(articleBlock.replace(/<(script|style|nav|header|footer|aside)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')).slice(0,10000);
+            const articleBlock = (articleHtml.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || articleHtml.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || articleHtml.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i) || [])[1] || '';
+            const articleText = clean(articleBlock
+              .replace(/<(script|style|nav|header|footer|aside|form|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+              .replace(/<(h1|h2|h3|p|li|blockquote|time)\b[^>]*>/gi, ' const articleText = clean(articleBlock.replace(/<(script|style|nav|header|footer|aside)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')).slice(0,10000); ')
+            ).slice(0,10000);
             const published = meta(articleHtml,'article:published_time') || meta(articleHtml,'date');
             results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description).slice(0,520), articleText, isArticle:true, url:link.url, publishedAt:published ? clean(published).slice(0,30) : 'Latest official article' });
           } catch (_) {}
@@ -354,7 +359,7 @@ async function fetchOfficialBriefings() {
 // GEMINI AI HELPERS
 // ============================================
 async function callGemini(env, payload) {
-  const model = String(env.GEMINI_MODEL || 'gemini-3.8-flash').replace(/^models\//, '');
+  const model = String(env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//, '');
   const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
     method: 'POST',
     headers: {
