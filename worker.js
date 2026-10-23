@@ -309,8 +309,8 @@ async function getAccessToken(serviceAccount) {
 
 async function fetchOfficialBriefings() {
   const sources = [
-    { name: 'Official CODM News', url: 'https://www.callofduty.com/blog/mobile', hosts: ['www.callofduty.com'], article: /\/(?:blog)\//i },
-    { name: 'COD Mobile Support', url: 'https://support.activision.com/cod-mobile', hosts: ['support.activision.com'], article: /\/(?:articles|cod-mobile)\//i },
+    { name: 'Official CODM News', url: 'https://www.callofduty.com/blog/mobile', sitemap: 'https://www.callofduty.com/sitemap.xml', hosts: ['www.callofduty.com'], article: /\/(?:blog)\//i },
+    { name: 'COD Mobile Support', url: 'https://support.activision.com/cod-mobile', sitemap: 'https://support.activision.com/sitemap.xml', hosts: ['support.activision.com'], article: /\/(?:articles|cod-mobile)\//i },
     { name: 'Official CODM Game Page', url: 'https://www.callofduty.com/mobile', hosts: ['www.callofduty.com'], article: /\/(?:blog)\//i }
   ];
   const decode = value => String(value || '')
@@ -369,14 +369,37 @@ async function fetchOfficialBriefings() {
     }
     return found;
   };
+  const sitemapLinksFrom = (xml, source) => {
+    const found = [];
+    const re = /<loc>\s*([^<]+)\s*<\/loc>/gi;
+    let match;
+    while ((match = re.exec(xml)) && found.length < 250) {
+      const url = canonicalUrl(match[1], source.url);
+      if (!url || url === source.url || !source.hosts.includes(new URL(url).hostname.toLowerCase())) continue;
+      const path = new URL(url).pathname;
+      if (!source.article.test(path)) continue;
+      if (source.name !== 'COD Mobile Support' && !looksLikeCODM(url) &&
+          !/(?:season|patch|update|event|notes|announcement|news|roadmap|ranked|weapon|balance|redeem|community)/i.test(path)) continue;
+      if (!found.some(item => item.url === url)) found.push({ url, linkTitle: '', sourceName: source.name });
+    }
+    return found;
+  };
   const candidates = [];
   await Promise.all(sources.map(async source => {
-    try {
-      const html = await fetchText(source.url);
-      candidates.push(...linksFrom(html, source));
-    } catch (error) {
-      console.warn('[briefings] Listing unavailable:', source.url, error?.message || error);
-    }
+    const tasks = [];
+    tasks.push(fetchText(source.url).then(html => candidates.push(...linksFrom(html, source)))
+      .catch(error => console.warn('[briefings] Listing unavailable:', source.url, error?.message || error)));
+    if (source.sitemap) tasks.push(fetchText(source.sitemap).then(async xml => {
+      let sitemapXml = xml;
+      if (/<sitemapindex\b/i.test(xml)) {
+        const children = (xml.match(/<loc>\s*[^<]+\s*<\/loc>/gi) || []).slice(0, 4)
+          .map(tag => (tag.match(/<loc>\s*([^<]+)\s*<\/loc>/i) || [])[1]).filter(Boolean);
+        const childXml = await Promise.all(children.map(url => fetchText(url).catch(() => '')));
+        sitemapXml = childXml.join('\n');
+      }
+      candidates.push(...sitemapLinksFrom(sitemapXml, source));
+    }).catch(error => console.warn('[briefings] Sitemap unavailable:', source.sitemap, error?.message || error)));
+    await Promise.all(tasks);
   }));
   // Prefer unique article URLs and fetch their actual page bodies; source landing pages are never
   // presented as news articles or summarized from meta descriptions alone.
@@ -396,10 +419,12 @@ async function fetchOfficialBriefings() {
       const title = readMeta(html, ['og:title', 'twitter:title']) ||
         textOf((html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i) || [])[1]) ||
         textOf((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]) || link.linkTitle;
-      const articleBlock = (html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
-        html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) ||
-        html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i) || [])[1] || '';
-      const articleText = textOf(articleBlock).slice(0, 12000);
+      const articleBlocks = [
+        (html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || [])[1] || '',
+        (html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || [])[1] || '',
+        (html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i) || [])[1] || ''
+      ];
+      const articleText = articleBlocks.map(textOf).sort((a, b) => b.length - a.length)[0].slice(0, 12000);
       // Article summaries must be grounded in actual extracted body text, not a site description.
       if (articleText.length < 180 || title.length < 8) {
         console.warn('[briefings] Skipping thin article body:', finalUrl, articleText.length);
@@ -480,6 +505,6 @@ async function summarizeOfficialBriefings(items, env) {
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...CORS, 'Content-Type': 'application/json' }
+    headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
   });
 }
