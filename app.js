@@ -16276,7 +16276,7 @@ document.addEventListener('click', async (event) => {
     found = byIgn && !byIgn.empty ? byIgn.docs[0] : byUsername && !byUsername.empty ? byUsername.docs[0] : null;
     if (!found) {
       // Case-insensitive fallback for usernames/IGNs whose capitalization differs.
-      const all = await getDocs(query(collection(db, 'users'), limit(100))).catch(() => null);
+      const all = await getDocs(query(collection(db, 'users'), limit(500))).catch(() => null);
       if (all) found = all.docs.find(d => {
         const u = d.data() || {};
         return [u.ign, u.username, u.displayName].some(v => String(v || '').replace(/^@/, '').toLowerCase() === normalized);
@@ -25518,9 +25518,11 @@ window.performGlobalSearch = performGlobalSearch;
   window.__codmpandaVisualUpgrade = true;
   const css = `
   .cp-avatar-shell{position:relative!important;overflow:visible!important;isolation:isolate;flex-shrink:0}
-  .cp-avatar-core{position:absolute!important;z-index:8!important;left:13%;top:13%;width:74%;height:74%;margin:0!important;overflow:hidden;border-radius:50%;background:#101014;box-sizing:border-box;border:1px solid rgba(255,255,255,.16);}
+  .cp-avatar-core{position:absolute!important;z-index:8!important;left:10%;top:10%;width:80%;height:80%;margin:0!important;overflow:hidden;border-radius:50%;background:#101014;box-sizing:border-box;border:1px solid rgba(255,255,255,.16);}
   .cp-avatar-core img{width:100%;height:100%;object-fit:cover;display:block}
-  .cp-frame-art{position:absolute;inset:-4%;width:108%;height:108%;z-index:10;pointer-events:none;overflow:visible;filter:drop-shadow(0 0 4px var(--cp-glow,#ff5a1f));}
+  .cp-frame-art{position:absolute;inset:-12%;width:124%;height:124%;z-index:10;pointer-events:none;overflow:visible;filter:drop-shadow(0 0 4px var(--cp-glow,#ff5a1f));}
+  .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;inset:-12%!important;width:124%!important;height:124%!important;object-fit:contain!important;object-position:center!important;z-index:10!important;pointer-events:none!important;display:block!important;}
+  .cp-avatar-shell>.cp-avatar-core{inset:10%!important;width:80%!important;height:80%!important;}
   .cp-frame-art path,.cp-frame-art circle{vector-effect:non-scaling-stroke}.cp-frame-art-fire,.cp-frame-art-mythic{filter:drop-shadow(0 0 5px var(--cp-glow,#ff5a1f)) drop-shadow(0 0 2px #ffb12c)}.cp-frame-art-darkmatter,.cp-frame-art-neon{filter:drop-shadow(0 0 5px var(--cp-glow,#b34cff)) drop-shadow(0 0 2px #fff)}.cp-frame-art-gold,.cp-frame-art-championship{filter:drop-shadow(0 0 4px var(--cp-glow,#ffd45e))}.cp-frame-art-ice,.cp-frame-art-diamond,.cp-frame-art-aether{filter:drop-shadow(0 0 5px var(--cp-glow,#6beaff))}
   .cp-frame-inferno{--cp-glow:#ff4b18}.cp-frame-darkmatter{--cp-glow:#b34cff}.cp-frame-diamond{--cp-glow:#6beaff}.cp-frame-dragon{--cp-glow:#ffb000}.cp-frame-championship{--cp-glow:#ffd45e}.cp-frame-reaper{--cp-glow:#e33c59}.cp-frame-aether{--cp-glow:#49ffc5}.cp-frame-neon{--cp-glow:#ff36c7}
   .cp-theme-profile{position:relative;overflow:hidden;background-size:cover!important;border-color:var(--cp-theme-border,#292929)!important;box-shadow:0 0 28px var(--cp-theme-glow,transparent)!important}
@@ -25679,7 +25681,7 @@ window.performGlobalSearch = performGlobalSearch;
       const rect=el.getBoundingClientRect();if(rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
       const uid=el.dataset.uid;if(!uid)continue;
       const user=await getPublicProfile(uid);if(!user)continue;
-      const frameKey=user.avatarFrame||'none';
+      const frameKey=normalizeCODMFrameKey(user.avatarFrame||user.equippedFrame||user.frame||user.profileFrame||'none');
       if(frameKey==='none'||!WAR_ARTIFACT_FRAMES[frameKey])continue;
       if(el.dataset.cpFrameDone===frameKey)continue;
       const img=el.querySelector('img');
@@ -27186,3 +27188,53 @@ window.performGlobalSearch = performGlobalSearch;
     };
   }
 })();
+
+
+/* CODMPanda reliability patch: avatar sizing, profile-field normalization and robust mention resolution. */
+(function cpReliabilityPatch(){
+  const style=document.createElement('style');
+  style.id='cp-avatar-frame-fit-final';
+  style.textContent=`
+    .cp-avatar-shell{position:relative!important;display:inline-block!important;flex:0 0 auto!important;overflow:visible!important;isolation:isolate!important;vertical-align:middle!important}
+    .cp-avatar-shell.cp-avatar-no-frame{overflow:hidden!important}
+    .cp-avatar-shell>.cp-avatar-core{position:absolute!important;left:10%!important;top:10%!important;width:80%!important;height:80%!important;border-radius:50%!important;overflow:hidden!important;z-index:2!important}
+    .cp-avatar-shell>.cp-avatar-core img{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;border-radius:50%!important;display:block!important}
+    .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;left:-12%!important;top:-12%!important;width:124%!important;height:124%!important;object-fit:contain!important;object-position:center!important;z-index:4!important;pointer-events:none!important}
+    .cp-avatar-framed-host{overflow:visible!important;clip-path:none!important;border-radius:50%!important}
+    .cp-avatar-framed-host>.cp-avatar-shell{margin:0 auto!important}
+    .mention-text{position:relative!important;z-index:20!important;display:inline!important;pointer-events:auto!important;cursor:pointer!important;touch-action:manipulation!important}
+  `;
+  (document.head||document.documentElement).appendChild(style);
+  // Allow username/IGN capitalization differences without making the visible mention non-clickable.
+  document.addEventListener('click', async function(event){
+    const a=event.target.closest?.('a.mention-text,[data-mention-name]');
+    if(!a)return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    const raw=String(a.dataset.mentionName||a.textContent||'').trim().replace(/^@/,'');
+    if(!raw)return;
+    if(a.dataset.cpMentionBusy==='1')return;
+    a.dataset.cpMentionBusy='1';
+    try{
+      const normalized=raw.toLowerCase();
+      let found=null;
+      try{
+        const snap=await getDocs(query(collection(db,'users'),limit(500)));
+        found=snap.docs.find(d=>{
+          const u=d.data()||{};
+          return [u.ign,u.username,u.displayName,u.handle,u.codmName].some(v=>String(v||'').trim().replace(/^@/,'').toLowerCase()===normalized);
+        })||null;
+      }catch(err){console.warn('[CODMPanda] mention lookup failed',err);}
+      if(found){
+        const uid=found.id;
+        if(typeof openUserProfile==='function')await openUserProfile(uid);
+        else if(typeof showUserProfile==='function')await showUserProfile(uid);
+        else if(typeof viewProfile==='function')await viewProfile(uid);
+        else toast('Profile viewer is unavailable right now','info');
+      }else toast('Could not find that profile. Check the exact @username.','info');
+    }catch(err){console.warn('[CODMPanda] Could not open mention',err);toast('Could not open that profile. Try again.','info');}
+    finally{delete a.dataset.cpMentionBusy;}
+  },true);
+})();
+
