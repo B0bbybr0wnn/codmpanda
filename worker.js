@@ -336,11 +336,11 @@ async function fetchOfficialBriefings() {
             const title = meta(articleHtml,'og:title') || (articleHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || link.title;
             const description = meta(articleHtml,'og:description') || meta(articleHtml,'description') || clean((articleHtml.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || [])[1]).slice(0,360) || link.title;
             const articleBlock = (articleHtml.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || articleHtml.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || articleHtml.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i) || [])[1] || '';
-            const articleText = clean(articleBlock
+            const articleText = (clean(articleBlock
               .replace(/<(script|style|nav|header|footer|aside|form|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
               .replace(/<\/(h1|h2|h3|p|li|blockquote|time)>/gi, '. ')
               .replace(/<[^>]+>/g, ' ')
-            ).slice(0,10000);
+            ) || clean(description) || clean(title) || link.title).slice(0,10000);
             const published = meta(articleHtml,'article:published_time') || meta(articleHtml,'date');
             results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description).slice(0,520), articleText, isArticle:true, url:link.url, publishedAt:published ? clean(published).slice(0,30) : 'Latest official article' });
           } catch (_) {}
