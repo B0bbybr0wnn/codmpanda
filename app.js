@@ -25703,7 +25703,7 @@ window.performGlobalSearch = performGlobalSearch;
       const rect=el.getBoundingClientRect();if(rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
       const uid=el.dataset.uid;if(!uid)continue;
       const user=await getPublicProfile(uid);if(!user)continue;
-      const frameKey=([user.avatarFrame,user.equippedFrame,user.frame,user.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
+      const frameKey=([user.avatarFrame,user.equippedAvatarFrame,user.equippedFrame,user.selectedFrame,user.frameId,user.frame,user.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
       if(frameKey==='none'||!WAR_ARTIFACT_FRAMES[frameKey])continue;
       if(el.dataset.cpFrameDone===frameKey || el.dataset.cpFrameApplied===frameKey)continue;
       const img=el.querySelector('img');
@@ -27255,7 +27255,7 @@ window.performGlobalSearch = performGlobalSearch;
     if(pending.has(uid)) return pending.get(uid);
     const job=getDoc(doc(db,'users',uid)).then(snap=>{
       const u=snap.exists()?snap.data():{};
-      const frameKey=[u.avatarFrame,u.equippedFrame,u.frame,u.profileFrame,item.avatarFrame,item.equippedFrame,item.frame,item.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&window.CODM_WAR_ARTIFACT_FRAMES?.[key])||'none';
+      const frameKey=[u.avatarFrame,u.equippedAvatarFrame,u.equippedFrame,u.selectedFrame,u.frameId,u.frame,u.profileFrame,item.avatarFrame,item.equippedAvatarFrame,item.equippedFrame,item.selectedFrame,item.frameId,item.frame,item.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&window.CODM_WAR_ARTIFACT_FRAMES?.[key])||'none';
       const profile={
         avatarFrame:frameKey,
         equippedFrame:frameKey,
@@ -27292,4 +27292,48 @@ window.performGlobalSearch = performGlobalSearch;
   };
   renderHomeFeed=wrappedRender;
   window.renderHomeFeed=wrappedRender;
+})();
+
+
+/* Repaint every visible avatar immediately after a frame is equipped, not just the profile picker. */
+(function cpGlobalAvatarFrameRefresh(){
+  if(window.__cpGlobalAvatarFrameRefreshInstalled)return;
+  window.__cpGlobalAvatarFrameRefreshInstalled=true;
+  window.addEventListener('codmpanda:avatar-frame-updated',event=>{
+    const uid=String(event.detail?.uid||'');
+    if(!uid)return;
+    const source=uid===State.user?.uid?(State.profile||{}):null;
+    const rawFrame=event.detail?.avatarFrame||source?.avatarFrame||source?.equippedAvatarFrame||source?.equippedFrame||source?.selectedFrame||source?.frameId||source?.frame||source?.profileFrame||'none';
+    const frameKey=window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(rawFrame):String(rawFrame||'none');
+    const frameFields={avatarFrame:frameKey,equippedFrame:frameKey,frame:frameKey,profileFrame:frameKey};
+    const updateItems=items=>{if(!Array.isArray(items))return;for(const item of items){const owner=String(item?.uid||item?.userId||item?.ownerUid||item?.createdBy||item?.authorUid||'');if(owner===uid)Object.assign(item,frameFields);}};
+    updateItems(State.cache?.lobbies);
+    if(typeof homeCache!=='undefined')updateItems(homeCache?.feed);
+    if(source)Object.assign(source,frameFields);
+    setTimeout(()=>{
+      if(!source||!window.CODMRenderFramedAvatar)return;
+      const hosts=Array.from(document.querySelectorAll('[data-uid]')).filter(el=>{
+        if(String(el.dataset.uid||'')!==uid||el.matches('button,a,input,textarea,select')||el.classList.contains('user-name-link'))return false;
+        const rect=el.getBoundingClientRect?.();
+        if(!rect||rect.width<24||rect.width>180||rect.height<24||rect.height>180)return false;
+        return el.classList.contains('rounded-full')||el.classList.contains('cp-avatar-framed-host')||!!el.querySelector('img');
+      });
+      for(const el of hosts){
+        const rect=el.getBoundingClientRect();
+        const size=Math.max(26,Math.min(132,Math.round(Math.min(rect.width,rect.height))));
+        const shell=document.createElement('div');
+        shell.innerHTML=window.CODMRenderFramedAvatar({...source,...frameFields},size);
+        const rendered=shell.firstElementChild;
+        if(!rendered)continue;
+        el.replaceChildren(rendered);
+        el.dataset.cpFrameDone=frameKey;
+        el.dataset.cpFrameApplied=frameKey;
+        el.classList.add('cp-avatar-framed-host');
+        el.style.overflow='visible';
+        el.style.borderRadius='50%';
+        el.style.clipPath='none';
+      }
+      if(typeof window.__codmpandaRefreshNamesAndAvatars==='function')window.__codmpandaRefreshNamesAndAvatars();
+    },0);
+  });
 })();
