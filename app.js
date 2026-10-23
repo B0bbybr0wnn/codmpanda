@@ -26052,10 +26052,12 @@ window.performGlobalSearch = performGlobalSearch;
 
   // Refresh author labels from the live users collection, without replacing nodes or destroying badges/content.
   const profileCache=new Map();
+  window.addEventListener('codmpanda:avatar-frame-updated',event=>{const uid=event.detail?.uid;if(uid)profileCache.delete(uid);});
   async function publicProfile(uid){
     if(!uid)return null;if(uid===State.user?.uid)return State.profile||null;
-    if(profileCache.has(uid))return profileCache.get(uid);
-    try{const snap=await getDoc(doc(db,'users',uid));const u=snap.exists()?{id:uid,...snap.data()}:null;profileCache.set(uid,u);return u;}catch(_){return null;}
+    const cached=profileCache.get(uid);
+    if(cached&&Date.now()-cached.at<15000)return cached.value;
+    try{const snap=await getDoc(doc(db,'users',uid));const u=snap.exists()?{id:uid,...snap.data()}:null;profileCache.set(uid,{value:u,at:Date.now()});return u;}catch(_){return null;}
   }
   function setNameText(el,name){
     if(!el||!name)return;
