@@ -338,7 +338,8 @@ async function fetchOfficialBriefings() {
             const articleBlock = (articleHtml.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || articleHtml.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || articleHtml.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i) || [])[1] || '';
             const articleText = clean(articleBlock
               .replace(/<(script|style|nav|header|footer|aside|form|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
-              .replace(/<(h1|h2|h3|p|li|blockquote|time)\b[^>]*>/gi, ' const articleText = clean(articleBlock.replace(/<(script|style|nav|header|footer|aside)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')).slice(0,10000); ')
+              .replace(/<\/(h1|h2|h3|p|li|blockquote|time)>/gi, '. ')
+              .replace(/<[^>]+>/g, ' ')
             ).slice(0,10000);
             const published = meta(articleHtml,'article:published_time') || meta(articleHtml,'date');
             results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description).slice(0,520), articleText, isArticle:true, url:link.url, publishedAt:published ? clean(published).slice(0,30) : 'Latest official article' });
