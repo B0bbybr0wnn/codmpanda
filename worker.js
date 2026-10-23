@@ -18,14 +18,20 @@ export default {
 
     const url = new URL(request.url);
 
-    if (url.pathname === '/health') {
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+
+    if (path === '/health') {
       return json({
         status: 'ok',
-        serviceAccountConfigured: !!env.FIREBASE_SERVICE_ACCOUNT_JSON
+        service: 'codmpanda-notify',
+        build: 'codmpanda-coach-briefings-v2',
+        serviceAccountConfigured: !!env.FIREBASE_SERVICE_ACCOUNT_JSON,
+        aiConfigured: !!env.GEMINI_API_KEY,
+        routes: ['GET /health', 'GET /briefings', 'POST /coach', 'POST /send']
       });
     }
 
-    if (url.pathname === '/briefings' && request.method === 'GET') {
+    if (path === '/briefings' && request.method === 'GET') {
       try {
         const rawBriefings = await fetchOfficialBriefings();
         const briefings = await summarizeOfficialBriefings(rawBriefings, env);
@@ -41,7 +47,7 @@ export default {
       }
     }
 
-    if (url.pathname === '/coach' && request.method === 'POST') {
+    if (path === '/coach' && request.method === 'POST') {
       if (!env.GEMINI_API_KEY) {
         return json({ error: 'AI is not configured yet. Add the GEMINI_API_KEY secret to this Worker.' }, 503);
       }
@@ -313,7 +319,7 @@ async function fetchOfficialBriefings() {
     try {
       const html = await getPage(source.url);
       if (source.news) {
-        const links = []; const anchorPattern = /<a\b[^>]*href=["']([^"']*\/blog\/mobile\/[^"'#?]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+        const links = []; const anchorPattern = /<a\b[^>]*href=["']([^"']*\/blog\/[^"'#?]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
         let match;
         while ((match = anchorPattern.exec(html)) && links.length < 4) {
           const title = clean(match[2]); let url = match[1];
