@@ -27470,7 +27470,7 @@ if (!window.__cpLobbyExpirationSweep) {
     // Also sweep Home feed cards, even when Find Squad has not been opened this session.
     document.querySelectorAll('#content .home-card[data-type="lobby"]').forEach(card => {
       const lobby = (homeCache?.feed || []).find(item => item.id === card.dataset.id && item.type === 'lobby');
-      if (!lobby || cpLobbyIsExpired(lobby)) card.remove();
+      if (lobby && cpLobbyIsExpired(lobby)) card.remove();
     });
   }, 15000);
 }
