@@ -16280,7 +16280,7 @@ document.addEventListener('click', async (event) => {
       if (all) {
         const matches = all.docs.filter(d => {
           const u = d.data() || {};
-          return [u.ign, u.username, u.displayName].some(v => String(v || '').replace(/^@/, '').trim().toLowerCase() === normalized);
+          return [u.ign, u.username, u.displayName, u.handle, u.codmName].some(v => String(v || '').replace(/^@/, '').trim().toLowerCase() === normalized);
         });
         // Prefer exact IGN; don't silently open an arbitrary account if names collide.
         const exactMatches = matches.filter(d => String(d.data()?.ign || '').replace(/^@/, '') === ign);
