@@ -60,7 +60,7 @@ export default {
       // where the push-notification handler returned "No tokens provided". Detect that
       // payload safely and route it to Coach without changing notification requests.
       const coachRequest = path === '/coach' || await request.clone().json()
-        .then(body => typeof body?.message === 'string' && body.message.trim().length > 0)
+        .then(body => [body?.message, body?.question, body?.prompt, body?.text].some(value => typeof value === 'string' && value.trim().length > 0))
         .catch(() => false);
       if (coachRequest) return handleCoach(request, env);
     }
@@ -141,7 +141,7 @@ async function handleCoach(request, env) {
   }
   try {
     const body = await request.json();
-    const message = String(body.message || '').trim().slice(0, 1200);
+    const message = String(body.message || body.question || body.prompt || body.text || '').trim().slice(0, 1200);
     if (!message) return json({ success: false, error: 'Please enter a CODM question.' }, 400);
     const history = Array.isArray(body.history) ? body.history.slice(-10).map(item => ({
       role: item && (item.role === 'model' || item.role === 'assistant') ? 'model' : 'user',
@@ -493,11 +493,29 @@ async function fetchOfficialBriefings() {
       console.warn('[briefings] Article fetch failed:', link.url, error?.message || error);
     }
   }));
-  articleResults.sort((a, b) => {
+  const cutoff = Date.now() - 180 * 24 * 60 * 60 * 1000;
+  const futureLimit = Date.now() + 45 * 24 * 60 * 60 * 1000;
+  const fresh = [];
+  const seenCanonical = new Set();
+  const seenTitles = new Set();
+  for (const item of articleResults) {
+    const canonical = String(item.url || '').replace(/\/$/, '').toLowerCase();
+    const titleKey = String(item.title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const published = Date.parse(item.publishedAt || '');
+    // Avoid old news resurfacing as current intel; unknown dates are kept only when the
+    // official page supplied a real body and the canonical URL/title are unique.
+    if (published && (published < cutoff || published > futureLimit)) continue;
+    if (canonical && seenCanonical.has(canonical)) continue;
+    if (titleKey && seenTitles.has(titleKey)) continue;
+    if (canonical) seenCanonical.add(canonical);
+    if (titleKey) seenTitles.add(titleKey);
+    fresh.push(item);
+  }
+  fresh.sort((a, b) => {
     const da = Date.parse(a.publishedAt || '') || 0, db = Date.parse(b.publishedAt || '') || 0;
     return db - da;
   });
-  return articleResults.slice(0, 8);
+  return fresh.slice(0, 8);
 }
 
 // ============================================
