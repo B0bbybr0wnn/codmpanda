@@ -482,8 +482,7 @@ async function callGemini(env, payload) {
   return text;
 }
 
-// ============================================
-//async function summarizeOfficialBriefings(items, env) {
+async function summarizeOfficialBriefings(items, env) {
   if (!env.GEMINI_API_KEY) {
     return items.map(item => ({ ...item, summary: '', aiSummary:false }));
   }
