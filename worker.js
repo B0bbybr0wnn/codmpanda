@@ -24,7 +24,7 @@ export default {
       return json({
         status: 'ok',
         service: 'codmpanda-notify',
-        build: 'codmpanda-coach-briefings-v3',
+        build: 'codmpanda-coach-briefings-v4',
         coachRouteConfigured: true,
         serviceAccountConfigured: !!env.FIREBASE_SERVICE_ACCOUNT_JSON,
         aiConfigured: !!env.GEMINI_API_KEY,
@@ -37,10 +37,10 @@ export default {
         const rawBriefings = await fetchOfficialBriefings();
         const briefings = await summarizeOfficialBriefings(rawBriefings, env);
         return json({
-          success: briefings.some(item => item.isArticle),
+          success: briefings.some(item => item.isArticle && item.articleText && item.articleText.length >= 120 && item.aiSummary),
           aiConfigured: !!env.GEMINI_API_KEY,
           updatedAt: new Date().toISOString(),
-          briefings: briefings.map(({ articleText, isArticle, ...item }) => item)
+          briefings: briefings.filter(item => item.isArticle && item.articleText && item.articleText.length >= 120).map(({ articleText, isArticle, ...item }) => item)
         });
       } catch (error) {
         console.error('[briefings] Failed:', error);
@@ -294,67 +294,94 @@ async function getAccessToken(serviceAccount) {
 
 async function fetchOfficialBriefings() {
   const sources = [
-    { name: 'Official CODM News', url: 'https://www.callofduty.com/blog/mobile', news: true },
-    { name: 'COD Mobile Support', url: 'https://support.activision.com/cod-mobile', news: false },
-    { name: 'Official CODM Game Page', url: 'https://www.callofduty.com/mobile', news: false }
+    { name: 'Official CODM News', url: 'https://www.callofduty.com/blog/mobile' },
+    { name: 'COD Mobile Support', url: 'https://support.activision.com/cod-mobile' },
+    { name: 'Official CODM Game Page', url: 'https://www.callofduty.com/mobile' }
   ];
-  const clean = value => String(value || '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
-    .replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
-    .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-  const meta = (html, key) => {
-    const tags = html.match(/<meta\b[^>]*>/gi) || [];
-    for (const tag of tags) {
-      const name = (tag.match(/(?:name|property)=["']([^"']+)["']/i) || [])[1];
-      const content = (tag.match(/content=["']([^"']*)["']/i) || [])[1];
+  const decode = value => String(value || '')
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"')
+    .replace(/&#39;|&#x27;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n) || 32))
+    .replace(/&#x([\da-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16) || 32));
+  const clean = value => decode(String(value || '')
+    .replace(/<(script|style|nav|header|footer|aside|form|noscript|svg|button)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<\/(h1|h2|h3|h4|p|li|blockquote|time|article|section)>/gi, '. ')
+    .replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+  const getMeta = (html, key) => {
+    for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
+      const name = (tag.match(/(?:name|property)\s*=\s*["']([^"']+)["']/i) || [])[1];
+      const content = (tag.match(/content\s*=\s*["']([^"']*)["']/i) || [])[1];
       if (name && content && name.toLowerCase() === key.toLowerCase()) return clean(content);
     }
     return '';
   };
   const getPage = async url => {
-    const response = await fetch(url, { headers: { 'Accept': 'text/html,application/xhtml+xml', 'User-Agent': 'CODMPandaBriefings/1.0' }, cf: { cacheTtl: 300, cacheEverything: true } });
-    if (!response.ok) throw new Error('Source returned ' + response.status);
-    return await response.text();
+    const response = await fetch(url, {
+      headers: { Accept: 'text/html,application/xhtml+xml' },
+      cf: { cacheTtl: 180, cacheEverything: true }
+    });
+    if (!response.ok) throw new Error('Source returned HTTP ' + response.status);
+    return response.text();
   };
-  const results = [];
+  const discovered = [];
   await Promise.all(sources.map(async source => {
     try {
       const html = await getPage(source.url);
-      if (source.news) {
-        const links = []; const anchorPattern = /<a\b[^>]*href=["']([^"'#?]*\/blog\/[^"'#?]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-        let match;
-        while ((match = anchorPattern.exec(html)) && links.length < 4) {
-          const title = clean(match[2]); let url = match[1];
-          if (url.startsWith('/')) url = 'https://www.callofduty.com' + url;
-          if (!/^https:\/\/www\.callofduty\.com\/blog\//i.test(url) || title.length < 8) continue;
-          const isMobileArticle = /call.of.duty.mobile|cod\s?mobile|\bcodm\b|mobile/i.test(title + ' ' + url);
-          if (!isMobileArticle) continue;
-          if (!links.some(item => item.url === url)) links.push({ title, url });
-        }
-        await Promise.all(links.slice(0,4).map(async link => {
-          try {
-            const articleHtml = await getPage(link.url);
-            const title = meta(articleHtml,'og:title') || (articleHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || link.title;
-            const description = meta(articleHtml,'og:description') || meta(articleHtml,'description') || clean((articleHtml.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || [])[1]).slice(0,360) || link.title;
-            const articleBlock = (articleHtml.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || articleHtml.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || articleHtml.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i) || [])[1] || '';
-            const articleText = (clean(articleBlock
-              .replace(/<(script|style|nav|header|footer|aside|form|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
-              .replace(/<\/(h1|h2|h3|p|li|blockquote|time)>/gi, '. ')
-              .replace(/<[^>]+>/g, ' ')
-            ) || clean(description) || clean(title) || link.title).slice(0,10000);
-            const published = meta(articleHtml,'article:published_time') || meta(articleHtml,'date');
-            results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description).slice(0,520), articleText, isArticle:true, url:link.url, publishedAt:published ? clean(published).slice(0,30) : 'Latest official article' });
-          } catch (_) {}
-        }));
+      const anchors = /<a\b([^>]*?)href\s*=\s*(["'])(.*?)\2([^>]*)>([\s\S]*?)<\/a>/gi;
+      let match;
+      while ((match = anchors.exec(html)) && discovered.length < 50) {
+        const rawHref = decode(match[3]).trim();
+        const title = clean(match[5]).slice(0, 180);
+        if (!rawHref || title.length < 8 || /^(read more|learn more|click here|details)$/i.test(title)) continue;
+        let parsed;
+        try { parsed = new URL(rawHref, source.url); } catch (_) { continue; }
+        if (parsed.protocol !== 'https:') continue;
+        const host = parsed.hostname.toLowerCase();
+        const allowed = host === 'callofduty.com' || host.endsWith('.callofduty.com') ||
+          host === 'activision.com' || host.endsWith('.activision.com');
+        if (!allowed) continue;
+        parsed.hash = '';
+        const articleUrl = parsed.toString();
+        if (articleUrl.replace(/\/$/, '') === source.url.replace(/\/$/, '')) continue;
+        if (!(/\/blog\//i.test(parsed.pathname) || /\/articles?\//i.test(parsed.pathname) ||
+              /\/support\//i.test(parsed.pathname) || /\/cod-mobile\//i.test(parsed.pathname))) continue;
+        if (/\/(blog\/mobile|mobile|cod-mobile)\/?$/i.test(parsed.pathname)) continue;
+        if (discovered.some(item => item.url === articleUrl)) continue;
+        discovered.push({ sourceName: source.name, title, url: articleUrl });
       }
-      const title = meta(html,'og:title') || (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || source.name;
-      const description = meta(html,'og:description') || meta(html,'description') || clean((html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || [])[1]).slice(0,360);
-      if (!source.news || !results.some(item => item.sourceName === source.name)) {
-        results.push({ sourceName:source.name, title:clean(title).slice(0,180), summary:clean(description || 'Open the official page for current support information and announcements.').slice(0,520), isArticle:false, url:source.url, publishedAt:'Official source snapshot' });
+    } catch (error) {
+      console.warn('[briefings] Discovery source unavailable:', source.url, error?.message || error);
+    }
+  }));
+  const articles = await Promise.all(discovered.slice(0, 10).map(async item => {
+    try {
+      const html = await getPage(item.url);
+      const title = getMeta(html, 'og:title') ||
+        clean((html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i) || [])[1]) || item.title;
+      const published = getMeta(html, 'article:published_time') ||
+        getMeta(html, 'datePublished') ||
+        ((html.match(/<time\b[^>]*datetime=["']([^"']+)["']/i) || [])[1] || '');
+      const block = (html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
+        html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) ||
+        html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i) || [])[1] || '';
+      const articleText = clean(block).slice(0, 10000);
+      if (articleText.length < 120) {
+        return { ...item, title: clean(title).slice(0, 180), summary: '', articleText: '', isArticle: true,
+          publishedAt: published ? clean(published).slice(0, 40) : '' };
       }
-    } catch (error) { console.warn('[briefings] Source unavailable:', source.url, error?.message || error); }
+      return { ...item, title: clean(title).slice(0, 180), summary: '', articleText, isArticle: true,
+        publishedAt: published ? clean(published).slice(0, 40) : '' };
+    } catch (error) {
+      console.warn('[briefings] Article fetch failed:', item.url, error?.message || error);
+      return null;
+    }
   }));
   const seen = new Set();
-  return results.filter(item => { if (!item.url || seen.has(item.url)) return false; seen.add(item.url); return true; }).slice(0,8);
+  return articles.filter(item => {
+    if (!item || !item.url || seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  }).slice(0, 8);
 }
 
 // ============================================
@@ -383,11 +410,11 @@ async function callGemini(env, payload) {
 
 async function summarizeOfficialBriefings(items, env) {
   if (!env.GEMINI_API_KEY) {
-    return items.map(item => ({ ...item, aiSummary:false }));
+    return items.map(item => ({ ...item, summary: '', aiSummary:false }));
   }
   return Promise.all(items.map(async item => {
-    if (!item.isArticle || !item.articleText || item.articleText.trim().length < 80) {
-      return { ...item, aiSummary:false };
+    if (!item.isArticle || !item.articleText || item.articleText.trim().length < 120) {
+      return { ...item, summary: '', aiSummary:false };
     }
     try {
       const summary = await callGemini(env, {
@@ -403,7 +430,7 @@ async function summarizeOfficialBriefings(items, env) {
       return { ...item, summary, aiSummary:true };
     } catch (error) {
       console.warn('[briefings] AI summary failed for', item.url, error?.message || error);
-      return { ...item, aiSummary:false };
+      return { ...item, summary: '', aiSummary:false };
     }
   }));
 }

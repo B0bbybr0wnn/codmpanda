@@ -985,7 +985,7 @@ function renderLobbies() {
       <div class="bg-card border border-border rounded-2xl p-4 fade-in">
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+            <div data-uid="${esc(l.uid)}" class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
               ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
@@ -16276,11 +16276,17 @@ document.addEventListener('click', async (event) => {
     found = byIgn && !byIgn.empty ? byIgn.docs[0] : byUsername && !byUsername.empty ? byUsername.docs[0] : null;
     if (!found) {
       // Case-insensitive fallback for usernames/IGNs whose capitalization differs.
-      const all = await getDocs(query(collection(db, 'users'), limit(500))).catch(() => null);
-      if (all) found = all.docs.find(d => {
-        const u = d.data() || {};
-        return [u.ign, u.username, u.displayName].some(v => String(v || '').replace(/^@/, '').toLowerCase() === normalized);
-      }) || null;
+      const all = await getDocs(query(collection(db, 'users'), limit(1000))).catch(() => null);
+      if (all) {
+        const matches = all.docs.filter(d => {
+          const u = d.data() || {};
+          return [u.ign, u.username, u.displayName].some(v => String(v || '').replace(/^@/, '').trim().toLowerCase() === normalized);
+        });
+        // Prefer exact IGN; don't silently open an arbitrary account if names collide.
+        const exactMatches = matches.filter(d => String(d.data()?.ign || '').replace(/^@/, '') === ign);
+        found = matches.length === 1 ? matches[0] : (exactMatches.length === 1 ? exactMatches[0] : null);
+        if (matches.length > 1 && !found) toast('That username matches more than one account. Ask them to use a unique IGN.', 'info');
+      }
     }
     if (found) {
       if (typeof openUserProfile === 'function') await openUserProfile(found.id);
@@ -18598,7 +18604,7 @@ function renderHomeLobbyCard(l) {
       </div>
 
       <div class="flex items-start gap-3 mb-3">
-        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0">
+        <div data-uid="${esc(l.uid)}" class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0">
           ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
         </div>
         <div class="flex-1 min-w-0">
@@ -25659,8 +25665,8 @@ window.performGlobalSearch = performGlobalSearch;
   try { startOnlineCounter=cpStartOnlineCounter; } catch(_) {}
 
   // Add true frame artwork to author avatars in feed/group/comment surfaces that expose data-uid.
-  const profileCache=new Map();
-  async function getPublicProfile(uid){if(!uid)return null;if(uid===State.user?.uid)return State.profile||null;if(profileCache.has(uid))return profileCache.get(uid);try{const s=await getDoc(doc(db,'users',uid));const v=s.exists()?{id:uid,...s.data()}:null;profileCache.set(uid,v);return v}catch(_){return null}}
+  const profileCache=new Map(); const profileCacheTimes=new Map();
+  async function getPublicProfile(uid){if(!uid)return null;if(uid===State.user?.uid)return State.profile||null;if(profileCache.has(uid)&&Date.now()-(profileCacheTimes.get(uid)||0)<15000)return profileCache.get(uid);profileCache.delete(uid);try{const s=await getDoc(doc(db,'users',uid));const v=s.exists()?{id:uid,...s.data()}:null;profileCache.set(uid,v);profileCacheTimes.set(uid,Date.now());return v}catch(_){return null}}
   async function decorateAvatars(root=document){
     if(!State.user)return;
     const nodes=root.querySelectorAll?root.querySelectorAll('[data-uid]'):[];
@@ -26332,7 +26338,7 @@ window.performGlobalSearch = performGlobalSearch;
     const saved = new Set(State.profile?.savedIntelIds || []);
     const officialHtml = official.map(item => {
       const title = escV4(item.title || 'Official CODM update');
-      const summary = escV4(item.summary || item.description || 'Open the official source for the latest announcement.');
+      const summary = escV4(item.summary || (item.aiSummary === false ? 'The article was found, but a trustworthy summary is unavailable right now. Open the official source for the full details.' : (item.description || 'Summary unavailable. Open the official source for full details.')));
       const url = /^https:\/\//i.test(item.url || '') ? escV4(item.url) : '';
       const source = escV4(item.sourceName || 'Official CODM source');
       const date = escV4(item.publishedAt || item.updatedAt || 'Latest source snapshot');
