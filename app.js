@@ -21843,15 +21843,11 @@ function openAvatarFramePicker() {
     || State.profile?.subscription === 'pro'
     || State.profile?.proStatus === 'active';
   const isPro = hasPro();
-  const rawCurrentFrame = State.profile?.avatarFrame
-    || State.profile?.equippedAvatarFrame
-    || State.profile?.equippedFrame
-    || State.profile?.selectedFrame
-    || State.profile?.frameId
-    || State.profile?.frame
-    || State.profile?.profileFrame
-    || 'none';
-  const currentFrame = normalize(rawCurrentFrame);
+  const currentFrameStored = [
+    State.profile?.avatarFrame, State.profile?.equippedAvatarFrame, State.profile?.equippedFrame,
+    State.profile?.selectedFrame, State.profile?.frameId, State.profile?.frame, State.profile?.profileFrame
+  ].map(normalize).find(key => key !== 'none' && frameCatalog[key]) || 'none';
+  const currentFrame = frameCatalog[currentFrameStored]?.tier === 'PRO' && !isPro ? 'none' : currentFrameStored;
   const entries = [['none', { name: 'No Frame', tier: 'FREE', file: null }], ...Object.entries(frameCatalog)];
 
   if (!Object.keys(frameCatalog).length || typeof window.CODMRenderFramedAvatar !== 'function') {
@@ -25684,7 +25680,7 @@ window.performGlobalSearch = performGlobalSearch;
   // Publish the registry for the later integration IIFE; JS block scope otherwise hides it.
   window.CODM_WAR_ARTIFACT_FRAMES = WAR_ARTIFACT_FRAMES;
   function normalizeCODMFrameKey(value) {
-    const key = String(value || 'none').trim().toLowerCase().replace(/[\\s-]+/g, '_');
+    const key = String(value || 'none').trim().toLowerCase().replace(/[\s-]+/g, '_');
     const aliases = {
       // Legacy style-only IDs must resolve to real PNG assets instead of silently rendering no frame.
       gold: 'legendary_rank', gold_laurel: 'legendary_rank', golden_laurel: 'legendary_rank', laurel_gold: 'legendary_rank',
@@ -25709,7 +25705,7 @@ window.performGlobalSearch = performGlobalSearch;
     const avatarContent=url?`<img src="${esc2(url)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block">`:esc2((typeof getInitials==='function'?getInitials(name):name.slice(0,2).toUpperCase()));
     if(frame==='none') return `<div class="cp-avatar-shell cp-avatar-no-frame" style="width:${r}px;height:${r}px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#202024;font-weight:900;font-size:${Math.round(r*.32)}px">${avatarContent}</div>`;
     const artifact=WAR_ARTIFACT_FRAMES[frame];
-    const art=`<img class="cp-war-artifact-frame" src="/frames/${artifact.file}" alt="" aria-hidden="true" loading="lazy" onerror="this.style.display='none'">`;
+    const art=`<img class="cp-war-artifact-frame" src="/frames/${artifact.file}" alt="" aria-hidden="true" loading="lazy" onerror="this.style.display='none';this.parentElement?.classList.add('cp-frame-art-error');console.warn('[CODMPanda] Frame asset failed to load:',this.src)">`;
     return `<div class="cp-avatar-shell ${FRAME_META[frame]?.cls||''}" style="width:${r}px;height:${r}px;border-radius:50%;"><div class="cp-avatar-core" style="border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:${Math.round(r*.32)}px">${avatarContent}</div>${art}</div>`;
   }
   window.CODMRenderFramedAvatar=renderFramedAvatar;
@@ -25781,7 +25777,7 @@ window.performGlobalSearch = performGlobalSearch;
       const card=sheet.querySelector('.bg-card.border.rounded-2xl');if(card){const t=THEME_META[user.themeStyle]||THEME_META.dark;card.classList.add('cp-theme-profile');card.style.background=t.gradient;card.style.setProperty('--cp-theme-border',t.border);card.style.setProperty('--cp-theme-glow',t.glow);}
       const avatar=sheet.querySelector('.bg-gradient-to-br.from-primary\\/30.to-gold\\/30');
       if(avatar){const parent=avatar.parentElement;const size=64;parent.innerHTML=renderFramedAvatar(user,size)+(user.isPro?'<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>':'');parent.classList.add('cp-avatar-parent');}
-      const title=sheet.querySelector('.text-base.font-black.truncate');if(title&&!title.parentElement.querySelector('.cp-theme-label')){const label=document.createElement('div');label.className='cp-profile-cosmetic-label cp-theme-label mt-1';label.textContent='✦ '+(THEME_META[user.themeStyle]?.name||'Operator Black')+' · '+(FRAME_META[user.avatarFrame]?.name||'No Frame');title.parentElement.appendChild(label)}
+      const title=sheet.querySelector('.text-base.font-black.truncate');if(title&&!title.parentElement.querySelector('.cp-theme-label')){const label=document.createElement('div');label.className='cp-profile-cosmetic-label cp-theme-label mt-1';label.textContent='✦ '+(THEME_META[user.themeStyle]?.name||'Operator Black')+' · '+(WAR_ARTIFACT_FRAMES[normalizeCODMFrameKey(user.avatarFrame)]?.name||FRAME_META[user.avatarFrame]?.name||'No Frame');title.parentElement.appendChild(label)}
     }catch(e){console.warn('Profile cosmetics:',e)}},350);
     return result;
   };
