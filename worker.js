@@ -394,8 +394,10 @@ async function fetchOfficialBriefings() {
     if (source.sitemap) tasks.push(fetchText(source.sitemap).then(async xml => {
       let sitemapXml = xml;
       if (/<sitemapindex\b/i.test(xml)) {
-        const children = (xml.match(/<loc>\s*[^<]+\s*<\/loc>/gi) || []).slice(0, 4)
+        const allChildren = (xml.match(/<loc>\s*[^<]+\s*<\/loc>/gi) || [])
           .map(tag => (tag.match(/<loc>\s*([^<]+)\s*<\/loc>/i) || [])[1]).filter(Boolean);
+        const priorityChildren = allChildren.filter(url => /blog|mobile|article|news|support|sitemap/i.test(url));
+        const children = (priorityChildren.length ? priorityChildren : allChildren).slice(0, 10);
         const childXml = await Promise.all(children.map(url => fetchText(url).catch(() => '')));
         sitemapXml = childXml.join('\n');
       }
@@ -455,18 +457,24 @@ async function fetchOfficialBriefings() {
 // ============================================
 async function callGemini(env, payload) {
   const model = String(env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//, '');
-  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': env.GEMINI_API_KEY
-    },
-    body: JSON.stringify(payload)
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    console.error('[Gemini] API status:', response.status, data?.error?.message || '');
-    throw new Error('Gemini API returned ' + response.status);
+  let response, data = {};
+  for (let attempt = 0; attempt < 3; attempt++) {
+    response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': env.GEMINI_API_KEY
+      },
+      body: JSON.stringify(payload)
+    });
+    data = await response.json().catch(() => ({}));
+    if (response.ok) break;
+    const retryable = response.status === 429 || [500, 502, 503, 504].includes(response.status);
+    if (!retryable || attempt === 2) {
+      console.error('[Gemini] API status:', response.status, data?.error?.message || '');
+      throw new Error('Gemini API returned ' + response.status);
+    }
+    await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 650 : 1400));
   }
   const text = (data.candidates || []).flatMap(candidate => candidate.content?.parts || [])
     .map(part => part.text || '').join('\n').trim();
@@ -474,7 +482,8 @@ async function callGemini(env, payload) {
   return text;
 }
 
-async function summarizeOfficialBriefings(items, env) {
+// ============================================
+//async function summarizeOfficialBriefings(items, env) {
   if (!env.GEMINI_API_KEY) {
     return items.map(item => ({ ...item, summary: '', aiSummary:false }));
   }
