@@ -6,7 +6,7 @@
     const registry = window.CODM_WAR_ARTIFACT_FRAMES || {};
     const normalize = typeof window.CODMNormalizeFrameKey === 'function'
       ? window.CODMNormalizeFrameKey
-      : value => String(value || 'none').trim().toLowerCase().replace(/[\\s-]+/g, '_');
+      : value => String(value || 'none').trim().toLowerCase().replace(/[\s-]+/g, '_');
     const fields = ['avatarFrame', 'equippedAvatarFrame', 'equippedFrame', 'selectedFrame', 'frameId', 'frame', 'profileFrame'];
     for (const field of fields) {
       const key = normalize(user && user[field]);
