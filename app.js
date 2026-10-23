@@ -27486,3 +27486,102 @@ if (!window.__cpLobbyExpirationSweep) {
     });
   }, 15000);
 }
+
+
+/* CODMPanda targeted UI/UX repair — gold verification, compact post detail, strict lobby expiry. */
+(function cpFinalRequestedUiFixes(){
+  if (window.__cpFinalRequestedUiFixes) return;
+  window.__cpFinalRequestedUiFixes = true;
+
+  // The verified check is a single gold check. Founder/Pro labels remain separate labels.
+  const badgeStyleId = 'cp-final-gold-verified-badge';
+  if (!document.getElementById(badgeStyleId)) {
+    const style = document.createElement('style');
+    style.id = badgeStyleId;
+    style.textContent = `
+      .verified-badge {
+        display:inline-flex!important;align-items:center!important;justify-content:center!important;
+        width:15px!important;height:15px!important;min-width:15px!important;flex:0 0 15px!important;
+        border-radius:50%!important;background:linear-gradient(135deg,#FFE9A8 0%,#F6C453 45%,#B87908 100%)!important;
+        color:#241600!important;font-size:10px!important;font-weight:900!important;line-height:1!important;
+        box-shadow:0 0 8px rgba(246,196,83,.42)!important;vertical-align:middle!important;
+      }
+      #lobbies-feed .cp-lobby-name .verified-badge,
+      #lobbies-feed .font-bold.text-sm .verified-badge { background:linear-gradient(135deg,#FFE9A8 0%,#F6C453 45%,#B87908 100%)!important;color:#241600!important; }
+      #sheet-container .cp-post-detail-header { min-height:calc(44px + env(safe-area-inset-top,0px))!important;height:calc(44px + env(safe-area-inset-top,0px))!important;padding:env(safe-area-inset-top,0px) 12px 0!important;gap:10px!important; }
+      #sheet-container .cp-post-detail-header .cp-post-back { width:36px!important;height:36px!important;min-width:36px!important;min-height:36px!important;padding:0!important;display:grid!important;place-items:center!important;font-size:0!important; }
+      #sheet-container .cp-post-detail-header .cp-post-back svg { width:22px!important;height:22px!important;max-width:22px!important;max-height:22px!important; }
+      #sheet-container .cp-post-detail-sheet .cp-post-detail-image { display:block!important;width:100%!important;max-width:100%!important;height:auto!important;max-height:none!important;object-fit:contain!important;object-position:center!important;border-radius:10px!important; }
+      #sheet-container .cp-post-detail-sheet p.text-base { font-size:18px!important;line-height:1.6!important;overflow-wrap:anywhere!important; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function dedupeLobbyBadges(){
+    const feed = document.getElementById('lobbies-feed');
+    if (!feed) return;
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      const name = card.querySelector('.font-bold.text-sm');
+      if (!name) return;
+      const badges = Array.from(name.querySelectorAll('.verified-badge'));
+      badges.slice(1).forEach(node => node.remove());
+      // Remove legacy blue check icons only from the name line; do not affect Founder/Pro labels.
+      name.querySelectorAll('[data-lucide="badge-check"],[data-lucide="check-circle"],[data-lucide="check-circle-2"]').forEach(node => node.remove());
+      name.querySelectorAll('.verification-badge,.verified-check,.blue-verified-badge').forEach(node => node.remove());
+      badges.slice(0,1).forEach(node => {
+        node.style.setProperty('background','linear-gradient(135deg,#FFE9A8 0%,#F6C453 45%,#B87908 100%)','important');
+        node.style.setProperty('color','#241600','important');
+      });
+    });
+  }
+  if (typeof renderLobbies === 'function' && !renderLobbies.__cpFinalBadgeWrapped) {
+    const prior = renderLobbies;
+    const wrapped = function(){
+      const result = prior.apply(this, arguments);
+      dedupeLobbyBadges();
+      setTimeout(dedupeLobbyBadges, 30);
+      return result;
+    };
+    wrapped.__cpFinalBadgeWrapped = true;
+    renderLobbies = wrapped;
+    window.renderLobbies = wrapped;
+  }
+
+  // Keep the existing post-opening and comments flow intact; adjust presentation only.
+  // Delegate in capture phase so tapping the post image always opens the existing full-screen viewer.
+  document.addEventListener('click', function(event){
+    const img = event.target && event.target.closest && event.target.closest('#sheet-container .cp-post-detail-sheet .cp-post-detail-image[data-zoomable]');
+    if (!img || typeof window.openImageViewer !== 'function') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+    window.openImageViewer(img.currentSrc || img.src);
+  }, true);
+
+  // Expire against the immutable creation time (not updatedAt/expiresAt), and refresh without waiting
+  // for another Firestore snapshot. Invalid/missing timestamps fail closed.
+  function sweepExpiredLobbies(){
+    const cached = Array.isArray(State.cache?.lobbies) ? State.cache.lobbies : [];
+    const active = cached.filter(lobby => !cpLobbyIsExpired(lobby));
+    if (active.length !== cached.length) {
+      State.cache.lobbies = active;
+      if (document.getElementById('lobbies-feed') && typeof renderLobbies === 'function') renderLobbies();
+    }
+    // Also remove already-rendered lobby cards immediately, even if a later renderer reuses stale DOM.
+    const liveIds = new Set(active.map(lobby => String(lobby.id)));
+    const feed = document.getElementById('lobbies-feed');
+    if (feed) feed.querySelectorAll('.bg-card').forEach(card => {
+      const action = card.querySelector('[data-id]');
+      if (action && !liveIds.has(String(action.dataset.id))) card.remove();
+    });
+    // Sweep matching Home-feed lobby cards too, without relying on the Find Squad tab being open.
+    const homeItems = typeof homeCache !== 'undefined' && Array.isArray(homeCache?.feed) ? homeCache.feed : [];
+    document.querySelectorAll('#content .home-card[data-type="lobby"]').forEach(card => {
+      const item = homeItems.find(entry => String(entry.id) === String(card.dataset.id) && entry.type === 'lobby');
+      if (item && cpLobbyIsExpired(item)) card.remove();
+    });
+  }
+  if (window.__cpFinalLobbySweep) clearInterval(window.__cpFinalLobbySweep);
+  window.__cpFinalLobbySweep = setInterval(sweepExpiredLobbies, 5000);
+  sweepExpiredLobbies();
+})();
