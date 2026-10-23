@@ -16008,6 +16008,7 @@ async function loadMentionFriends(forceRefresh = false) {
       } catch (_) { return null; }
     }))).filter(Boolean);
     mentionFriends = people.sort((a, b) => a.ign.localeCompare(b.ign));
+    window.__cpMentionUidByName = Object.fromEntries(mentionFriends.filter(person => person.uid && person.ign).map(person => [String(person.ign).replace(/^@/, '').trim().toLowerCase(), person.uid]));
     mentionFriendsOwner = ownerUid;
     return mentionFriends;
   } catch (e) {
@@ -16262,6 +16263,11 @@ document.addEventListener('click', async (event) => {
   try {
     const normalized = ign.toLowerCase();
     let found = null;
+    const mappedUid = mention.dataset.mentionUid || window.__cpMentionUidByName?.[normalized];
+    if (mappedUid && typeof openUserProfile === 'function') {
+      await openUserProfile(mappedUid);
+      return;
+    }
     try {
       await loadMentionFriends();
       const friend = Array.isArray(mentionFriends) ? mentionFriends.find(f =>
@@ -25647,7 +25653,7 @@ window.performGlobalSearch = performGlobalSearch;
   }
   window.CODMNormalizeFrameKey = normalizeCODMFrameKey;
   function renderFramedAvatar(user,size=44){
-    const storedFrame=([user?.avatarFrame,user?.equippedFrame,user?.frame,user?.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
+    const storedFrame=([user?.avatarFrame,user?.equippedAvatarFrame,user?.equippedFrame,user?.selectedFrame,user?.frameId,user?.frame,user?.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
     // Old CSS/SVG frame IDs are retired. Pro-only PNG artwork must not render for a Free profile.
     const candidate=WAR_ARTIFACT_FRAMES[storedFrame];
     const hasPro= user?.isPro===true || user?.pro===true || user?.subscription==='pro' || user?.proStatus==='active';
@@ -26072,7 +26078,7 @@ window.performGlobalSearch = performGlobalSearch;
       if(!rect||rect.width<24||rect.width>180||rect.height<24||rect.height>180)continue;
       if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.querySelector('img'))continue;
       const u=await publicProfile(uid);if(!u)continue;
-      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};const frame=([u.avatarFrame,u.equippedFrame,u.frame,u.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&frameCatalog[key])||'none');if(!window.CODMRenderFramedAvatar)continue;
+      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};const frame=([u.avatarFrame,u.equippedAvatarFrame,u.equippedFrame,u.selectedFrame,u.frameId,u.frame,u.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&frameCatalog[key])||'none');if(!window.CODMRenderFramedAvatar)continue;
       const img=el.querySelector('img');const avatar=u.avatar||u.photoURL||u.photoUrl||img?.getAttribute('src')||'';
       const name=u.ign||u.displayName||'Operator';
       if(frame==='none'){el.style.borderRadius='50%';el.style.clipPath='circle(50% at 50% 50%)';if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;clip-path:circle(50% at 50% 50%)">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
@@ -27129,8 +27135,11 @@ window.performGlobalSearch = performGlobalSearch;
   async function enrichLobby(lobby) {
     if (!lobby?.uid) return false;
     if (profileCache.has(lobby.uid)) {
-      Object.assign(lobby, profileCache.get(lobby.uid));
-      return false;
+      const cached = profileCache.get(lobby.uid);
+      const keys = ['avatarFrame','equippedFrame','frame','profileFrame','avatar','ign','isPro','verified'];
+      const before = keys.map(key => lobby[key]);
+      Object.assign(lobby, cached);
+      return keys.some((key, index) => before[index] !== lobby[key]);
     }
     if (!pending.has(lobby.uid)) {
       pending.set(lobby.uid, getDoc(doc(db, 'users', lobby.uid)).then(snap => {
@@ -27154,9 +27163,9 @@ window.performGlobalSearch = performGlobalSearch;
   renderLobbies = function() {
     const result = previousRenderLobbies.apply(this, arguments);
     const items = (State.cache.lobbies || []).slice();
-    const jobs = items.filter(l => l?.uid && !profileCache.has(l.uid)).map(enrichLobby);
+    const jobs = items.filter(l => l?.uid).map(enrichLobby);
     if (jobs.length) Promise.all(jobs).then(changed => {
-      if (changed.some(Boolean) && document.getElementById('lobbies-feed')) previousRenderLobbies.call(this);
+      if (changed.some(Boolean) && document.getElementById('lobbies-feed')) renderLobbies.call(this);
     });
     return result;
   };
@@ -27273,7 +27282,7 @@ window.performGlobalSearch = performGlobalSearch;
     const uid=String(item.uid || item.userId || item.ownerUid || item.createdBy || item.authorUid || '').trim();
     if(!uid) return false;
     item.uid=uid;
-    if(cache.has(uid)){ const cached=cache.get(uid); if(Date.now()-cached.at<15000){ Object.assign(item,cached.profile); return false; } cache.delete(uid); }
+    if(cache.has(uid)){ const cached=cache.get(uid); if(Date.now()-cached.at<15000){ const keys=['avatarFrame','equippedFrame','frame','profileFrame','avatar','ign','isPro','pro','verified']; const before=keys.map(key=>item[key]); Object.assign(item,cached.profile); return keys.some((key,index)=>before[index]!==item[key]); } cache.delete(uid); }
     if(pending.has(uid)) return pending.get(uid);
     const job=getDoc(doc(db,'users',uid)).then(snap=>{
       const u=snap.exists()?snap.data():{};

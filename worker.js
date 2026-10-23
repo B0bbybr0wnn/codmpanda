@@ -498,29 +498,34 @@ async function callGemini(env, payload) {
 
 async function summarizeOfficialBriefings(items, env) {
   if (!env.GEMINI_API_KEY) {
-    return items.map(item => ({ ...item, summary: '', aiSummary:false }));
+    return items.map(item => ({ ...item, summary: '', aiSummary: false }));
   }
-  return Promise.all(items.map(async item => {
+  const summarizeOne = async item => {
     if (!item.isArticle || !item.articleText || item.articleText.trim().length < 120) {
-      return { ...item, summary: '', aiSummary:false };
+      return { ...item, summary: '', aiSummary: false };
     }
     try {
       const summary = await callGemini(env, {
         systemInstruction: {
-          parts: [{ text: 'You summarize official Call of Duty: Mobile news for players. Use only the supplied official article text and its title. If the article body is short, summarize only what the supplied text supports rather than returning a generic description. Write 2-4 natural sentences explaining what is actually announced and why players should care. Preserve dates, season names, modes, rewards, and availability details when stated. Do not add speculation or facts not in the article. If the article text is too thin, say so briefly.' }]
+          parts: [{ text: 'You summarize official Call of Duty: Mobile news for players. Use only the supplied official article text and title. Write 2-4 natural sentences explaining what is actually announced and why players should care. Preserve dates, season names, modes, rewards, and availability details when stated. Do not add speculation or replace the article with generic CODM information.' }]
         },
         contents: [{
           role: 'user',
-          parts: [{ text: 'Official source: ' + item.sourceName + '\nTitle: ' + item.title + '\nPublished: ' + item.publishedAt + '\nArticle text:\\n' + item.articleText.slice(0, 9000) }]
+          parts: [{ text: 'Official source: ' + item.sourceName + '\\nTitle: ' + item.title + '\\nPublished: ' + item.publishedAt + '\\nArticle text:\\n' + item.articleText.slice(0, 9000) }]
         }],
         generationConfig: { temperature: 0.2, maxOutputTokens: 220 }
       });
-      return { ...item, summary, aiSummary:true };
+      return { ...item, summary, aiSummary: true };
     } catch (error) {
       console.warn('[briefings] AI summary failed for', item.url, error?.message || error);
-      return { ...item, summary: '', aiSummary:false };
+      return { ...item, summary: '', aiSummary: false };
     }
-  }));
+  };
+  const output = [];
+  for (let i = 0; i < items.length; i += 2) {
+    output.push(...await Promise.all(items.slice(i, i + 2).map(summarizeOne)));
+  }
+  return output;
 }
 
 // ============================================
