@@ -27207,7 +27207,7 @@ window.performGlobalSearch = performGlobalSearch;
   style.textContent=`
     .cp-avatar-shell{position:relative!important;display:inline-block!important;flex:0 0 auto!important;overflow:visible!important;isolation:isolate!important;vertical-align:middle!important}
     .cp-avatar-shell.cp-avatar-no-frame{overflow:hidden!important}
-    .cp-avatar-shell>.cp-avatar-core{position:absolute!important;left:18%!important;top:18%!important;width:64%!important;height:64%!important;border-radius:50%!important;overflow:hidden!important;z-index:2!important}
+    .cp-avatar-shell>.cp-avatar-core{position:absolute!important;inset:18%!important;width:auto!important;height:auto!important;border-radius:50%!important;overflow:hidden!important;z-index:2!important}
     .cp-avatar-shell>.cp-avatar-core img{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;border-radius:50%!important;display:block!important}
     .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;left:-10%!important;top:-10%!important;width:120%!important;height:120%!important;max-width:none!important;max-height:none!important;object-fit:contain!important;object-position:center!important;z-index:4!important;pointer-events:none!important}
     .cp-avatar-framed-host{overflow:visible!important;clip-path:none!important;border-radius:50%!important}
