@@ -27238,3 +27238,36 @@ window.performGlobalSearch = performGlobalSearch;
   },true);
 })();
 
+  // Convert rendered @handles into actual anchors across feed cards, comments, inbox and lobby posts.
+  // highlightMentions() was defined but never called by the renderers, leaving plain, non-clickable text.
+  function cpHydrateMentionText(root=document){
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{
+      acceptNode(node){
+        const p=node.parentElement;
+        if(!p||!/@[A-Za-z0-9_]{2,24}/.test(node.nodeValue||''))return NodeFilter.FILTER_REJECT;
+        if(p.closest('a,button,input,textarea,select,script,style,code,pre,[contenteditable="true"],.mention-dropdown,.mention-text'))return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+    for(const node of nodes){
+      const value=node.nodeValue||'';const re=/@([A-Za-z0-9_]{2,24})/g;let match,last=0,found=false;
+      const frag=document.createDocumentFragment();
+      while((match=re.exec(value))){
+        found=true;if(match.index>last)frag.appendChild(document.createTextNode(value.slice(last,match.index)));
+        const a=document.createElement('a');a.href='#';a.setAttribute('role','link');a.setAttribute('aria-label','Open @'+match[1]+' profile');a.dataset.mentionName=match[1];a.className='mention-text';a.textContent='@'+match[1];
+        a.style.cssText='color:#38bdf8;font-weight:800;cursor:pointer;text-decoration:none;pointer-events:auto;touch-action:manipulation;';
+        frag.appendChild(a);last=match.index+match[0].length;
+      }
+      if(found){if(last<value.length)frag.appendChild(document.createTextNode(value.slice(last)));node.parentNode?.replaceChild(frag,node);}
+    }
+  }
+  let cpMentionHydrateTimer=0;
+  const cpMentionObserver=new MutationObserver(records=>{
+    let added=false;for(const rec of records)if(rec.addedNodes&&rec.addedNodes.length){added=true;break;}
+    if(added){clearTimeout(cpMentionHydrateTimer);cpMentionHydrateTimer=setTimeout(()=>cpHydrateMentionText(document),90);}
+  });
+  cpMentionObserver.observe(document.documentElement,{childList:true,subtree:true});
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>cpHydrateMentionText(document),{once:true});
+  else setTimeout(()=>cpHydrateMentionText(document),0);
+
