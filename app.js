@@ -956,11 +956,9 @@ function cpLobbyTimestampMillis(value) {
 function cpLobbyIsExpired(lobby, now = Date.now()) {
   if (!lobby) return true;
   const createdAt = cpLobbyTimestampMillis(lobby.createdAt ?? lobby.created_at);
-  if (!Number.isFinite(createdAt) || createdAt <= 0) return true;
-  if (now - createdAt >= 2 * 60 * 60 * 1000) return true;
-  const expiresAt = cpLobbyTimestampMillis(lobby.expiresAt ?? lobby.expires_at);
-  if (expiresAt !== null && Number.isFinite(expiresAt) && expiresAt <= now) return true;
-  return false;
+  // Fail closed for missing/invalid timestamps. Every lobby expires exactly two hours after creation.
+  if (!Number.isFinite(createdAt) || createdAt <= 0 || createdAt > now + 5 * 60 * 1000) return true;
+  return now - createdAt >= 2 * 60 * 60 * 1000;
 }
 
 function loadLobbies() {
@@ -13837,12 +13835,12 @@ console.log('✅ Chunk 34: Clean version loaded');
 // Chunk 36: Delete Own Content + Smart Expiry + ToS Update
 // ============================================
 
-const LOBBY_EXPIRY_HOURS = 24;
+const LOBBY_EXPIRY_HOURS = 2;
 const SCRIM_EXPIRY_HOURS = 12;
 const SOFT_CLOSE_HOURS = 1440; // 60 days — lower this when you have more users
 
 // ============================================
-// PART 1: LOBBY POST (24h active window)
+// PART 1: LOBBY POST (2h active window)
 // ============================================
 
 openPostLobbySheet = function() {
@@ -25029,13 +25027,13 @@ window.performGlobalSearch = performGlobalSearch;
         </div>
 
         <!-- Post text and tappable hashtags -->
-        <p class="text-base leading-relaxed text-gray-100 whitespace-pre-wrap break-words" style="font-size:16px;line-height:1.55;">${esc(cpPostTextWithoutHashtags(post.text || ''))}</p>
+        <p class="text-base leading-relaxed text-gray-100 whitespace-pre-wrap break-words" style="font-size:17px;line-height:1.6;">${esc(cpPostTextWithoutHashtags(post.text || ''))}</p>
         ${(() => { const tags = cpExtractHashtags(post.text, post.hashtags); return tags.length ? `<div class="flex flex-wrap gap-1.5">${tags.map(tag => `<button type="button" class="post-hashtag text-[10px] font-bold text-primary bg-primary/10 rounded-full px-2 py-1" data-tag="${esc(tag)}">#${esc(tag)}</button>`).join('')}</div>` : ''; })()}
 
         <!-- Post image — full width, zoomable -->
         ${post.imageUrl ? `
           <div class="post-image-wrap" style="width:100%;cursor:zoom-in;">
-            <img src="${esc(post.imageUrl)}" class="w-full rounded-xl" style="display:block;width:100%;height:auto;max-height:72vh;object-fit:contain;background:#000;border-radius:12px;" data-zoomable />
+            <img src="${esc(post.imageUrl)}" class="cp-post-detail-image w-full rounded-xl" style="display:block;width:100%;height:auto;max-height:none;object-fit:contain;cursor:zoom-in;background:#000;border-radius:12px;" data-zoomable />
           </div>
         ` : ''}
 
@@ -25143,6 +25141,20 @@ window.performGlobalSearch = performGlobalSearch;
       commentList.classList.remove('max-h-[38vh]', 'overflow-y-auto');
       Object.assign(commentList.style, { maxHeight: 'none', overflow: 'visible', paddingBottom: '8px' });
     }
+
+    // The generic zoom click handler is scoped to #content, while this sheet lives outside it.
+    const postDetailImage = postSheetBody?.querySelector('.cp-post-detail-image[data-zoomable]');
+    if (postDetailImage && !postDetailImage.dataset.cpPostDetailLightboxBound) {
+      postDetailImage.dataset.cpPostDetailLightboxBound = '1';
+      postDetailImage.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof window.openImageViewer === 'function') {
+          window.openImageViewer(postDetailImage.currentSrc || postDetailImage.src);
+        }
+      });
+    }
+
     const detailStyleId = 'cp-post-detail-layout-v2';
     if (!document.getElementById(detailStyleId)) {
       const detailStyle = document.createElement('style');
@@ -26674,7 +26686,7 @@ window.performGlobalSearch = performGlobalSearch;
       const note = document.getElementById('pl-note').value.trim();
       const btn = document.getElementById('pl-submit'); btn.disabled = true; btn.innerHTML = '<div class="spinner mx-auto"></div>';
       try {
-        const expiryHours = typeof LOBBY_EXPIRY_HOURS === 'number' ? LOBBY_EXPIRY_HOURS : 24;
+        const expiryHours = 2;
         const expiresAt = Timestamp.fromMillis(Date.now() + expiryHours * 60 * 60 * 1000);
         const jitsiLink = `https://meet.jit.si/CODMPanda-${State.user.uid.slice(0,8)}-${Date.now()}`;
         const isPro = !!State.profile?.isPro;
