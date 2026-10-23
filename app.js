@@ -986,7 +986,7 @@ function renderLobbies() {
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
-              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
+              ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -5376,7 +5376,7 @@ renderLobbies = function() {
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
-              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
+              ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -13935,7 +13935,7 @@ renderLobbies = function() {
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
-              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
+              ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -18599,7 +18599,7 @@ function renderHomeLobbyCard(l) {
 
       <div class="flex items-start gap-3 mb-3">
         <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0">
-          ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
+          ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
@@ -22361,7 +22361,7 @@ renderLobbies = function() {
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
-              ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
+              ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
@@ -22959,7 +22959,7 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
         <div class="flex items-start gap-3 mb-3">
             <div class="relative">
               <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
-                ${window.CODMRenderFramedAvatar && l.avatarFrame && l.avatarFrame !== "none" ? window.CODMRenderFramedAvatar(l, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
+                ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
               </div>
               ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
             </div>
@@ -25518,7 +25518,7 @@ window.performGlobalSearch = performGlobalSearch;
   window.__codmpandaVisualUpgrade = true;
   const css = `
   .cp-avatar-shell{position:relative!important;overflow:visible!important;isolation:isolate;flex-shrink:0}
-  .cp-avatar-core{position:absolute!important;z-index:8!important;left:19%;top:19%;width:62%;height:62%;margin:0!important;overflow:hidden;border-radius:50%;background:#101014;box-sizing:border-box;border:1px solid rgba(255,255,255,.16);}
+  .cp-avatar-core{position:absolute!important;z-index:8!important;left:13%;top:13%;width:74%;height:74%;margin:0!important;overflow:hidden;border-radius:50%;background:#101014;box-sizing:border-box;border:1px solid rgba(255,255,255,.16);}
   .cp-avatar-core img{width:100%;height:100%;object-fit:cover;display:block}
   .cp-frame-art{position:absolute;inset:-4%;width:108%;height:108%;z-index:10;pointer-events:none;overflow:visible;filter:drop-shadow(0 0 4px var(--cp-glow,#ff5a1f));}
   .cp-frame-art path,.cp-frame-art circle{vector-effect:non-scaling-stroke}.cp-frame-art-fire,.cp-frame-art-mythic{filter:drop-shadow(0 0 5px var(--cp-glow,#ff5a1f)) drop-shadow(0 0 2px #ffb12c)}.cp-frame-art-darkmatter,.cp-frame-art-neon{filter:drop-shadow(0 0 5px var(--cp-glow,#b34cff)) drop-shadow(0 0 2px #fff)}.cp-frame-art-gold,.cp-frame-art-championship{filter:drop-shadow(0 0 4px var(--cp-glow,#ffd45e))}.cp-frame-art-ice,.cp-frame-art-diamond,.cp-frame-art-aether{filter:drop-shadow(0 0 5px var(--cp-glow,#6beaff))}
@@ -26965,16 +26965,33 @@ window.performGlobalSearch = performGlobalSearch;
     if (!mention) return;
     const ign = mention.textContent.replace('@', '').trim();
     if (!ign) return;
+    event.preventDefault();
+    event.stopPropagation();
     try {
-      const snap = await getDocs(query(collection(db, 'users'), where('ign', '==', ign), limit(1)));
-      if (!snap.empty) {
-        const userDoc = snap.docs[0];
-        const profile = userDoc.data();
-        if (typeof openUserProfile === 'function') openUserProfile(userDoc.id);
-        else if (typeof showUserProfile === 'function') showUserProfile(userDoc.id);
+      const normalized = ign.toLowerCase();
+      const [byIgn, byUsername, byDisplay] = await Promise.all([
+        getDocs(query(collection(db, 'users'), where('ign', '==', ign), limit(1))).catch(() => null),
+        getDocs(query(collection(db, 'users'), where('username', '==', ign), limit(1))).catch(() => null),
+        getDocs(query(collection(db, 'users'), where('displayName', '==', ign), limit(1))).catch(() => null)
+      ]);
+      let userDoc = (byIgn && !byIgn.empty ? byIgn.docs[0] : null) ||
+                    (byUsername && !byUsername.empty ? byUsername.docs[0] : null) ||
+                    (byDisplay && !byDisplay.empty ? byDisplay.docs[0] : null);
+      if (!userDoc) {
+        const all = await getDocs(query(collection(db, 'users'), limit(200))).catch(() => null);
+        userDoc = all?.docs.find(d => {
+          const u = d.data() || {};
+          return [u.ign, u.username, u.displayName].some(v => String(v || '').replace(/^@/, '').toLowerCase() === normalized);
+        }) || null;
       }
+      if (userDoc) {
+        if (typeof openUserProfile === 'function') await openUserProfile(userDoc.id);
+        else if (typeof showUserProfile === 'function') await showUserProfile(userDoc.id);
+        else toast('Profile viewer is unavailable right now', 'info');
+      } else toast('Could not find that profile', 'info');
     } catch (error) {
       console.warn('[CODMPanda] Mention profile lookup failed', error);
+      toast('Could not open that profile. Try again.', 'info');
     }
   });
 
@@ -27141,7 +27158,7 @@ window.performGlobalSearch = performGlobalSearch;
       .cp-avatar-shell { overflow:visible!important; position:relative!important; }
       .cp-avatar-core,.cp-avatar-core img,.cp-avatar-no-frame img { border-radius:50%!important; overflow:hidden!important; }
       .cp-avatar-core { clip-path:circle(50% at 50% 50%); }
-      .cp-avatar-shell>.cp-war-artifact-frame { position:absolute!important; inset:-14%!important; width:128%!important; height:128%!important; max-width:none!important; max-height:none!important; object-fit:contain!important; object-position:center!important; z-index:10!important; pointer-events:none!important; }
+      .cp-avatar-shell>.cp-war-artifact-frame { position:absolute!important; inset:-10%!important; width:120%!important; height:120%!important; max-width:none!important; max-height:none!important; object-fit:contain!important; object-position:center!important; z-index:10!important; pointer-events:none!important; }
       .cp-avatar-shell { width:var(--cp-avatar-size,44px); height:var(--cp-avatar-size,44px); flex:0 0 auto!important; isolation:isolate; }
       .cp-avatar-core { position:absolute!important; inset:19%!important; width:auto!important; height:auto!important; overflow:hidden!important; }
       .cp-avatar-core img { width:100%!important; height:100%!important; object-fit:cover!important; display:block!important; }
