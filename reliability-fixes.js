@@ -1,54 +1,7 @@
-/* CODMPanda reliability fixes: normalize frame aliases, frame layering, and mention hydration. */
+/* CODMPanda reliability fixes: mention hydration only.
+   Avatar rendering is left to the app's own renderer; no global frame/CSS overrides. */
 (function () {
   'use strict';
-
-  function installFrameLayering() {
-    if (document.getElementById('cp-frame-layering-fix')) return;
-    const style = document.createElement('style');
-    style.id = 'cp-frame-layering-fix';
-    style.textContent = `
-      .cp-avatar-shell { position:relative!important; overflow:visible!important; isolation:isolate!important; }
-      .cp-avatar-shell > .cp-avatar-core {
-        position:absolute!important; inset:20%!important; width:60%!important; height:60%!important;
-        z-index:1!important; overflow:hidden!important; border-radius:50%!important;
-      }
-      .cp-avatar-shell > .cp-avatar-core img {
-        position:relative!important; z-index:1!important; width:100%!important; height:100%!important;
-        object-fit:cover!important; border-radius:50%!important; clip-path:circle(50% at 50% 50%)!important;
-      }
-      .cp-avatar-shell > .cp-war-artifact-frame,
-      .cp-avatar-shell > .cp-frame-art {
-        position:absolute!important; inset:-12%!important; width:124%!important; height:124%!important;
-        max-width:none!important; max-height:none!important; object-fit:contain!important; object-position:center!important;
-        z-index:20!important; display:block!important; pointer-events:none!important;
-      }
-    `;
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function resolveFrame(user) {
-    const registry = window.CODM_WAR_ARTIFACT_FRAMES || {};
-    const normalize = typeof window.CODMNormalizeFrameKey === 'function'
-      ? window.CODMNormalizeFrameKey
-      : value => String(value || 'none').trim().toLowerCase().replace(/[\s-]+/g, '_');
-    const fields = ['avatarFrame', 'equippedAvatarFrame', 'equippedFrame', 'selectedFrame', 'frameId', 'frame', 'profileFrame'];
-    for (const field of fields) {
-      const key = normalize(user && user[field]);
-      if (key !== 'none' && registry[key]) return key;
-    }
-    return 'none';
-  }
-
-  function installAvatarWrapper() {
-    const original = window.CODMRenderFramedAvatar;
-    if (typeof original !== 'function' || original.__cpAliasFix) return;
-    const wrapped = function (user, size) {
-      const normalized = resolveFrame(user || {});
-      return original({ ...(user || {}), avatarFrame: normalized }, size);
-    };
-    wrapped.__cpAliasFix = true;
-    window.CODMRenderFramedAvatar = wrapped;
-  }
 
   function hydrateMentionText(root) {
     if (!root || !document.createTreeWalker) return;
@@ -102,8 +55,6 @@
     if (records.some(record => record.type === 'characterData' || (record.addedNodes && record.addedNodes.length))) scheduleHydration();
   });
   function start() {
-    installFrameLayering();
-    installAvatarWrapper();
     if (!observerStarted && document.documentElement) {
       observer.observe(document.documentElement, { childList: true, characterData: true, subtree: true });
       observerStarted = true;
@@ -113,10 +64,4 @@
   let observerStarted = false;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
-  let attempts = 0;
-  const retry = setInterval(() => {
-    installFrameLayering();
-    installAvatarWrapper();
-    if ((window.CODMRenderFramedAvatar && window.CODMRenderFramedAvatar.__cpAliasFix) || ++attempts >= 30) clearInterval(retry);
-  }, 100);
 })();
