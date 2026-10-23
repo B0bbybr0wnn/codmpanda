@@ -39,11 +39,15 @@ export default {
       try {
         const rawBriefings = await fetchOfficialBriefings();
         const briefings = await summarizeOfficialBriefings(rawBriefings, env);
+        const usable = briefings.filter(item => item.isArticle && item.articleText && item.articleText.length >= 180);
         return json({
-          success: briefings.some(item => item.isArticle && item.articleText && item.articleText.length >= 120 && item.aiSummary),
+          success: usable.some(item => item.aiSummary && item.summary),
           aiConfigured: !!env.GEMINI_API_KEY,
+          sourcesChecked: 3,
+          articlesFound: usable.length,
+          summariesGenerated: usable.filter(item => item.aiSummary && item.summary).length,
           updatedAt: new Date().toISOString(),
-          briefings: briefings.filter(item => item.isArticle && item.articleText && item.articleText.length >= 120).map(({ articleText, isArticle, ...item }) => item)
+          briefings: usable.map(({ articleText, isArticle, ...item }) => item)
         });
       } catch (error) {
         console.error('[briefings] Failed:', error);
@@ -434,16 +438,16 @@ async function fetchOfficialBriefings() {
       const html = await fetchText(link.url);
       const canonicalMatch = html.match(/<link\b[^>]*rel=[\"']canonical[\"'][^>]*href=[\"']([^\"']+)[\"']/i);
       const finalUrl = canonicalMatch ? canonicalUrl(canonicalMatch[1], link.url) || link.url : link.url;
-      const title = readMeta(html, ['og:title', 'twitter:title']) ||
-        textOf((html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i) || [])[1]) ||
-        textOf((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]) || link.linkTitle;
+      const h1Title = textOf((html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i) || [])[1]);
+      const metaTitle = readMeta(html, ['og:title', 'twitter:title']);
+      const pageTitle = textOf((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]);
       const articleBlocks = [
         (html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) || [])[1] || '',
         (html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || [])[1] || '',
         (html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i) || [])[1] || ''
       ];
       // Some official pages publish their real article body as JSON-LD instead of a normal <article> node.
-      const jsonLdBodies = [];
+      const jsonLdBodies = [], jsonLdTitles = [], jsonLdDates = [];
       const jsonLdScripts = html.match(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
       for (const script of jsonLdScripts) {
         const match = script.match(/>([\s\S]*?)<\/script>/i);
@@ -456,24 +460,34 @@ async function fetchOfficialBriefings() {
             if (!value || typeof value !== 'object') continue;
             if (Array.isArray(value)) { stack.push(...value); continue; }
             if (typeof value.articleBody === 'string') jsonLdBodies.push(value.articleBody);
+            if (typeof value.headline === 'string') jsonLdTitles.push(value.headline);
+            if (typeof value.datePublished === 'string') jsonLdDates.push(value.datePublished);
             if (value['@graph']) stack.push(value['@graph']);
             if (value.mainEntity) stack.push(value.mainEntity);
+            if (value.mainEntityOfPage && typeof value.mainEntityOfPage === 'object') stack.push(value.mainEntityOfPage);
           }
         } catch (_) { /* malformed or unrelated JSON-LD is not article text */ }
       }
-      const bodyCandidates = [...articleBlocks.map(textOf), ...jsonLdBodies.map(textOf)].filter(Boolean);
-      const articleText = bodyCandidates.sort((a, b) => b.length - a.length)[0]?.slice(0, 12000) || '';
+      const title = h1Title || jsonLdTitles.find(value => value.trim().length >= 8) || metaTitle || pageTitle || link.linkTitle;
+      // Prefer the article's own content over the whole page, which includes menus and related links.
+      const articleCandidate = textOf(articleBlocks[0]);
+      const jsonLdCandidate = jsonLdBodies.map(textOf).sort((a, b) => b.length - a.length)[0] || '';
+      const mainCandidate = textOf(articleBlocks[1]);
+      const pageCandidate = textOf(articleBlocks[2]);
+      const articleText = [articleCandidate, jsonLdCandidate, mainCandidate, pageCandidate]
+        .find(candidate => candidate.length >= 180) || '';
       // Article summaries must be grounded in actual extracted body text, not a site description.
       if (articleText.length < 180 || title.length < 8) {
         console.warn('[briefings] Skipping thin article body:', finalUrl, articleText.length);
         return;
       }
       const publishedRaw = readMeta(html, ['article:published_time', 'datePublished', 'date', 'publish-date']) ||
-        (html.match(/<time\b[^>]*datetime=[\"']([^\"']+)[\"']/i) || [])[1] || '';
+        (html.match(/<time\\b[^>]*datetime=[\\"']([^\\"']+)[\\"']/i) || [])[1] ||
+        jsonLdDates.find(value => Date.parse(value)) || '';
       const publishedAt = publishedRaw ? String(publishedRaw).slice(0, 32) : '';
       articleResults.push({
         sourceName: link.sourceName, title: title.slice(0, 180), summary: '',
-        articleText, isArticle: true, url: finalUrl, publishedAt
+        articleText: articleText.slice(0, 12000), isArticle: true, url: finalUrl, publishedAt
       });
     } catch (error) {
       console.warn('[briefings] Article fetch failed:', link.url, error?.message || error);
