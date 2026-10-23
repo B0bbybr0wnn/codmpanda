@@ -27623,6 +27623,14 @@ if (!window.__cpLobbyExpirationSweep) {
     const wrapped=function(){const result=original.apply(this,arguments);normalizeLobbyBadges();setTimeout(normalizeLobbyBadges,250);setTimeout(normalizeLobbyBadges,900);return result;};
     wrapped.__cpGoldBadgeDedupe=true;renderLobbies=wrapped;window.renderLobbies=wrapped;
   }
+  // Enforce a hard two-hour lifetime from the original creation timestamp, not expiresAt or updatedAt.
+  cpLobbyIsExpired = function(lobby, now = Date.now()) {
+    if (!lobby) return true;
+    const createdAt = cpLobbyTimestampMillis(lobby.createdAt ?? lobby.created_at);
+    if (!Number.isFinite(createdAt) || createdAt <= 0 || createdAt > now + 30000) return true;
+    return (now - createdAt) >= 2 * 60 * 60 * 1000;
+  };
+
   // Replace viewer so tapped post media uses the whole viewport without losing aspect ratio.
   window.openImageViewer=function(src){
     if(!src)return;
