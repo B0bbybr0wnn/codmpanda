@@ -27257,7 +27257,7 @@ window.performGlobalSearch = performGlobalSearch;
     const uid=String(item.uid || item.userId || item.ownerUid || item.createdBy || item.authorUid || '').trim();
     if(!uid) return false;
     item.uid=uid;
-    if(cache.has(uid)){ Object.assign(item,cache.get(uid)); return false; }
+    if(cache.has(uid)){ const cached=cache.get(uid); if(Date.now()-cached.at<15000){ Object.assign(item,cached.profile); return false; } cache.delete(uid); }
     if(pending.has(uid)) return pending.get(uid);
     const job=getDoc(doc(db,'users',uid)).then(snap=>{
       const u=snap.exists()?snap.data():{};
@@ -27270,7 +27270,7 @@ window.performGlobalSearch = performGlobalSearch;
         ign:u.ign || u.displayName || u.username || item.ign || 'Operator',
         verified:u.verified===true
       };
-      cache.set(uid,profile);
+      cache.set(uid,{profile,at:Date.now()});
       Object.assign(item,profile);
       return true;
     }).catch(error=>{
