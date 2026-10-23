@@ -25638,7 +25638,7 @@ window.performGlobalSearch = performGlobalSearch;
   }
   window.CODMNormalizeFrameKey = normalizeCODMFrameKey;
   function renderFramedAvatar(user,size=44){
-    const storedFrame=normalizeCODMFrameKey(user?.avatarFrame||user?.equippedFrame||user?.frame||user?.profileFrame||'none');
+    const storedFrame=normalizeCODMFrameKey([user?.avatarFrame,user?.equippedFrame,user?.frame,user?.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none');
     // Old CSS/SVG frame IDs are retired. Pro-only PNG artwork must not render for a Free profile.
     const candidate=WAR_ARTIFACT_FRAMES[storedFrame];
     const hasPro= user?.isPro===true || user?.pro===true || user?.subscription==='pro' || user?.proStatus==='active';
@@ -25666,6 +25666,7 @@ window.performGlobalSearch = performGlobalSearch;
 
   // Add true frame artwork to author avatars in feed/group/comment surfaces that expose data-uid.
   const profileCache=new Map(); const profileCacheTimes=new Map();
+  window.addEventListener('codmpanda:avatar-frame-updated',event=>{const uid=event.detail?.uid;if(uid){profileCache.delete(uid);profileCacheTimes.delete(uid);}});
   async function getPublicProfile(uid){if(!uid)return null;if(uid===State.user?.uid)return State.profile||null;if(profileCache.has(uid)&&Date.now()-(profileCacheTimes.get(uid)||0)<15000)return profileCache.get(uid);profileCache.delete(uid);try{const s=await getDoc(doc(db,'users',uid));const v=s.exists()?{id:uid,...s.data()}:null;profileCache.set(uid,v);profileCacheTimes.set(uid,Date.now());return v}catch(_){return null}}
   async function decorateAvatars(root=document){
     if(!State.user)return;
@@ -25687,7 +25688,7 @@ window.performGlobalSearch = performGlobalSearch;
       const rect=el.getBoundingClientRect();if(rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
       const uid=el.dataset.uid;if(!uid)continue;
       const user=await getPublicProfile(uid);if(!user)continue;
-      const frameKey=normalizeCODMFrameKey(user.avatarFrame||user.equippedFrame||user.frame||user.profileFrame||'none');
+      const frameKey=normalizeCODMFrameKey([user.avatarFrame,user.equippedFrame,user.frame,user.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none');
       if(frameKey==='none'||!WAR_ARTIFACT_FRAMES[frameKey])continue;
       if(el.dataset.cpFrameDone===frameKey)continue;
       const img=el.querySelector('img');
@@ -26062,7 +26063,7 @@ window.performGlobalSearch = performGlobalSearch;
       if(!rect||rect.width<24||rect.width>180||rect.height<24||rect.height>180)continue;
       if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.querySelector('img'))continue;
       const u=await publicProfile(uid);if(!u)continue;
-      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};let frame=window.CODMNormalizeFrameKey ? window.CODMNormalizeFrameKey(u.avatarFrame||u.equippedFrame||u.frame||u.profileFrame||'none') : (u.avatarFrame||u.equippedFrame||u.frame||u.profileFrame||'none');if(frame!=='none'&&!frameCatalog[frame])frame='none';if(!window.CODMRenderFramedAvatar)continue;
+      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};const frameValue=[u.avatarFrame,u.equippedFrame,u.frame,u.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none';let frame=window.CODMNormalizeFrameKey ? window.CODMNormalizeFrameKey(frameValue) : frameValue;if(frame!=='none'&&!frameCatalog[frame])frame='none';if(!window.CODMRenderFramedAvatar)continue;
       const img=el.querySelector('img');const avatar=u.avatar||u.photoURL||u.photoUrl||img?.getAttribute('src')||'';
       const name=u.ign||u.displayName||'Operator';
       if(frame==='none'){el.style.borderRadius='50%';el.style.clipPath='circle(50% at 50% 50%)';if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;clip-path:circle(50% at 50% 50%)">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
@@ -26081,7 +26082,7 @@ window.performGlobalSearch = performGlobalSearch;
   window.openAvatarFramePicker=function(){
     try {
       const pro=!!(State.profile && (State.profile.isPro===true || State.profile.pro===true || State.profile.subscription==='pro' || State.profile.proStatus==='active'));
-      const stored=State.profile?.avatarFrame||'none';
+      const stored=window.CODMNormalizeFrameKey?.([State.profile?.avatarFrame,State.profile?.equippedFrame,State.profile?.frame,State.profile?.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none')||'none';
       const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};
       if(!Object.keys(frameCatalog).length)throw new Error('War Artifact frame catalogue is unavailable');
       const current=(stored==='none'||(frameCatalog[stored]&&(frameCatalog[stored].tier!=='PRO'||pro)))?stored:'none';
@@ -26121,6 +26122,7 @@ window.performGlobalSearch = performGlobalSearch;
           try{
             await updateDoc(doc(db,'users',State.user.uid),{avatarFrame:key});
             State.profile={...(State.profile||{}),avatarFrame:key};
+            window.dispatchEvent(new CustomEvent('codmpanda:avatar-frame-updated',{detail:{uid:State.user.uid,avatarFrame:key}}));
             if(typeof profileCache!=='undefined')profileCache.delete(State.user.uid);
             overlay.remove();
             if(typeof renderYouTab==='function'&&State.currentTab==='you')renderYouTab();
@@ -27075,7 +27077,8 @@ window.performGlobalSearch = performGlobalSearch;
       sendButton.textContent='…';
       chat.scrollTop=chat.scrollHeight;
       try {
-        const currentCoachName = State.profile?.ign || State.profile?.displayName || State.user?.displayName || '';\n        const answer = await cpCoachReply(value, history, currentCoachName);
+        const currentCoachName = State.profile?.ign || State.profile?.displayName || State.user?.displayName || '';
+        const answer = await cpCoachReply(value, history, currentCoachName);
         history.push({ role:'user', text:value }, { role:'model', text:answer });
         history = history.slice(-20);
         try { localStorage.setItem(coachHistoryKey, JSON.stringify({ updatedAt:Date.now(), messages:history })); } catch (_) { /* local storage may be full or disabled */ }
@@ -27113,6 +27116,7 @@ window.performGlobalSearch = performGlobalSearch;
 (function cpLobbyProfileHydration() {
   const profileCache = new Map();
   const pending = new Map();
+  window.addEventListener('codmpanda:avatar-frame-updated',event=>{const uid=event.detail?.uid;if(uid)profileCache.delete(uid);});
   async function enrichLobby(lobby) {
     if (!lobby?.uid) return false;
     if (profileCache.has(lobby.uid)) {
@@ -27203,9 +27207,9 @@ window.performGlobalSearch = performGlobalSearch;
   style.textContent=`
     .cp-avatar-shell{position:relative!important;display:inline-block!important;flex:0 0 auto!important;overflow:visible!important;isolation:isolate!important;vertical-align:middle!important}
     .cp-avatar-shell.cp-avatar-no-frame{overflow:hidden!important}
-    .cp-avatar-shell>.cp-avatar-core{position:absolute!important;left:10%!important;top:10%!important;width:80%!important;height:80%!important;border-radius:50%!important;overflow:hidden!important;z-index:2!important}
+    .cp-avatar-shell>.cp-avatar-core{position:absolute!important;left:18%!important;top:18%!important;width:64%!important;height:64%!important;border-radius:50%!important;overflow:hidden!important;z-index:2!important}
     .cp-avatar-shell>.cp-avatar-core img{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;border-radius:50%!important;display:block!important}
-    .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;left:-12%!important;top:-12%!important;width:124%!important;height:124%!important;object-fit:contain!important;object-position:center!important;z-index:4!important;pointer-events:none!important}
+    .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;left:-10%!important;top:-10%!important;width:120%!important;height:120%!important;max-width:none!important;max-height:none!important;object-fit:contain!important;object-position:center!important;z-index:4!important;pointer-events:none!important}
     .cp-avatar-framed-host{overflow:visible!important;clip-path:none!important;border-radius:50%!important}
     .cp-avatar-framed-host>.cp-avatar-shell{margin:0 auto!important}
     .mention-text{position:relative!important;z-index:20!important;display:inline!important;pointer-events:auto!important;cursor:pointer!important;touch-action:manipulation!important}
@@ -27251,6 +27255,7 @@ window.performGlobalSearch = performGlobalSearch;
 /* Home-feed lobby hydration: preserve the active renderer chain and enrich every lobby author before repainting. */
 (function cpHomeFeedLobbyHydration(){
   const cache=new Map(), pending=new Map();
+  window.addEventListener('codmpanda:avatar-frame-updated',event=>{const uid=event.detail?.uid;if(uid)cache.delete(uid);});
   const previousRender=window.renderHomeFeed || renderHomeFeed;
   async function enrich(item){
     if(!item || item.type!=='lobby') return false;
