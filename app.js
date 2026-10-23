@@ -5375,7 +5375,7 @@ renderLobbies = function() {
       <div class="bg-card border border-border rounded-2xl p-4 fade-in">
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+            <div data-uid="${esc(l.uid || l.userId || l.ownerUid || l.createdBy || l.authorUid || '')}" class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
               ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
@@ -25705,7 +25705,7 @@ window.performGlobalSearch = performGlobalSearch;
       const user=await getPublicProfile(uid);if(!user)continue;
       const frameKey=([user.avatarFrame,user.equippedFrame,user.frame,user.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
       if(frameKey==='none'||!WAR_ARTIFACT_FRAMES[frameKey])continue;
-      if(el.dataset.cpFrameDone===frameKey)continue;
+      if(el.dataset.cpFrameDone===frameKey || el.dataset.cpFrameApplied===frameKey)continue;
       const img=el.querySelector('img');
       const avatarUrl=user.avatar||user.photoURL||user.photoUrl||img?.getAttribute('src')||'';
       const size=Math.max(28,Math.min(132,Math.round(Math.min(rect.width,rect.height))));
@@ -25714,6 +25714,7 @@ window.performGlobalSearch = performGlobalSearch;
       const rendered=holder.firstElementChild;if(!rendered)continue;
       el.replaceChildren(rendered);
       el.dataset.cpFrameDone=frameKey;
+      el.dataset.cpFrameApplied=frameKey;
       el.dataset.cpFrameMode='png';
       el.classList.add('cp-avatar-framed-host');
       el.style.overflow='visible';
@@ -26081,12 +26082,12 @@ window.performGlobalSearch = performGlobalSearch;
       const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};const frame=([u.avatarFrame,u.equippedAvatarFrame,u.equippedFrame,u.selectedFrame,u.frameId,u.frame,u.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&frameCatalog[key])||'none');if(!window.CODMRenderFramedAvatar)continue;
       const img=el.querySelector('img');const avatar=u.avatar||u.photoURL||u.photoUrl||img?.getAttribute('src')||'';
       const name=u.ign||u.displayName||'Operator';
-      if(frame==='none'){el.style.borderRadius='50%';el.style.clipPath='circle(50% at 50% 50%)';if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;clip-path:circle(50% at 50% 50%)">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
-      if(frameDone===frame)continue;
+      if(frame==='none'){el.style.borderRadius='50%';el.style.clipPath='circle(50% at 50% 50%)';if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;clip-path:circle(50% at 50% 50%)">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;delete el.dataset.cpFrameDone;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
+      if(frameDone===frame || el.dataset.cpFrameDone===frame)continue;
       const shell=document.createElement('div');shell.innerHTML=window.CODMRenderFramedAvatar({...u,avatar,ign:name},Math.max(28,Math.min(72,Math.round(Math.min(rect.width,rect.height)))));
       const rendered=shell.firstElementChild;if(!rendered)continue;
       // Only replace the contents of a compact avatar node, never a card or profile wrapper.
-      el.innerHTML='';el.appendChild(rendered);el.dataset.cpFrameApplied=frame;el.style.overflow='visible';el.style.borderRadius='50%';el.style.clipPath='none';el.classList.add('cp-avatar-framed-host');
+      el.innerHTML='';el.appendChild(rendered);el.dataset.cpFrameApplied=frame;el.dataset.cpFrameDone=frame;el.style.overflow='visible';el.style.borderRadius='50%';el.style.clipPath='none';el.classList.add('cp-avatar-framed-host');
     }
   }
   window.__codmpandaRefreshNamesAndAvatars=refreshPublicNamesAndAvatars;
@@ -26984,41 +26985,7 @@ window.performGlobalSearch = performGlobalSearch;
   };
   window.openVaultDetail = openVaultDetail;
 
-  // Make @mentions open any matching public user profile, not only a friend-list match.
-  document.addEventListener('click', async function cpMentionProfileFallback(event) {
-    const mention = event.target.closest('.mention-text');
-    if (!mention) return;
-    const ign = mention.textContent.replace('@', '').trim();
-    if (!ign) return;
-    event.preventDefault();
-    event.stopPropagation();
-    try {
-      const normalized = ign.toLowerCase();
-      const [byIgn, byUsername, byDisplay] = await Promise.all([
-        getDocs(query(collection(db, 'users'), where('ign', '==', ign), limit(1))).catch(() => null),
-        getDocs(query(collection(db, 'users'), where('username', '==', ign), limit(1))).catch(() => null),
-        getDocs(query(collection(db, 'users'), where('displayName', '==', ign), limit(1))).catch(() => null)
-      ]);
-      let userDoc = (byIgn && !byIgn.empty ? byIgn.docs[0] : null) ||
-                    (byUsername && !byUsername.empty ? byUsername.docs[0] : null) ||
-                    (byDisplay && !byDisplay.empty ? byDisplay.docs[0] : null);
-      if (!userDoc) {
-        const all = await getDocs(query(collection(db, 'users'), limit(200))).catch(() => null);
-        userDoc = all?.docs.find(d => {
-          const u = d.data() || {};
-          return [u.ign, u.username, u.displayName, u.handle, u.codmName].some(v => String(v || '').trim().replace(/^@/, '').toLowerCase() === normalized);
-        }) || null;
-      }
-      if (userDoc) {
-        if (typeof openUserProfile === 'function') await openUserProfile(userDoc.id);
-        else if (typeof showUserProfile === 'function') await showUserProfile(userDoc.id);
-        else toast('Profile viewer is unavailable right now', 'info');
-      } else toast('Could not find that profile', 'info');
-    } catch (error) {
-      console.warn('[CODMPanda] Mention profile lookup failed', error);
-      toast('Could not open that profile. Try again.', 'info');
-    }
-  });
+  // Mention navigation is handled by the single document capture-phase resolver above.
 
   async function cpCoachReply(question, history, playerName) {
     const response = await fetch(NOTIFY_WORKER_URL + '/coach', {
@@ -27225,9 +27192,9 @@ window.performGlobalSearch = performGlobalSearch;
   style.textContent=`
     .cp-avatar-shell{position:relative!important;display:inline-block!important;flex:0 0 auto!important;overflow:visible!important;isolation:isolate!important;vertical-align:middle!important}
     .cp-avatar-shell.cp-avatar-no-frame{overflow:hidden!important}
-    .cp-avatar-shell>.cp-avatar-core{position:absolute!important;inset:18%!important;width:auto!important;height:auto!important;border-radius:50%!important;overflow:hidden!important;z-index:2!important}
-    .cp-avatar-shell>.cp-avatar-core img{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;border-radius:50%!important;display:block!important}
-    .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;left:-10%!important;top:-10%!important;width:120%!important;height:120%!important;max-width:none!important;max-height:none!important;object-fit:contain!important;object-position:center!important;z-index:4!important;pointer-events:none!important}
+    .cp-avatar-shell>.cp-avatar-core{position:absolute!important;inset:16%!important;width:auto!important;height:auto!important;border-radius:50%!important;overflow:hidden!important;z-index:5!important}
+    .cp-avatar-shell>.cp-avatar-core img{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;border-radius:50%!important;clip-path:circle(50% at 50% 50%)!important;display:block!important}
+    .cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;left:-14%!important;top:-14%!important;width:128%!important;height:128%!important;max-width:none!important;max-height:none!important;object-fit:contain!important;object-position:center!important;z-index:4!important;pointer-events:none!important}
     .cp-avatar-framed-host{overflow:visible!important;clip-path:none!important;border-radius:50%!important}
     .cp-avatar-framed-host>.cp-avatar-shell{margin:0 auto!important}
     .mention-text{position:relative!important;z-index:20!important;display:inline!important;pointer-events:auto!important;cursor:pointer!important;touch-action:manipulation!important}
@@ -27254,7 +27221,7 @@ window.performGlobalSearch = performGlobalSearch;
         const mentionStart=match.index+match[1].length;
         if(mentionStart<last)continue;
         found=true;if(mentionStart>last)frag.appendChild(document.createTextNode(value.slice(last,mentionStart)));
-        const a=document.createElement('a');a.href='#';a.setAttribute('role','link');a.setAttribute('tabindex','0');a.setAttribute('aria-label','Open @'+match[2]+' profile');a.dataset.mentionName=match[2];a.className='mention-text';a.textContent='@'+match[2];
+        const a=document.createElement('a');a.href='#';a.setAttribute('role','link');a.setAttribute('tabindex','0');a.setAttribute('aria-label','Open @'+match[2]+' profile');a.dataset.mentionName=match[2];const resolvedMentionUid=window.__cpMentionUidByName?.[String(match[2]).toLowerCase()];if(resolvedMentionUid)a.dataset.mentionUid=resolvedMentionUid;a.className='mention-text';a.textContent='@'+match[2];
         a.style.cssText='color:#38bdf8;font-weight:800;cursor:pointer;text-decoration:none;pointer-events:auto;touch-action:manipulation;';
         frag.appendChild(a);last=mentionStart+match[0].length-match[1].length;
       }

@@ -442,7 +442,27 @@ async function fetchOfficialBriefings() {
         (html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i) || [])[1] || '',
         (html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i) || [])[1] || ''
       ];
-      const articleText = articleBlocks.map(textOf).sort((a, b) => b.length - a.length)[0].slice(0, 12000);
+      // Some official pages publish their real article body as JSON-LD instead of a normal <article> node.
+      const jsonLdBodies = [];
+      const jsonLdScripts = html.match(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
+      for (const script of jsonLdScripts) {
+        const match = script.match(/>([\s\S]*?)<\/script>/i);
+        if (!match) continue;
+        try {
+          const parsed = JSON.parse(match[1].replace(/^\s*<!--|-->\s*$/g, ''));
+          const stack = [parsed];
+          while (stack.length) {
+            const value = stack.pop();
+            if (!value || typeof value !== 'object') continue;
+            if (Array.isArray(value)) { stack.push(...value); continue; }
+            if (typeof value.articleBody === 'string') jsonLdBodies.push(value.articleBody);
+            if (value['@graph']) stack.push(value['@graph']);
+            if (value.mainEntity) stack.push(value.mainEntity);
+          }
+        } catch (_) { /* malformed or unrelated JSON-LD is not article text */ }
+      }
+      const bodyCandidates = [...articleBlocks.map(textOf), ...jsonLdBodies.map(textOf)].filter(Boolean);
+      const articleText = bodyCandidates.sort((a, b) => b.length - a.length)[0]?.slice(0, 12000) || '';
       // Article summaries must be grounded in actual extracted body text, not a site description.
       if (articleText.length < 180 || title.length < 8) {
         console.warn('[briefings] Skipping thin article body:', finalUrl, articleText.length);
@@ -511,7 +531,7 @@ async function summarizeOfficialBriefings(items, env) {
         },
         contents: [{
           role: 'user',
-          parts: [{ text: 'Official source: ' + item.sourceName + '\\nTitle: ' + item.title + '\\nPublished: ' + item.publishedAt + '\\nArticle text:\\n' + item.articleText.slice(0, 9000) }]
+          parts: [{ text: 'Official source: ' + item.sourceName + '\nTitle: ' + item.title + '\nPublished: ' + item.publishedAt + '\nArticle text:\n' + item.articleText.slice(0, 9000) }]
         }],
         generationConfig: { temperature: 0.2, maxOutputTokens: 220 }
       });
