@@ -27466,11 +27466,11 @@ if (!window.__cpLobbyExpirationSweep) {
     if (active.length !== cached.length) {
       State.cache.lobbies = active;
       if (document.getElementById('lobbies-feed')) renderLobbies();
-      const homeLobbyCards = document.querySelectorAll('#content .home-card[data-type="lobby"]');
-      homeLobbyCards.forEach(card => {
-        const lobby = (homeCache?.feed || []).find(item => item.id === card.dataset.id && item.type === 'lobby');
-        if (!lobby || cpLobbyIsExpired(lobby)) card.remove();
-      });
     }
+    // Also sweep Home feed cards, even when Find Squad has not been opened this session.
+    document.querySelectorAll('#content .home-card[data-type="lobby"]').forEach(card => {
+      const lobby = (homeCache?.feed || []).find(item => item.id === card.dataset.id && item.type === 'lobby');
+      if (!lobby || cpLobbyIsExpired(lobby)) card.remove();
+    });
   }, 15000);
 }
