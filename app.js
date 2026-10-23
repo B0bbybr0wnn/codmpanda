@@ -16248,26 +16248,54 @@ function highlightMentions(text) {
   return escaped.replace(/@([A-Za-z0-9_]{2,24})/g, '<a href="#" role="link" aria-label="Open @$1 profile" data-mention-name="$1" class="mention-text text-sky-400 font-bold hover:underline" style="color:#38bdf8;cursor:pointer;text-decoration:none">@$1</a>');
 }
 
-// Make mentions tappable
-document.addEventListener('click', async (e) => {
-  const mention = e.target.closest('.mention-text');
+// Resolve mentions in one capture-phase handler so card/feed click handlers cannot swallow taps.
+document.addEventListener('click', async (event) => {
+  const mention = event.target.closest?.('.mention-text');
   if (!mention) return;
-  e.preventDefault(); e.stopPropagation();
-  const ign = String(mention.dataset.mentionName || mention.textContent.replace(/^@/, '')).trim();
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  const ign = String(mention.dataset.mentionName || mention.textContent.replace(/^@/, '')).trim().replace(/^@/, '');
   if (!ign) return;
+  if (mention.dataset.opening === '1') return;
+  mention.dataset.opening = '1';
   try {
-    await loadMentionFriends();
-    const friend = mentionFriends.find(f => String(f.ign || '').toLowerCase() === ign.toLowerCase());
-    if (friend?.uid) { await openUserProfile(friend.uid); return; }
+    const normalized = ign.toLowerCase();
+    let found = null;
+    try {
+      await loadMentionFriends();
+      const friend = Array.isArray(mentionFriends) ? mentionFriends.find(f =>
+        String(f.ign || f.username || '').replace(/^@/, '').toLowerCase() === normalized
+      ) : null;
+      if (friend?.uid) { await openUserProfile(friend.uid); return; }
+    } catch (_) {}
     const [byIgn, byUsername] = await Promise.all([
       getDocs(query(collection(db, 'users'), where('ign', '==', ign), limit(1))).catch(() => null),
       getDocs(query(collection(db, 'users'), where('username', '==', ign), limit(1))).catch(() => null)
     ]);
-    const found = byIgn && !byIgn.empty ? byIgn.docs[0] : byUsername && !byUsername.empty ? byUsername.docs[0] : null;
-    if (found) { await openUserProfile(found.id); return; }
+    found = byIgn && !byIgn.empty ? byIgn.docs[0] : byUsername && !byUsername.empty ? byUsername.docs[0] : null;
+    if (!found) {
+      // Case-insensitive fallback for usernames/IGNs whose capitalization differs.
+      const all = await getDocs(query(collection(db, 'users'), limit(100))).catch(() => null);
+      if (all) found = all.docs.find(d => {
+        const u = d.data() || {};
+        return [u.ign, u.username, u.displayName].some(v => String(v || '').replace(/^@/, '').toLowerCase() === normalized);
+      }) || null;
+    }
+    if (found) {
+      if (typeof openUserProfile === 'function') await openUserProfile(found.id);
+      else if (typeof showUserProfile === 'function') await showUserProfile(found.id);
+      else toast('Profile viewer is unavailable right now', 'info');
+      return;
+    }
     toast('Could not find that profile', 'info');
-  } catch (error) { console.warn('[CODMPanda] Mention profile lookup failed:', error); toast('Could not open that profile. Try again.', 'info'); }
-});
+  } catch (error) {
+    console.warn('[CODMPanda] Mention profile lookup failed:', error);
+    toast('Could not open that profile. Try again.', 'info');
+  } finally {
+    delete mention.dataset.opening;
+  }
+}, true);
 
 window.openMessageOptions = openMessageOptions;
 window.openEditMessageModal = openEditMessageModal;
@@ -25656,7 +25684,7 @@ window.performGlobalSearch = performGlobalSearch;
       if(el.dataset.cpFrameDone===frameKey)continue;
       const img=el.querySelector('img');
       const avatarUrl=user.avatar||user.photoURL||user.photoUrl||img?.getAttribute('src')||'';
-      const size=Math.max(28,Math.min(72,Math.round(Math.min(rect.width,rect.height))));
+      const size=Math.max(28,Math.min(132,Math.round(Math.min(rect.width,rect.height))));
       const holder=document.createElement('div');
       holder.innerHTML=renderFramedAvatar({...user,avatar:avatarUrl,ign:user.ign||user.displayName||'Operator'},size);
       const rendered=holder.firstElementChild;if(!rendered)continue;
@@ -26023,7 +26051,7 @@ window.performGlobalSearch = performGlobalSearch;
       const rect=el.getBoundingClientRect?.();
       // data-uid is also used by report/action buttons; only decorate compact avatar hosts.
       if(el.matches('button, a, input, textarea, select') || isName)continue;
-      if(!rect||rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
+      if(!rect||rect.width<24||rect.width>180||rect.height<24||rect.height>180)continue;
       if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.querySelector('img'))continue;
       const u=await publicProfile(uid);if(!u)continue;
       const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};let frame=window.CODMNormalizeFrameKey ? window.CODMNormalizeFrameKey(u.avatarFrame||u.equippedFrame||u.frame||u.profileFrame||'none') : (u.avatarFrame||u.equippedFrame||u.frame||u.profileFrame||'none');if(frame!=='none'&&!frameCatalog[frame])frame='none';if(!window.CODMRenderFramedAvatar)continue;
