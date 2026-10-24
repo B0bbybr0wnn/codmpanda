@@ -13,6 +13,7 @@ import {
   sendPasswordResetEmail,
   signInWithCredential,
   linkWithCredential,
+  linkWithPopup,
   signOut,
   onAuthStateChanged,
   deleteUser
@@ -481,7 +482,6 @@ function readEmailAuthFields() {
 
 const GOOGLE_CLIENT_ID = "604146891375-ae5bhcm2nd2f59f0npp3en6setthjg1s.apps.googleusercontent.com";
 let gisInitialized = false;
-let pendingGoogleLink = false;
 let gisPromptRequested = false;
 let gisButtonRenderRetried = false;
 
@@ -594,35 +594,6 @@ async function requestGISPrompt() {
 }
 
 async function handleGISResponse(response) {
-  const linkSheetOpen = !!document.getElementById('signin-methods-sheet');
-  // Never let an automatic/older Google prompt turn into an account link.
-  // Linking requires an explicit click on the Google button inside this sheet.
-  if (pendingGoogleLink || linkSheetOpen) {
-    if (!pendingGoogleLink || !linkSheetOpen) {
-      pendingGoogleLink = false;
-      console.info('[CODMPanda] Ignored Google response without an explicit, active link request.');
-      return;
-    }
-    try {
-      if (!response?.credential) throw new Error('Google did not return a sign-in credential.');
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error('Sign in again before linking Google.');
-      const credential = GoogleAuthProvider.credential(response.credential);
-      const result = await linkWithCredential(currentUser, credential);
-      pendingGoogleLink = false;
-      State.user = result.user;
-      toast('Google linked to this CODMPanda account.', 'success');
-      openSignInMethodsSheet();
-    } catch (error) {
-      pendingGoogleLink = false;
-      const message = providerLinkErrorMessage(error, 'google');
-      setSignInMethodsStatus(message, true);
-      console.error('[CODMPanda] Google provider linking failed:', error?.code || error);
-      toast(message, 'error', 6000);
-    }
-    return;
-  }
-
   try {
     if (!response?.credential) throw new Error('Google did not return a sign-in credential.');
     const credential = GoogleAuthProvider.credential(response.credential);
@@ -753,6 +724,36 @@ async function linkEmailPasswordToCurrentAccount() {
   }
 }
 
+async function linkGoogleToCurrentAccount() {
+  const user = auth.currentUser;
+  const button = document.getElementById('link-google-provider-btn');
+  if (!user) {
+    setSignInMethodsStatus('Your session ended. Sign in again before linking a method.', true);
+    return;
+  }
+
+  if (button) { button.disabled = true; button.innerHTML = '<span class="spinner"></span>'; }
+  setSignInMethodsStatus('Opening Google securely…');
+  try {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const result = await linkWithPopup(user, provider);
+    State.user = result.user;
+    toast('Google linked to this CODMPanda account.', 'success');
+    openSignInMethodsSheet();
+  } catch (error) {
+    const message = providerLinkErrorMessage(error, 'google');
+    setSignInMethodsStatus(message, true);
+    console.error('[CODMPanda] Google provider linking failed:', error?.code || error);
+    toast(message, 'error', 6000);
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = '<span aria-hidden="true" class="font-black text-base">G</span><span>Link Google account</span>';
+    }
+  }
+}
+
+
 function openSignInMethodsSheet() {
   const user = auth.currentUser;
   if (!user) {
@@ -763,7 +764,6 @@ function openSignInMethodsSheet() {
   const linkedProviderIds = new Set((user.providerData || []).map(provider => provider.providerId));
   const hasEmail = linkedProviderIds.has('password');
   const hasGoogle = linkedProviderIds.has('google.com');
-  pendingGoogleLink = false;
 
   openSheet(`
     <div id="signin-methods-sheet" class="space-y-4">
@@ -798,7 +798,10 @@ function openSignInMethodsSheet() {
       ${!hasGoogle ? `
         <div class="space-y-2">
           <div class="text-xs font-bold text-gray-300">Link Google</div>
-          <div id="google-link-btn" class="flex items-center justify-center min-h-[44px] w-full"></div>
+          <button id="link-google-provider-btn" type="button" class="btn-press w-full min-h-[44px] rounded-xl border border-border bg-white text-gray-800 font-semibold text-sm flex items-center justify-center gap-3 disabled:opacity-60">
+            <span aria-hidden="true" class="font-black text-base">G</span>
+            <span>Link Google account</span>
+          </button>
           <p class="text-[10px] text-gray-500">Choose the Google account you want to use for this same CODMPanda profile.</p>
         </div>
       ` : '<p class="text-xs text-green-400">Google is already linked to this account.</p>'}
@@ -815,33 +818,9 @@ function openSignInMethodsSheet() {
     });
   }
 
-  if (!hasGoogle) {
-    const renderGoogleLinkButton = async () => {
-      try {
-        await waitForGIS();
-        const target = document.getElementById('google-link-btn');
-        if (!target?.isConnected) return;
-        if (!initGIS()) throw new Error('Google Identity Services could not be initialized.');
-        const gis = window.google?.accounts?.id;
-        if (!gis?.renderButton) throw new Error('Google sign-in button is unavailable.');
-        target.addEventListener('click', () => {
-          pendingGoogleLink = true;
-        }, true);
-        gis.renderButton(target, {
-          theme: 'outline',
-          size: 'large',
-          text: 'signin_with',
-          shape: 'pill',
-          logo_alignment: 'left',
-          width: Math.min(340, Math.max(240, Math.floor(target.getBoundingClientRect().width || 340)))
-        });
-      } catch (error) {
-        pendingGoogleLink = false;
-        setSignInMethodsStatus('Google linking is unavailable right now. Check your connection and try again.', true);
-        console.error('[CODMPanda] Google link button initialization failed:', error);
-      }
-    };
-    renderGoogleLinkButton();
+  const googleLinkButton = document.getElementById('link-google-provider-btn');
+  if (googleLinkButton) {
+    googleLinkButton.addEventListener('click', linkGoogleToCurrentAccount);
   }
 }
 
