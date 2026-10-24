@@ -480,77 +480,112 @@ function readEmailAuthFields() {
 
 const GOOGLE_CLIENT_ID = "604146891375-ae5bhcm2nd2f59f0npp3en6setthjg1s.apps.googleusercontent.com";
 let gisInitialized = false;
-let gisPromptAttemptAt = 0;
+let gisPromptRequested = false;
+let gisButtonRenderRetried = false;
 
 async function waitForGIS() {
-  if (window.google?.accounts?.id) return;
-  for (let attempt = 0; attempt < 60; attempt++) {
+  const ready = () => !!(
+    window.google?.accounts?.id?.initialize &&
+    window.google?.accounts?.id?.renderButton &&
+    window.google?.accounts?.id?.prompt
+  );
+  if (ready()) return;
+  for (let attempt = 0; attempt < 120; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 100));
-    if (window.google?.accounts?.id) return;
+    if (ready()) return;
   }
   throw new Error('Google Identity Services did not load.');
 }
 
-function initGIS() {
-  if (gisInitialized) return true;
-  if (!window.google?.accounts?.id) return false;
-  window.google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: handleGISResponse,
-    auto_select: false,
-    cancel_on_tap_outside: true
-  });
-  gisInitialized = true;
-  renderOfficialGISButton();
-  console.log('[CODMPanda] Google Identity Services initialized.');
-  return true;
-}
-
-function fallbackRenderGISButton() {
-  // Never replace Google's native prompt with a custom sheet. The official GIS button
-  // is rendered directly inside the auth gate and remains available if One Tap is blocked.
-  renderOfficialGISButton();
-}
-
 function renderOfficialGISButton() {
   const target = document.getElementById('google-signin-btn');
-  if (!target || !window.google?.accounts?.id || target.dataset.gisRendered === '1') return;
-  target.replaceChildren();
-  window.google.accounts.id.renderButton(target, {
-    theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'pill', width: 280
-  });
-  target.dataset.gisRendered = '1';
-}
+  const gis = window.google?.accounts?.id;
+  if (!target || !gis?.renderButton) return false;
+  if (target.dataset.gisRendered === '1') return true;
 
-async function requestGISPrompt(manual = false) {
-  const now = Date.now();
-  if (now - gisPromptAttemptAt < 1800) return;
-  gisPromptAttemptAt = now;
+  target.style.display = 'flex';
+  target.style.alignItems = 'center';
+  target.style.justifyContent = 'center';
+  target.style.minHeight = '44px';
+  target.style.width = '100%';
+  target.replaceChildren();
+
   try {
-    await waitForGIS();
-    if (!initGIS()) throw new Error('Google Identity Services could not be initialized.');
-    window.google.accounts.id.prompt(function(notification) {
-      if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-        console.warn('[CODMPanda] GIS One Tap is not currently displayable.');
-        if (manual) fallbackRenderGISButton();
-      }
-      if (notification.isSkippedMoment && notification.isSkippedMoment()) {
-        console.info('[CODMPanda] GIS One Tap was skipped by the browser or user.');
-      }
+    // Render Google's own light/white button; never substitute custom button markup.
+    gis.renderButton(target, {
+      theme: 'outline',
+      size: 'large',
+      text: 'signin_with',
+      shape: 'rectangular',
+      logo_alignment: 'left',
+      width: 280
     });
+    target.dataset.gisRendered = '1';
+
+    // Recover once if GIS returned before its button iframe was attached to the DOM.
+    window.setTimeout(() => {
+      if (!target.isConnected || target.querySelector('iframe, [role="button"]') || gisButtonRenderRetried) return;
+      gisButtonRenderRetried = true;
+      target.removeAttribute('data-gis-rendered');
+      target.replaceChildren();
+      try {
+        gis.renderButton(target, {
+          theme: 'outline',
+          size: 'large',
+          text: 'signin_with',
+          shape: 'rectangular',
+          logo_alignment: 'left',
+          width: 280
+        });
+        target.dataset.gisRendered = '1';
+      } catch (error) {
+        target.removeAttribute('data-gis-rendered');
+        console.error('[CODMPanda] Google button retry failed:', error);
+      }
+    }, 900);
+    return true;
   } catch (error) {
-    console.error('[CODMPanda] GIS prompt failed:', error);
-    if (manual) {
-      const message = authErrorMessage(error, 'google');
-      setEmailAuthStatus(message, true);
-      toast(message, 'error', 5000);
-    }
+    target.removeAttribute('data-gis-rendered');
+    console.error('[CODMPanda] Google button render failed:', error);
+    return false;
   }
 }
 
-async function handleSignIn() {
-  setEmailAuthStatus('');
-  await requestGISPrompt(true);
+function initGIS() {
+  const gis = window.google?.accounts?.id;
+  if (!gis?.initialize || !gis?.renderButton || !gis?.prompt) return false;
+
+  if (!gisInitialized) {
+    gis.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGISResponse,
+      auto_select: false,
+      cancel_on_tap_outside: true,
+      use_fedcm_for_button: true
+    });
+    gisInitialized = true;
+    console.log('[CODMPanda] Google Identity Services initialized for One Tap and the official button.');
+  }
+
+  renderOfficialGISButton();
+  return true;
+}
+
+async function requestGISPrompt() {
+  try {
+    await waitForGIS();
+    if (!initGIS()) throw new Error('Google Identity Services could not be initialized.');
+    // The browser controls FedCM's prompt presentation. This call never starts an OAuth redirect.
+    if (gisPromptRequested) return;
+    gisPromptRequested = true;
+    window.google.accounts.id.prompt(function(notification) {
+      if (notification?.isSkippedMoment?.()) {
+        console.info('[CODMPanda] Google One Tap was skipped by the browser or user.');
+      }
+    });
+  } catch (error) {
+    console.error('[CODMPanda] Google One Tap initialization failed; official button remains the only supported fallback:', error);
+  }
 }
 
 async function handleGISResponse(response) {
@@ -627,7 +662,6 @@ async function handlePasswordReset() {
   }
 }
 
-window.handleSignIn = handleSignIn;
 window.initGIS = initGIS;
 window.handleGISResponse = handleGISResponse;
 window.requestGISPrompt = requestGISPrompt;
@@ -951,7 +985,6 @@ async function toggleNotif(key, el) {
 }
 
 window.switchTab = switchTab;
-window.handleSignIn = handleSignIn;
 window.handleSignOut = handleSignOut;
 window.toggleNotif = toggleNotif;
 window.showNotifications = showNotifications;

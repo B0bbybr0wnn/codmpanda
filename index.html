@@ -196,77 +196,87 @@ input, textarea { touch-action: auto; }
 .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
-/* Refined email authentication controls — deliberately scoped away from Google GIS. */
+/* Compact, flat email authentication controls. Google GIS owns its button UI. */
 #auth-gate #email-auth-form {
-  max-width: 372px !important;
-  gap: 11px !important;
-  margin-bottom: 16px !important;
-  padding: 16px !important;
-  border: 1px solid #25252b !important;
-  border-radius: 18px !important;
-  background: linear-gradient(145deg, rgba(24,24,28,.94), rgba(12,12,14,.98)) !important;
-  box-shadow: 0 12px 30px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.025);
+  max-width: 360px !important;
+  gap: 6px !important;
+  margin-bottom: 9px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 #auth-gate #email-auth-form > label {
   color: #b8b8c0 !important;
-  font-size: 10px !important;
+  font-size: 9px !important;
   font-weight: 800 !important;
-  letter-spacing: .09em !important;
+  letter-spacing: .08em !important;
 }
 #auth-gate #email-auth-form input[type="email"],
 #auth-gate #email-auth-form input[type="password"] {
-  min-height: 46px !important;
-  padding: 12px 13px !important;
+  min-height: 40px !important;
+  padding: 9px 11px !important;
   border: 1px solid #303038 !important;
-  border-radius: 11px !important;
+  border-radius: 7px !important;
   background: #101014 !important;
   color: #f7f7f8 !important;
   font-size: 13px !important;
-  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease !important;
+  box-shadow: none !important;
+  transition: border-color .15s ease, background .15s ease !important;
 }
 #auth-gate #email-auth-form input[type="email"]:focus,
 #auth-gate #email-auth-form input[type="password"]:focus {
   border-color: #ff6b00 !important;
   background: #121216 !important;
-  box-shadow: 0 0 0 3px rgba(255,107,0,.12) !important;
+  outline: none !important;
 }
 #auth-gate #email-signin-btn {
-  min-height: 46px !important;
-  margin-top: 2px !important;
-  border-radius: 11px !important;
-  box-shadow: 0 7px 18px rgba(255,107,0,.14) !important;
-  transition: transform .15s ease, filter .15s ease, box-shadow .15s ease !important;
+  min-height: 40px !important;
+  padding: 10px 14px !important;
+  margin-top: 0 !important;
+  border-radius: 7px !important;
+  box-shadow: none !important;
+  font-size: 13px !important;
+  transition: filter .15s ease, background .15s ease !important;
 }
-#auth-gate #email-signin-btn:hover { filter: brightness(1.06); box-shadow: 0 9px 22px rgba(255,107,0,.2) !important; }
+#auth-gate #email-signin-btn:hover { filter: brightness(1.06); box-shadow: none !important; }
 #auth-gate #email-create-btn,
 #auth-gate #email-reset-btn {
-  min-height: 40px !important;
-  border-radius: 10px !important;
+  min-height: 34px !important;
+  padding: 7px 8px !important;
+  border-radius: 7px !important;
   font-size: 11px !important;
-  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease !important;
+  box-shadow: none !important;
+  transition: background .15s ease, border-color .15s ease, color .15s ease !important;
 }
 #auth-gate #email-create-btn {
-  background: #1b1b20 !important;
-  border-color: #383840 !important;
-  color: #f0f0f2 !important;
+  background: #151515 !important;
+  border-color: #333 !important;
+  color: #ddd !important;
 }
 #auth-gate #email-reset-btn {
-  border-color: #383840 !important;
+  background: transparent !important;
+  border-color: #333 !important;
   color: #ffad73 !important;
 }
-#auth-gate #email-create-btn:hover { background: #24242a !important; border-color: #55555f !important; }
-#auth-gate #email-reset-btn:hover { background: rgba(255,107,0,.07) !important; border-color: #8c4a20 !important; }
-#auth-gate #email-create-btn:active,
-#auth-gate #email-reset-btn:active,
-#auth-gate #email-signin-btn:active { transform: translateY(1px); }
+#auth-gate #email-create-btn:hover { background: #202024 !important; border-color: #4a4a52 !important; }
+#auth-gate #email-reset-btn:hover { background: rgba(255,107,0,.06) !important; border-color: #7b4221 !important; }
 #auth-gate #email-create-btn:focus-visible,
 #auth-gate #email-reset-btn:focus-visible,
 #auth-gate #email-signin-btn:focus-visible {
-  outline: 2px solid rgba(255,153,83,.9);
+  outline: 2px solid rgba(255,153,83,.85);
   outline-offset: 2px;
 }
+#auth-gate #google-signin-btn {
+  width: 100% !important;
+  min-height: 44px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
 @media (max-width: 380px) {
-  #auth-gate #email-auth-form { padding: 13px !important; }
+  #auth-gate #email-auth-form { gap: 5px !important; }
 }
 
 </style>
@@ -306,9 +316,9 @@ input, textarea { touch-action: auto; }
       </div>
     </form>
 
-    <div style="font-size:10px;color:#666;font-weight:800;letter-spacing:.1em;margin:2px 0 12px;">OR CONTINUE WITH</div>
-    <div id="google-signin-btn" style="display:flex;justify-content:center;min-height:44px;" aria-label="Sign in with Google"></div>
-    <div style="font-size:10px;color:#555;margin-top:18px;max-width:280px;line-height:1.5;">By signing in, you agree to our Terms of Service and Privacy Policy.</div>
+    <div style="font-size:10px;color:#666;font-weight:800;letter-spacing:.1em;margin:0 0 5px;">OR CONTINUE WITH</div>
+    <div id="google-signin-btn" style="display:flex;align-items:center;justify-content:center;min-height:44px;width:100%;" aria-label="Sign in with Google"></div>
+    <div style="font-size:10px;color:#555;margin-top:9px;max-width:280px;line-height:1.45;">By signing in, you agree to our Terms of Service and Privacy Policy.</div>
   </div>
 
   <!-- ONBOARDING -->
@@ -382,7 +392,7 @@ input, textarea { touch-action: auto; }
 
 </div>
 
-<script type="module" src="/app.js?v=20261024-auth-pro-obsidian-v9"></script>
+<script type="module" src="/app.js?v=20261024-auth-pro-obsidian-v10"></script>
 <script type="module" src="/badges.js?v=20261024-obsidian-spike-v4"></script>
 <script type="module" src="/reliability-fixes.js?v=20261023-reliability-v4"></script>
 
