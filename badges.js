@@ -18,12 +18,12 @@
 
     document.querySelectorAll('span').forEach(function(el){
       const label = (el.textContent || '').trim();
-      if (/^(?:👑\\s*)?FOUNDER$/i.test(label)) {
+      if (/^(?:👑\s*)?FOUNDER$/i.test(label)) {
         el.remove();
         return;
       }
       // Legacy admin-post Founder mark is a tiny gold crown-only badge beside the name.
-      if (label === '👑' && /text-\\[9px\\]/.test(String(el.className || '')) &&
+      if (label === '👑' && /text-\[9px\]/.test(String(el.className || '')) &&
           /(?:bg-gradient-to-r|bg-gold)/.test(String(el.className || ''))) {
         el.remove();
       }
