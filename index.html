@@ -297,7 +297,7 @@ input, textarea { touch-action: auto; }
 </div>
 
 <script type="module" src="/app.js?v=20261023-strict-lobby-post-badge-v22"></script>
-<script type="module" src="/badges.js?v=20261023-premium-badges-v2"></script>
+<script type="module" src="/badges.js?v=20261024-founder-feed-clean-v1"></script>
 <script type="module" src="/reliability-fixes.js?v=20261023-reliability-v4"></script>
 
 <script>
@@ -320,5 +320,38 @@ if ('serviceWorker' in navigator) {
   #sheet-container .cp-post-detail-sheet #comment-input { min-width:0!important; }
   .mention-dropdown { z-index:2147483601!important; }
 </style>
+
+<style id="cp-home-feed-full-bleed">
+  /* Give the Home feed the full content width, like a native social timeline. */
+  #home-feed {
+    margin-left: -1rem !important;
+    margin-right: -1rem !important;
+    min-width: 0 !important;
+  }
+  #home-feed > .home-card,
+  #home-feed .home-card {
+    background: transparent !important;
+    border: 0 !important;
+    border-bottom: 1px solid #242424 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin-bottom: 0 !important;
+    min-width: 0 !important;
+  }
+  #home-feed > .bg-card {
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin-bottom: 0 !important;
+  }
+  #home-feed .home-card img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+  }
+</style>
+
 </body>
 </html>
