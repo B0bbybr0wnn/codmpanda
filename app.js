@@ -4938,7 +4938,7 @@ function renderLeaderboard() {
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
-                <span data-uid="${esc(u.uid || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</span>
+                <span data-uid="${esc(u.uid || u.id || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</span>
                 ${isMe ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-primary text-white font-black">YOU</span>' : ''}
               </div>
               <div class="text-[10px] text-gray-500 truncate">${esc(u.rank)} · ${esc(u.region)}</div>
@@ -6850,7 +6850,7 @@ async function renderRequestsList(body, incomingReqs, outgoingReqs) {
           ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+          <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</div>
           <div class="text-[10px] text-yellow-400">Pending...</div>
         </div>
         <button class="cancel-req-btn w-9 h-9 rounded-lg bg-cardAlt border border-border flex items-center justify-center" data-uid="${u.id}">
