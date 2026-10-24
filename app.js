@@ -490,7 +490,9 @@ async function waitForGIS() {
     window.google?.accounts?.id?.prompt
   );
   if (ready()) return;
-  for (let attempt = 0; attempt < 120; attempt++) {
+  // Mobile networks can load the GIS library slowly; wait long enough to avoid
+  // leaving the official button container empty after a brief load delay.
+  for (let attempt = 0; attempt < 300; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 100));
     if (ready()) return;
   }
@@ -665,6 +667,13 @@ async function handlePasswordReset() {
 window.initGIS = initGIS;
 window.handleGISResponse = handleGISResponse;
 window.requestGISPrompt = requestGISPrompt;
+
+// Keep retrying the official GIS button if the async Google library arrives after app.js.
+// This only renders Google's button; the automatic One Tap prompt remains tied to signed-out auth state.
+(function bootstrapOfficialGISButton(attempt = 0) {
+  if (initGIS() && document.getElementById('google-signin-btn')?.dataset.gisRendered === '1') return;
+  if (attempt < 240) window.setTimeout(() => bootstrapOfficialGISButton(attempt + 1), 250);
+})( );
 window.handleEmailSignIn = handleEmailSignIn;
 window.handleEmailSignUp = handleEmailSignUp;
 window.handlePasswordReset = handlePasswordReset;

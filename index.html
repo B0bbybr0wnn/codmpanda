@@ -276,7 +276,19 @@ input, textarea { touch-action: auto; }
   justify-content: center !important;
 }
 @media (max-width: 380px) {
-  #auth-gate #email-auth-form { gap: 5px !important; }
+  /* Compact, flat auth layout: preserve vertical space on mobile. */
+#auth-gate { padding-top: calc(12px + env(safe-area-inset-top)) !important; padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important; }
+#auth-gate > img { width: 72px !important; height: 72px !important; margin-bottom: 10px !important; box-shadow: 0 0 24px rgba(255,107,0,.3) !important; }
+#auth-gate > div:first-of-type { margin-bottom: 3px !important; }
+#auth-gate > div:nth-of-type(2) { margin-bottom: 10px !important; }
+#auth-gate #email-auth-form { gap: 4px !important; margin-bottom: 7px !important; }
+#auth-gate #email-auth-form input[type="email"],
+#auth-gate #email-auth-form input[type="password"] { min-height: 38px !important; padding: 8px 10px !important; border-radius: 6px !important; }
+#auth-gate #email-signin-btn { min-height: 38px !important; padding: 9px 12px !important; border-radius: 6px !important; }
+#auth-gate #email-create-btn,
+#auth-gate #email-reset-btn { min-height: 32px !important; padding: 6px 8px !important; border-radius: 6px !important; }
+#auth-gate #google-signin-btn { min-height: 44px !important; margin: 0 auto !important; }
+#auth-gate > div:last-of-type { margin-top: 6px !important; }
 }
 
 </style>
@@ -392,7 +404,7 @@ input, textarea { touch-action: auto; }
 
 </div>
 
-<script type="module" src="/app.js?v=20261024-auth-pro-obsidian-v10"></script>
+<script type="module" src="/app.js?v=20261024-auth-pro-obsidian-v11"></script>
 <script type="module" src="/badges.js?v=20261024-obsidian-spike-v4"></script>
 <script type="module" src="/reliability-fixes.js?v=20261023-reliability-v4"></script>
 
