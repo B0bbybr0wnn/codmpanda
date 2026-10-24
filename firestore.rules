@@ -58,6 +58,17 @@ service cloud.firestore {
         && (!changed.hasAny(['profileFrame']) || isAllowedAvatarFrame(request.resource.data.get('profileFrame', 'none'), allowPro));
     }
 
+    function watchlistUpdateAllowed() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let newList = request.resource.data.get('metaWatchlist', []);
+      let oldList = resource.data.get('metaWatchlist', []);
+      return !changed.hasAny(['metaWatchlist'])
+        || (newList is list
+            && (newList.size() <= 3
+                || (isProUserData(resource.data) && newList.size() <= 100)
+                || newList.size() < oldList.size()));
+    }
+
     // ---------- USERS ----------
     match /users/{userId} {
       allow get, list: if isSignedIn();
@@ -74,14 +85,7 @@ service cloud.firestore {
             && !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['banned','banReason','bannedAt','bannedBy','isPro','isAdmin','role','proExpiresAt','proStatus','verified','verifiedAt'])
             && changedProfileFramesAllowed()
-            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['metaWatchlist'])
-                || (request.resource.data.get('metaWatchlist', []) is list
-                    && (
-                      request.resource.data.get('metaWatchlist', []).size() <= 3
-                      || ((resource.data.get('isPro', false) == true || resource.data.get('proStatus', '') == 'active')
-                          && request.resource.data.get('metaWatchlist', []).size() <= 100)
-                      || request.resource.data.get('metaWatchlist', []).size() < resource.data.get('metaWatchlist', []).size()
-                    ))))
+            && watchlistUpdateAllowed())
         || (isSignedIn()
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(['friendRequests','friendRequestsSent','friends']));
