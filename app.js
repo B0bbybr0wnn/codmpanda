@@ -678,6 +678,9 @@ function providerLinkErrorMessage(error, flow) {
   if (code === 'auth/requires-recent-login') {
     return 'For security, sign out and sign back in, then try linking again.';
   }
+  if (['auth/popup-blocked', 'auth/cancelled-popup-request', 'auth/popup-closed-by-user'].includes(code)) {
+    return 'Google linking was cancelled or blocked. Allow popups for this site and try again.';
+  }
   return authErrorMessage(error, flow);
 }
 
