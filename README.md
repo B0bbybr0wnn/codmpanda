@@ -78,6 +78,7 @@ Firebase Console → Authentication → Settings → Authorized domains. Confirm
 - [ ] Publish production rules from firestore.rules
 - [ ] Add `bobby-clone.codmpanda.pages.dev` and `codmpanda.pages.dev` to Auth authorized domains
 - [ ] Enable the Email/Password provider under Authentication → Sign-in method
+- [ ] Confirm Firebase account linking is set to One account per email address unless a safe, explicit account-linking flow is added
 - [ ] Fill in ADMIN_UID in index.html
 
 ---
