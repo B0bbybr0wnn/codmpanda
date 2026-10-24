@@ -487,7 +487,7 @@ async function handleSignIn() {
     toast('Signed in with Google!', 'success');
   } catch (error) {
     const code = String(error?.code || '');
-    if (['auth/popup-blocked', 'auth/popup-unsupported', 'auth/operation-not-supported-in-this-environment'].includes(code)) {
+    if (['auth/popup-blocked', 'auth/popup-closed-by-user', 'auth/cancelled-popup-request', 'auth/popup-unsupported', 'auth/operation-not-supported-in-this-environment'].includes(code)) {
       try {
         // Keep OAuth available in browsers that cannot open a popup.
         await signInWithRedirect(auth, provider);
