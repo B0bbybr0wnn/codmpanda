@@ -21689,10 +21689,6 @@ function renderVerifiedBadge(user) {
   return '<span class="verified-badge cp-verified-blue" title="Verified Creator" aria-label="Verified Creator" role="img"><svg class="cp-verified-emblem" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 1.2 14.6 2.6 17.5 2.4 18.7 5 21.3 6.5 21 9.4 22.5 12 21 14.6 21.3 17.5 18.7 19 17.5 21.6 14.6 21.4 12 22.8 9.4 21.4 6.5 21.6 5.3 19 2.7 17.5 3 14.6 1.5 12 3 9.4 2.7 6.5 5.3 5 6.5 2.4 9.4 2.6Z" fill="#1877F2"/><path d="M7.2 12.1 10.2 15.1 16.9 8.7" fill="none" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 }
 
-function renderProBadge(user) {
-  return window.CODMRenderProBadge?.(user) || '';
-}
-
 // ============================================
 // PART 3: PROFILE THEMES
 // ============================================
