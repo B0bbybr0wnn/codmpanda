@@ -1083,7 +1083,7 @@ async function joinLobby(lobbyId) {
               ${lobby.avatar ? `<img src="${esc(lobby.avatar)}" class="w-full h-full object-cover" />` : getInitials(lobby.ign)}
             </div>
             <div class="min-w-0">
-              <div class="text-xs font-bold truncate">${esc(lobby.ign)}'s room</div>
+              <div class="text-xs font-bold truncate"><span data-uid="${esc(lobby.uid || '')}" class="font-bold">${esc(lobby.ign)}</span>'s room</div>
               <div class="text-[10px] text-gray-500">${esc(lobby.mode)} · ${esc(lobby.region)}</div>
             </div>
           </div>
@@ -9456,7 +9456,7 @@ async function openBracketView(tournamentId) {
         <div class="bg-gradient-to-br from-primary/10 to-black border border-primary/30 rounded-2xl p-4">
           <div class="text-base font-black mb-1">${esc(t2.name)}</div>
           <div class="text-[10px] text-gray-500">${esc(t2.mode)} · ${esc(t2.region)} · ${(t2.teams || []).length} teams</div>
-          ${t2.status === 'completed' ? `<div class="mt-2 text-xs font-bold text-gold">🏆 Winner: ${esc(t2.winner?.ign || 'TBD')}</div>` : ''}
+          ${t2.status === 'completed' ? `<div class="mt-2 text-xs font-bold text-gold">🏆 Winner: <span data-uid="${esc(t2.winner?.uid || '')}" class="font-bold">${esc(t2.winner?.ign || 'TBD')}</span></div>` : ''}
         </div>
 
         <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2" id="round-tabs">
@@ -21299,7 +21299,7 @@ function openVoiceRoom(lobby) {
           ${lobby.avatar ? `<img src="${esc(lobby.avatar)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(lobby.ign)}
         </div>
 
-        <div style="font-size: 22px; font-weight: 900; color: #fff; margin-bottom: 6px;">${esc(lobby.ign)}'s room</div>
+        <div style="font-size: 22px; font-weight: 900; color: #fff; margin-bottom: 6px;"><span data-uid="${esc(lobby.uid || '')}" style="font-weight:900;">${esc(lobby.ign)}</span>'s room</div>
         <div style="font-size: 12px; color: #888;">${esc(lobby.note || lobby.mode + ' squad')}</div>
 
         <div style="margin-top: 20px; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 20px; background: #111; border: 1px solid #222;">
@@ -22589,7 +22589,7 @@ function checkCustomLobbyUrl() {
             <div class="text-center space-y-4 py-4">
               <div class="text-5xl">🎮</div>
               <div>
-                <h3 class="text-lg font-black mb-1">${esc(lobby.ign)}'s Lobby</h3>
+                <h3 class="text-lg font-black mb-1"><span data-uid="${esc(lobby.uid || '')}" class="font-black">${esc(lobby.ign)}</span>'s Lobby</h3>
                 <div class="text-xs text-gray-400">${esc(lobby.mode)} · ${esc(lobby.region)} · ${lobby.players || 1}/5 players</div>
               </div>
               ${lobby.note ? `<div class="bg-card border border-border rounded-xl p-3 text-xs text-gray-300">${esc(lobby.note)}</div>` : ''}
@@ -27474,13 +27474,13 @@ if (!window.__cpLobbyExpirationSweep) {
 }
 
 
-/* CODMPanda targeted UI/UX repair — gold verification, compact post detail, strict lobby expiry. */
+/* CODMPanda targeted UI/UX repair — blue verification, compact post detail, strict lobby expiry. */
 (function cpFinalRequestedUiFixes(){
   if (window.__cpFinalRequestedUiFixes) return;
   window.__cpFinalRequestedUiFixes = true;
 
-  // The verified check is a single gold check. Founder/Pro labels remain separate labels.
-  const badgeStyleId = 'cp-final-gold-verified-badge';
+  // Keep one blue verification mark; Founder/Pro labels remain separate labels.
+  const badgeStyleId = 'cp-final-verified-badge-layout';
   if (!document.getElementById(badgeStyleId)) {
     const style = document.createElement('style');
     style.id = badgeStyleId;
@@ -27560,7 +27560,7 @@ if (!window.__cpLobbyExpirationSweep) {
 })();
 
 
-/* Targeted UI hotfix: one gold verification mark, compact post header, clean full-screen image viewer. */
+/* Targeted UI hotfix: one blue verification mark, compact post header, clean full-screen image viewer. */
 (function cpTargetedUiHotfix(){
   renderVerifiedBadge = function(user) {
     if (!user || user.verified !== true) return '';
@@ -27664,19 +27664,19 @@ if (!window.__cpLobbyExpirationSweep) {
         el.classList.contains('cp-v4-clip-avatar')) return false;
     const tag = el.tagName;
     if (el.classList.contains('user-name-link')) return true;
-    return (tag === 'SPAN' || tag === 'DIV' || tag === 'A') &&
-      /(?:^|\s)(?:font-bold|font-black|font-semibold)(?:\s|$)/.test(String(el.className || '')) &&
-      !el.querySelector('img,button,input,textarea,select') &&
-      !!(el.textContent || '').trim();
+    const boldClass = /font-bold|font-black|font-semibold/.test(String(el.className || ''));
+    const inlineWeight = Number.parseInt(el.style?.fontWeight || '', 10) >= 600;
+    return (tag === 'SPAN' || tag === 'DIV' || tag === 'A') && (boldClass || inlineWeight) &&
+      !el.querySelector('img,button,input,textarea,select') && !!(el.textContent || '').trim();
   }
-
   function isLegacyProMarker(mark) {
     if (!mark || mark.matches('button,input,textarea,select') || mark.classList?.contains('cp-pro-spike-badge')) return false;
     if (mark.hasAttribute?.('data-pro-badge') || (mark.getAttribute?.('data-badge') || '').toLowerCase() === 'pro') return true;
-    const label = String(mark.textContent || '').trim().replace(/^👑\s*/, '').trim().toUpperCase();
-    return label === 'PRO' && /badge|rounded|bg-|gradient|px-|text-\[9px\]/i.test(String(mark.className || ''));
+    const label = String(mark.textContent || '').trim().replace(/^👑 */, '').trim().toUpperCase();
+    const classes = String(mark.className || '');
+    const inlineStyles = String(mark.getAttribute?.('style') || '');
+    return label === 'PRO' && (/badge|rounded|bg-|gradient|px-|text-/i.test(classes) || /background|padding|font-size/i.test(inlineStyles));
   }
-
   function canonicalizeVerified(mark) {
     if (!mark) return;
     mark.classList.remove('cp-gold-verified');
