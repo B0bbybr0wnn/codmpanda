@@ -57,8 +57,7 @@ const APP_VERSION = "1.0.0";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const provider = new GoogleAuthProvider();
-provider.setCustomParameters({ prompt: 'select_account' });
+// Google sign-in is handled by GIS and exchanged for a Firebase credential.
 
 // ============================================
 // GLOBAL STATE
@@ -518,7 +517,7 @@ function renderOfficialGISButton() {
       theme: 'outline',
       size: 'large',
       text: 'signin_with',
-      shape: 'rectangular',
+      shape: 'pill',
       logo_alignment: 'left',
       width: 280
     });
@@ -535,7 +534,7 @@ function renderOfficialGISButton() {
           theme: 'outline',
           size: 'large',
           text: 'signin_with',
-          shape: 'rectangular',
+          shape: 'pill',
           logo_alignment: 'left',
           width: 280
         });
@@ -561,7 +560,9 @@ function initGIS() {
     gis.initialize({
       client_id: GOOGLE_CLIENT_ID,
       callback: handleGISResponse,
+      ux_mode: 'popup',
       auto_select: false,
+      button_auto_select: false,
       cancel_on_tap_outside: true,
       use_fedcm_for_button: true
     });
