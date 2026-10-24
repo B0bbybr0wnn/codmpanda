@@ -3379,7 +3379,7 @@ async function showAdminUsers() {
               ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-sm font-bold truncate flex items-center gap-1.5">
+              <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate flex items-center gap-1.5">
                 ${esc(u.ign || 'Unknown')}
                 ${u.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
               </div>
@@ -3466,7 +3466,7 @@ function handleDeepLinks() {
             <div class="space-y-3">
               ${v.imageUrl ? `<img src="${esc(v.imageUrl)}" class="w-full rounded-xl" />` : ''}
               <div class="text-lg font-black">${esc(v.gunName)}</div>
-              <div class="text-xs text-gray-500">${esc(v.type)} · by ${esc(v.ign || 'Unknown')}</div>
+              <div class="text-xs text-gray-500">${esc(v.type)} · by <span data-uid="${esc(v.uid || v.userId || v.ownerUid || '')}" class="text-white font-bold">${esc(v.ign || 'Unknown')}</span></div>
               ${v.gunsmithCode ? `
                 <div class="bg-cardAlt border border-border rounded-xl p-3">
                   <div class="text-[10px] text-gray-500 mb-1">Gunsmith Code</div>
@@ -4497,7 +4497,7 @@ showAdminUsers = async function() {
                 ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-bold truncate flex items-center gap-1.5">
+                <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate flex items-center gap-1.5">
                   ${esc(u.ign || 'Unknown')}
                   ${u.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
                 </div>
@@ -6534,7 +6534,7 @@ async function showAdminAnalytics() {
                       ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
                     </div>
                     <div class="flex-1 min-w-0">
-                      <div class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
+                      <div data-uid="${esc(u.id || u.uid || '')}" class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
                     </div>
                     <div class="text-xs font-black text-primary">${u.approvedCount}</div>
                   </div>
@@ -6584,7 +6584,7 @@ async function showAdminAnalytics() {
                     ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
                   </div>
                   <div class="flex-1 min-w-0">
-                    <div class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
+                    <div data-uid="${esc(u.id || u.uid || '')}" class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
                     <div class="text-[10px] text-gray-500">${esc(u.region || 'Unknown')}</div>
                   </div>
                   <div class="text-[10px] text-gray-500">${timeAgo({ seconds: Math.floor(u.createdAt / 1000) })}</div>
@@ -6768,7 +6768,7 @@ async function renderFriendsList(body, friendUids) {
         ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
       </div>
       <div class="flex-1 min-w-0">
-        <div class="text-sm font-bold truncate flex items-center gap-1.5">
+        <div data-uid="${esc(f.id || f.uid || '')}" class="text-sm font-bold truncate flex items-center gap-1.5">
           ${esc(f.ign || 'Unknown')}
           ${f.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
         </div>
@@ -11323,7 +11323,7 @@ function renderFriendActivityCard(f, status) {
         <div class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${dotColor} border-2 border-card"></div>
       </div>
       <div class="flex-1 min-w-0">
-        <div class="text-sm font-bold truncate flex items-center gap-1.5">
+        <div data-uid="${esc(f.id || f.uid || '')}" class="text-sm font-bold truncate flex items-center gap-1.5">
           ${esc(f.ign || 'Unknown')}
           ${f.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
         </div>
@@ -13152,7 +13152,7 @@ async function performGlobalSearch(searchTerm) {
         ${matches.posts.slice(0, 6).map(post => `
           <div class="flex items-start gap-3 p-3 bg-card border border-border rounded-xl mb-2 cursor-pointer search-result-post" data-postid="${post.id}">
             <div class="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center flex-shrink-0"><i data-lucide="file-text" class="w-4 h-4 text-primary"></i></div>
-            <div class="flex-1 min-w-0"><div class="text-xs font-bold">${esc(post.ign || 'CODMPanda player')}</div><div class="text-xs text-gray-400 line-clamp-2">${esc(post.text || '')}</div></div>
+            <div class="flex-1 min-w-0"><div data-uid="${esc(post.uid || post.userId || '')}" class="text-xs font-bold">${esc(post.ign || 'CODMPanda player')}</div><div class="text-xs text-gray-400 line-clamp-2">${esc(post.text || '')}</div></div>
           </div>
         `).join('')}
       ` : ''}
@@ -16859,7 +16859,7 @@ async function renderMessagesTabFast() {
               </div>
               <div style="flex: 1; min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
-                  <span style="font-size: 14px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(f.ign || 'Unknown')}</span>
+                  <span data-uid="${esc(f.id || f.uid || '')}" style="font-size: 14px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(f.ign || 'Unknown')}</span>
                   ${f.isPro ? '<span style="font-size: 8px; padding: 2px 5px; border-radius: 4px; background: #FFD700; color: #000; font-weight: 900;">PRO</span>' : ''}
                 </div>
                 <div style="font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(preview)}</div>
@@ -17446,7 +17446,7 @@ function openVaultDetail(vaultId) {
         <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
           ${vault.avatar ? `<img src="${esc(vault.avatar)}" class="w-full h-full object-cover" />` : getInitials(vault.ign || '?')}
         </div>
-        <span class="text-gray-400">by <span class="text-white font-bold">${esc(vault.ign || 'Unknown')}</span> · ${timeAgo(vault.createdAt)}</span>
+        <span class="text-gray-400">by <span data-uid="${esc(vault.uid || vault.userId || vault.ownerUid || '')}" class="text-white font-bold">${esc(vault.ign || 'Unknown')}</span> · ${timeAgo(vault.createdAt)}</span>
       </div>
 
       <!-- Content -->
@@ -20044,7 +20044,7 @@ function openWritePostSheet() {
           ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" class="w-full h-full object-cover" />` : getInitials(State.profile?.ign || '?')}
         </div>
         <div>
-          <div class="text-sm font-bold">${esc(State.profile?.ign || 'You')}</div>
+          <div data-uid="${esc(State.profile?.uid || State.user?.uid || '')}" class="text-sm font-bold">${esc(State.profile?.ign || 'You')}</div>
           <div class="text-[10px] text-gray-500">${isPro ? '👑 Pro · Unlimited' : 'Free · 500 chars'}</div>
         </div>
       </div>
