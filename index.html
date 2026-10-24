@@ -65,7 +65,6 @@ tailwind.config = {
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <style>
 :root {
@@ -217,12 +216,27 @@ input, textarea { touch-action: auto; }
     <div style="font-size:24px;font-weight:900;margin-bottom:6px;">
       <span style="color:#FF6B00;">CODM</span><span style="color:#fff;">Panda</span>
     </div>
-    <div style="font-size:12px;color:#888;margin-bottom:32px;max-width:280px;line-height:1.5;">The ultimate companion for Call of Duty Mobile players</div>
+    <div style="font-size:12px;color:#888;margin-bottom:18px;max-width:280px;line-height:1.5;">The ultimate companion for Call of Duty Mobile players</div>
+
+    <form id="email-auth-form" style="width:100%;max-width:360px;text-align:left;display:grid;gap:9px;margin-bottom:14px;">
+      <label for="auth-email" style="font-size:10px;color:#aaa;font-weight:800;letter-spacing:.08em;">EMAIL ADDRESS</label>
+      <input id="auth-email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required />
+      <label for="auth-password" style="font-size:10px;color:#aaa;font-weight:800;letter-spacing:.08em;">PASSWORD</label>
+      <input id="auth-password" name="password" type="password" autocomplete="current-password" placeholder="At least 6 characters" minlength="6" required />
+      <div id="email-auth-status" role="status" aria-live="polite" style="min-height:14px;font-size:11px;line-height:1.4;color:#ff8a80;"></div>
+      <button id="email-signin-btn" type="submit" class="btn-press" style="padding:13px 18px;border-radius:12px;background:#FF6B00;border:1px solid #FF6B00;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Sign in with Email</button>
+      <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;">
+        <button id="email-create-btn" type="button" class="btn-press" style="flex:1;padding:10px 8px;border-radius:12px;background:#151515;border:1px solid #333;color:#ddd;font-weight:700;font-size:12px;cursor:pointer;">Create account</button>
+        <button id="email-reset-btn" type="button" class="btn-press" style="flex:1;padding:10px 8px;border-radius:12px;background:transparent;border:1px solid #333;color:#FF9A53;font-weight:700;font-size:12px;cursor:pointer;">Forgot password?</button>
+      </div>
+    </form>
+
+    <div style="font-size:10px;color:#666;font-weight:800;letter-spacing:.1em;margin:2px 0 12px;">OR CONTINUE WITH</div>
     <button id="google-signin-btn" class="btn-press" style="padding:14px 32px;border-radius:14px;background:#fff;border:none;color:#000;font-weight:800;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:10px;">
-      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.7 1.2 9.2 3.6l6.9-6.9C35.6 2.5 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l8 6.2C12.5 13.5 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.6 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.5 3-2.2 5.5-4.7 7.2l7.3 5.7c4.3-3.9 6.8-9.7 6.8-17.4z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-2.9-.8-4.6s.3-3.2.8-4.6l-8-6.2C1 16.5 0 20.1 0 24s1 7.5 2.6 10.8l8-6.2z"/><path fill="#34A853" d="M24 48c6.2 0 11.5-2 15.3-5.6l-7.3-5.7c-2 1.4-4.6 2.2-8 2.2-6.2 0-11.5-4-13.4-9.9l-8 6.2C6.5 42.6 14.6 48 24 48z"/></svg>
-      Sign in with Google
+      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.7 1.2 9.2 3.6l6.9-6.9C35.6 2.5 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l8 6.2C12.5 13.5 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.6 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.5 3-2.2 5.5-4.7 7.2l7.3 5.7c4.3-3.9 6.8-9.7 6.8-17.4z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-2.9-.8-4.6s.3-3.2.8-4.6l-8-6.2C1 16.5 0 20.1 2.6 34.8l8-6.2z"/><path fill="#34A853" d="M24 48c6.2 0 11.5-2 15.3-5.6l-7.3-5.7c-2 1.4-4.6 2.2-8 2.2-6.2 0-11.5-4-13.4-9.9l-8 6.2C6.5 42.6 14.6 48 24 48z"/></svg>
+      Continue with Google
     </button>
-    <div style="font-size:10px;color:#555;margin-top:24px;max-width:280px;line-height:1.5;">By signing in, you agree to our Terms of Service and Privacy Policy.</div>
+    <div style="font-size:10px;color:#555;margin-top:18px;max-width:280px;line-height:1.5;">By signing in, you agree to our Terms of Service and Privacy Policy.</div>
   </div>
 
   <!-- ONBOARDING -->
@@ -296,8 +310,8 @@ input, textarea { touch-action: auto; }
 
 </div>
 
-<script type="module" src="/app.js?v=20261024-pro-identity-badges-v6"></script>
-<script type="module" src="/badges.js?v=20261024-pro-spike-v3"></script>
+<script type="module" src="/app.js?v=20261024-auth-pro-obsidian-v7"></script>
+<script type="module" src="/badges.js?v=20261024-obsidian-spike-v4"></script>
 <script type="module" src="/reliability-fixes.js?v=20261023-reliability-v4"></script>
 
 <script>
