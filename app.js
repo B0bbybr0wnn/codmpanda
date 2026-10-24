@@ -594,12 +594,13 @@ async function requestGISPrompt() {
 }
 
 async function handleGISResponse(response) {
-  // The same official Google Identity Services callback supports sign-in and
-  // linking. A link is accepted only while the account-linking sheet is open.
-  if (pendingGoogleLink) {
-    if (!document.getElementById('signin-methods-sheet')) {
+  const linkSheetOpen = !!document.getElementById('signin-methods-sheet');
+  // Never let an automatic/older Google prompt turn into an account link.
+  // Linking requires an explicit click on the Google button inside this sheet.
+  if (pendingGoogleLink || linkSheetOpen) {
+    if (!pendingGoogleLink || !linkSheetOpen) {
       pendingGoogleLink = false;
-      console.info('[CODMPanda] Ignored Google response because account linking was closed.');
+      console.info('[CODMPanda] Ignored Google response without an explicit, active link request.');
       return;
     }
     try {
@@ -762,7 +763,7 @@ function openSignInMethodsSheet() {
   const linkedProviderIds = new Set((user.providerData || []).map(provider => provider.providerId));
   const hasEmail = linkedProviderIds.has('password');
   const hasGoogle = linkedProviderIds.has('google.com');
-  pendingGoogleLink = !hasGoogle;
+  pendingGoogleLink = false;
 
   openSheet(`
     <div id="signin-methods-sheet" class="space-y-4">
@@ -823,6 +824,9 @@ function openSignInMethodsSheet() {
         if (!initGIS()) throw new Error('Google Identity Services could not be initialized.');
         const gis = window.google?.accounts?.id;
         if (!gis?.renderButton) throw new Error('Google sign-in button is unavailable.');
+        target.addEventListener('click', () => {
+          pendingGoogleLink = true;
+        }, true);
         gis.renderButton(target, {
           theme: 'outline',
           size: 'large',
