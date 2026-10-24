@@ -153,8 +153,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
-        && request.resource.data.get('reaction', '') != 'crown'
-        && (!(request.resource.data.get('reaction', '') == 'goat')
+        && (!(request.resource.data.get('reaction', '') in ['goat', 'crown'])
             || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isPro == true);
       allow delete: if isSignedIn()
         && resource.data.userId == request.auth.uid;
