@@ -1019,7 +1019,7 @@ function renderLobbies() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
+              <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
             </div>
             <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
@@ -2769,7 +2769,7 @@ function renderYouTab() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-base font-black truncate">${esc(p.ign || 'Set IGN')}</span>
+              <span data-uid="${esc(p.uid || State.user?.uid || '')}" class="text-base font-black truncate">${esc(p.ign || 'Set IGN')}</span>
               ${isPro ? `<span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">PRO</span>` : ''}
             </div>
             <div class="text-[11px] text-gray-500 mt-0.5">${esc(p.rank || 'Rookie')} · ${esc(p.region || 'Global')}</div>
@@ -5409,7 +5409,7 @@ renderLobbies = function() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
+              <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
             </div>
             <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
@@ -10560,7 +10560,7 @@ async function openUserProfile(uid) {
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5 flex-wrap">
-                <span class="text-base font-black truncate">${esc(u.ign || 'Unknown')}</span>
+                <span data-uid="${esc(u.uid || u.id || '')}" class="text-base font-black truncate">${esc(u.ign || 'Unknown')}</span>
                 ${u.isPro ? `<span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">PRO</span>` : ''}
               </div>
               <div class="text-[11px] text-gray-500 mt-0.5">${esc(u.rank || 'Rookie')} · ${esc(u.region || 'Global')}</div>
@@ -13964,7 +13964,7 @@ renderLobbies = function() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
+              <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
               ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
             </div>
@@ -18646,7 +18646,7 @@ function renderHomeLobbyCard(l) {
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
+            <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
             ${l.uid === ADMIN_UID ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑</span>' : ''}
           </div>
@@ -18692,7 +18692,7 @@ function renderHomeVaultCard(v) {
         <div class="flex-1 min-w-0">
           <div class="font-bold text-sm">${esc(v.gunName || 'Build')}</div>
           <div class="text-[10px] text-gray-500 mt-0.5">
-            by ${esc(v.ign || 'Unknown')}
+            by <span data-uid="${esc(v.uid || v.userId || v.ownerUid || '')}" class="text-white font-bold">${esc(v.ign || 'Unknown')}</span>
             ${v.approved ? ' · <span class="text-green-400">✓ Approved</span>' : ''}
           </div>
         </div>
@@ -18751,7 +18751,7 @@ function renderHomeClipCard(c) {
           <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
             ${c.submittedByAvatar ? `<img src="${esc(c.submittedByAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName)}
           </div>
-          <div class="text-xs text-gray-400">by <span class="text-white font-bold">${esc(authorName)}</span> · ${esc(c.gunTag || 'CODM')}</div>
+          <div class="text-xs text-gray-400">by <span data-uid="${esc(c.submittedByUid || c.uid || c.userId || c.authorUid || '')}" class="text-white font-bold">${esc(authorName)}</span> · ${esc(c.gunTag || 'CODM')}</div>
         </div>
         ${c.caption ? `<p class="text-xs text-gray-300 mt-2 break-words">${esc(c.caption)}</p>` : ''}
       </div>
@@ -22396,16 +22396,9 @@ console.log('✅ Chunk 52b: Activity stats dashboard loaded');
 // ============================================
 
 function getBadgeHTML(item) {
-  if (!item) return '';
-  let badges = '';
-  if (item.uid === ADMIN_UID) {
-    badges += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex-shrink-0">👑 FOUNDER</span>';
-  } else if (item.isPro) {
-    badges += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex-shrink-0">👑 PRO</span>';
-  }
-  // The verified check is rendered once beside the name by renderVerifiedBadge().
-  // Do not add a second check here; this helper only adds the separate Founder/Pro label.
-  return badges;
+  // Legacy role pills are deliberately removed; the account-backed identity badge
+  // decorator places the single Pro insignia directly beside the actual username.
+  return '';
 }
 
 // ============================================
@@ -22463,7 +22456,7 @@ renderLobbies = function() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
+              <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               ${getBadgeHTML(l)}
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
               ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
@@ -27652,4 +27645,194 @@ if (!window.__cpLobbyExpirationSweep) {
     document.addEventListener('keydown',onKey);
     document.body.appendChild(overlay);
   };
+})();
+
+
+/* CODMPanda global Pro identity repair: resolve account entitlements, then decorate real username nodes. */
+(function cpGlobalProIdentityBadgesV2(){
+  if (window.__cpGlobalProIdentityBadgesV2) return;
+  window.__cpGlobalProIdentityBadgesV2 = true;
+
+  const userCache = new Map();
+  const pending = new Map();
+  let svgSerial = 0;
+  let sweepQueued = false;
+  let sweepRunning = false;
+  let sweepAgain = false;
+
+  function hasPro(user){
+    return !!(user && (user.isPro === true || user.pro === true ||
+      user.subscription === 'pro' || user.proStatus === 'active'));
+  }
+
+  function renderPro(user){
+    if (!hasPro(user)) return '';
+    const id = 'cp-pro-metal-v2-' + (++svgSerial);
+    return '<span class="cp-pro-spike-badge" data-pro-badge="true" title="CODMPanda Pro" aria-label="CODMPanda Pro" role="img">' +
+      '<svg class="cp-pro-spike-svg" width="18" height="18" viewBox="0 0 64 64" aria-hidden="true" focusable="false">' +
+        '<defs>' +
+          '<linearGradient id="' + id + '-titanium" x1="0" y1="0" x2="1" y2="1">' +
+            '<stop offset="0%" stop-color="#F4F0E8"/><stop offset="18%" stop-color="#777B80"/><stop offset="42%" stop-color="#24272B"/><stop offset="68%" stop-color="#090A0C"/><stop offset="100%" stop-color="#A9ADB0"/>' +
+          '</linearGradient>' +
+          '<linearGradient id="' + id + '-ember" x1="0" y1="1" x2="1" y2="0">' +
+            '<stop offset="0%" stop-color="#8E310D"/><stop offset="48%" stop-color="#FF702B"/><stop offset="100%" stop-color="#FFD0A0"/>' +
+          '</linearGradient>' +
+          '<linearGradient id="' + id + '-letter" x1="0" y1="0" x2="0.9" y2="1">' +
+            '<stop offset="0%" stop-color="#FFFFFF"/><stop offset="45%" stop-color="#C8CBD0"/><stop offset="100%" stop-color="#737980"/>' +
+          '</linearGradient>' +
+        '</defs>' +
+        '<path d="M32 2 38 13 53 7 49 21 62 27 51 34 56 51 41 47 32 62 25 49 8 55 13 39 2 31 15 24 11 10 26 15Z" fill="url(#' + id + '-titanium)" stroke="#08090B" stroke-width="1.5" stroke-linejoin="bevel"/>' +
+        '<path d="M32 8 37 18 49 13 45 25 55 29 45 36 49 46 38 43 32 54 26 43 14 48 18 37 9 31 20 25 17 16 28 20Z" fill="#101215" stroke="#4A4D50" stroke-width="0.7" stroke-linejoin="bevel"/>' +
+        '<path d="M15 39 29 25 34 25 20 42Z" fill="url(#' + id + '-ember)"/>' +
+        '<path d="M27 19H37C43 19 46 23 46 29 46 35 42 38 36 38H32V45H25V25H32V32H36C38 32 39 31 39 29 39 27 38 26 36 26H27Z" fill="url(#' + id + '-letter)" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.5" stroke-linejoin="bevel"/>' +
+        '<path d="M32 3 36 11" fill="none" stroke="#FF8A49" stroke-width="1" stroke-linecap="square"/>' +
+      '</svg>' +
+    '</span>';
+  }
+
+  window.CODMRenderProBadge = renderPro;
+
+  async function readUser(uid){
+    uid = String(uid || '').trim();
+    if (!uid) return null;
+    // Use live local state for the signed-in user's own paid status.
+    if (uid === State.user?.uid && State.profile) return State.profile;
+    const cached = userCache.get(uid);
+    if (cached && Date.now() - cached.at < 15000) return cached.value;
+    if (pending.has(uid)) return pending.get(uid);
+    const request = getDoc(doc(db, 'users', uid)).then(function(snap){
+      const value = snap.exists() ? {id: uid, ...snap.data()} : null;
+      userCache.set(uid, {value:value, at:Date.now()});
+      return value;
+    }).catch(function(){
+      return cached?.value || null;
+    }).finally(function(){ pending.delete(uid); });
+    pending.set(uid, request);
+    return request;
+  }
+
+  function isUsernameNode(el){
+    if (!el || !el.classList || !el.dataset) return false;
+    if (el.classList.contains('cp-pro-spike-badge')) return false;
+    const tag = el.tagName;
+    if (el.classList.contains('user-name-link')) return true;
+    return (tag === 'SPAN' || tag === 'DIV' || tag === 'A') &&
+      /(?:^|\s)(?:font-bold|font-black|font-semibold)(?:\s|$)/.test(String(el.className || '')) &&
+      !el.querySelector('img,button,input,textarea,select') &&
+      !!(el.textContent || '').trim();
+  }
+
+  function legacyProSibling(el){
+    const parent = el?.parentElement;
+    if (!parent) return [];
+    return Array.from(parent.children).filter(function(sibling){
+      if (sibling === el) return false;
+      if (sibling.classList?.contains('cp-pro-spike-badge')) return true;
+      const label = (sibling.textContent || '').trim();
+      const classes = String(sibling.className || '');
+      if (/^(?:👑\\s*)?PRO$/i.test(label) && /(?:badge|rounded|bg-|gradient|text-\\[9px\\]|px-)/i.test(classes)) return true;
+      if (/^(?:👑\\s*)?FOUNDER$/i.test(label)) return true;
+      if (label === '👑' && /text-\\[9px\\]/.test(classes) && /(?:bg-gradient-to-r|bg-gold)/.test(classes)) return true;
+      return false;
+    });
+  }
+
+  function normalizeNameBadges(el, user){
+    if (!el || !el.isConnected) return;
+    const parent = el.parentElement;
+    // Legacy labels beside the name are removed so the account-backed mark is never duplicated.
+    legacyProSibling(el).forEach(function(old){ old.remove(); });
+
+    let verified = el.querySelector('.verified-badge');
+    const proMarks = Array.from(el.querySelectorAll('.cp-pro-spike-badge,[data-pro-badge="true"]'));
+    if (user?.verified === true) {
+      if (!verified && typeof renderVerifiedBadge === 'function') {
+        el.insertAdjacentHTML('beforeend', renderVerifiedBadge(user));
+        verified = el.querySelector('.verified-badge');
+      }
+    } else {
+      el.querySelectorAll('.verified-badge').forEach(function(mark){ mark.remove(); });
+      verified = null;
+    }
+
+    if (hasPro(user)) {
+      let pro = el.querySelector('.cp-pro-spike-badge,[data-pro-badge="true"]');
+      if (!pro) {
+        el.insertAdjacentHTML('beforeend', renderPro(user));
+        pro = el.querySelector('.cp-pro-spike-badge');
+      }
+      if (pro && verified && (pro.compareDocumentPosition(verified) & Node.DOCUMENT_POSITION_PRECEDING)) {
+        verified.insertAdjacentElement('afterend', pro);
+      }
+      if (pro) pro.setAttribute('title','CODMPanda Pro');
+    } else {
+      proMarks.forEach(function(mark){ mark.remove(); });
+    }
+
+    // Keep the order blue verification first, Pro second, both directly beside the username.
+    if (hasPro(user) && verified) {
+      const pro = el.querySelector('.cp-pro-spike-badge');
+      if (pro && (pro.compareDocumentPosition(verified) & Node.DOCUMENT_POSITION_PRECEDING)) {
+        verified.insertAdjacentElement('afterend', pro);
+      }
+    }
+  }
+
+  async function sweep(){
+    if (sweepRunning) { sweepAgain = true; return; }
+    if (!State.user) return;
+    sweepRunning = true;
+    try {
+      const names = Array.from(document.querySelectorAll('[data-uid]')).filter(isUsernameNode);
+      await Promise.all(names.map(async function(el){
+        const uid = el.dataset.uid || '';
+        if (!uid) return;
+        const user = await readUser(uid);
+        if (user) normalizeNameBadges(el, user);
+      }));
+    } catch (error) {
+      console.warn('[CODMPanda] Pro identity badge refresh failed', error);
+    } finally {
+      sweepRunning = false;
+      if (sweepAgain) {
+        sweepAgain = false;
+        queueSweep();
+      }
+    }
+  }
+
+  function queueSweep(){
+    if (sweepQueued) return;
+    sweepQueued = true;
+    setTimeout(function(){ sweepQueued = false; sweep(); }, 90);
+  }
+
+  // Repaint after every feed/lobby/profile render and after dynamically inserted content.
+  const observer = new MutationObserver(function(records){
+    if (records.some(function(record){
+      return record.type === 'childList' && (record.addedNodes.length || record.removedNodes.length);
+    })) queueSweep();
+  });
+  observer.observe(document.documentElement, {childList:true, subtree:true});
+
+  ['renderHomeFeed','renderLobbies','renderYouTab'].forEach(function(name){
+    const original = window[name];
+    if (typeof original !== 'function' || original.__cpProIdentityWrapped) return;
+    const wrapped = function(){
+      const result = original.apply(this, arguments);
+      queueSweep();
+      setTimeout(queueSweep, 180);
+      return result;
+    };
+    wrapped.__cpProIdentityWrapped = true;
+    window[name] = wrapped;
+  });
+
+  window.addEventListener('codmpanda:avatar-frame-updated', function(){ userCache.clear(); queueSweep(); });
+  window.addEventListener('codmpanda:pro-entitlement-updated', function(){ userCache.clear(); queueSweep(); });
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) { userCache.clear(); queueSweep(); } });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', queueSweep, {once:true});
+  else queueSweep();
+  setTimeout(queueSweep, 250);
+  setTimeout(queueSweep, 1200);
 })();
