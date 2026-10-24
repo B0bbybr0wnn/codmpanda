@@ -11,7 +11,6 @@ import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
   signInWithCredential,
-  getRedirectResult,
   signOut,
   onAuthStateChanged,
   deleteUser
@@ -636,19 +635,6 @@ window.handleEmailSignIn = handleEmailSignIn;
 window.handleEmailSignUp = handleEmailSignUp;
 window.handlePasswordReset = handlePasswordReset;
 
-async function checkRedirect() {
-  try {
-    const result = await getRedirectResult(auth);
-    if (result?.user) {
-      setEmailAuthStatus('');
-      toast('Signed in with Google!', 'success');
-    }
-  } catch (error) {
-    const message = authErrorMessage(error, 'google');
-    setEmailAuthStatus(message, true);
-    console.error('[CODMPanda] Google redirect sign-in failed:', error?.code || error);
-  }
-}
 async function handleSignOut() {
   confirmDialog('Sign Out', 'Are you sure you want to sign out?', async () => {
     try {
@@ -3595,8 +3581,6 @@ async function boot() {
     const splash = document.getElementById('splash');
     if (splash && !splash.classList.contains('hidden')) splash.classList.add('hidden');
   }, 2000);
-
-  await checkRedirect();
 
   // Google sign-in is rendered by GIS itself; do not attach a custom click handler.
   renderOfficialGISButton();
