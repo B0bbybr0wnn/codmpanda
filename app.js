@@ -7,10 +7,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getAuth,
   GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  signInWithCredential,
   signOut,
   onAuthStateChanged,
   deleteUser
@@ -436,110 +438,145 @@ window.APP_VERSION = APP_VERSION;
 // ============================================
 
 // ---------- AUTH ----------
+function authErrorMessage(error, flow) {
+  const code = String(error?.code || '');
+  if (code === 'auth/unauthorized-domain') {
+    return 'This site is not authorized for sign-in. Add bobby-clone.codmpanda.pages.dev in Firebase Authentication > Settings > Authorized domains.';
+  }
+  if (code === 'auth/operation-not-allowed') {
+    return flow === 'google'
+      ? 'Google sign-in is disabled in Firebase Authentication. Enable the Google provider.'
+      : 'Email and password sign-in is disabled in Firebase Authentication. Enable the Email/Password provider.';
+  }
+  if (code === 'auth/account-exists-with-different-credential') {
+    return 'This email already uses another sign-in method. Sign in with the method already linked to your CODMPanda account; accounts will not be linked automatically.';
+  }
+  if (code === 'auth/email-already-in-use') {
+    return 'An account already exists with this email. Use its existing sign-in method so your CODMPanda account and data stay connected.';
+  }
+  if (code === 'auth/invalid-email') return 'Enter a valid email address.';
+  if (code === 'auth/weak-password') return 'Choose a password with at least 6 characters.';
+  if (['auth/invalid-credential', 'auth/invalid-login-credentials', 'auth/wrong-password', 'auth/user-not-found'].includes(code)) {
+    return 'Email or password is incorrect. Check your details or use Forgot password.';
+  }
+  if (code === 'auth/too-many-requests') return 'Too many attempts. Wait a little and try again.';
+  if (code === 'auth/network-request-failed') return 'Network error. Check your connection and try again.';
+  if (code === 'auth/popup-closed-by-user') return 'Google sign-in was cancelled. You can try again.';
+  if (code === 'auth/invalid-api-key') return 'Firebase authentication configuration is invalid. Please contact the CODMPanda admin.';
+  return 'Sign-in failed. Please try again.' + (code ? ' (' + code + ')' : '');
+}
+
+function setEmailAuthStatus(message, isError = false) {
+  const status = document.getElementById('email-auth-status');
+  if (!status) return;
+  status.textContent = message || '';
+  status.style.color = isError ? '#ff8a80' : '#a3e635';
+}
+
+function readEmailAuthFields() {
+  return {
+    email: String(document.getElementById('auth-email')?.value || '').trim(),
+    password: String(document.getElementById('auth-password')?.value || '')
+  };
+}
+
 async function handleSignIn() {
+  setEmailAuthStatus('');
   try {
-    toast('Opening Google...', 'info', 1500);
-
-    if (!window.google || !window.google.accounts) {
-      await new Promise(function(resolve, reject) {
-        let attempts = 0;
-        const check = setInterval(function() {
-          attempts++;
-          if (window.google && window.google.accounts) {
-            clearInterval(check);
-            resolve();
-          } else if (attempts > 50) {
-            clearInterval(check);
-            reject(new Error('GIS script failed to load'));
-          }
-        }, 100);
-      });
+    await signInWithPopup(auth, provider);
+    toast('Signed in with Google!', 'success');
+  } catch (error) {
+    const code = String(error?.code || '');
+    if (['auth/popup-blocked', 'auth/popup-unsupported', 'auth/operation-not-supported-in-this-environment'].includes(code)) {
+      try {
+        // Keep OAuth available in browsers that cannot open a popup.
+        await signInWithRedirect(auth, provider);
+        return;
+      } catch (redirectError) {
+        error = redirectError;
+      }
     }
-
-    initGIS();
-
-    window.google.accounts.id.prompt(function(notification) {
-      console.log('GIS prompt:', notification);
-      if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-        console.warn('One Tap not displayed');
-        fallbackRenderGISButton();
-      }
-      if (notification.isSkippedMoment && notification.isSkippedMoment()) {
-        console.warn('One Tap skipped');
-      }
-    });
-  } catch (err) {
-    console.error('GIS error:', err);
-    toast('Sign-in failed: ' + err.message, 'error', 5000);
+    const message = authErrorMessage(error, 'google');
+    setEmailAuthStatus(message, true);
+    if (error?.code !== 'auth/popup-closed-by-user') toast(message, 'error', 5000);
+    console.error('[CODMPanda] Google sign-in failed:', error?.code || error);
   }
 }
 
-const GOOGLE_CLIENT_ID = "604146891375-ae5bhcm2nd2f59f0npp3en6setthjg1s.apps.googleusercontent.com";
-
-let gisInitialized = false;
-
-function initGIS() {
-  if (gisInitialized) return;
-  if (!window.google || !window.google.accounts) {
-    console.warn('GIS not loaded yet');
+async function handleEmailSignIn() {
+  const { email, password } = readEmailAuthFields();
+  if (!email || !password) {
+    setEmailAuthStatus('Enter your email and password.', true);
     return;
   }
-  window.google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: handleGISResponse,
-    auto_select: false,
-    cancel_on_tap_outside: true
-  });
-  gisInitialized = true;
-  console.log('GIS initialized');
-}
-
-function fallbackRenderGISButton() {
-  openSheet(
-    '<div class="text-center space-y-4">' +
-      '<div class="text-2xl">🎮</div>' +
-      '<div class="text-sm font-bold">Sign in with Google</div>' +
-      '<div id="gis-btn-container" class="flex justify-center"></div>' +
-      '<button onclick="closeSheet()" class="text-xs text-gray-500">Cancel</button>' +
-    '</div>',
-    'Sign In'
-  );
-
-  setTimeout(function() {
-    if (window.google && window.google.accounts) {
-      window.google.accounts.id.renderButton(
-        document.getElementById('gis-btn-container'),
-        { theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'pill', width: 280 }
-      );
-    }
-  }, 100);
-}
-
-async function handleGISResponse(response) {
   try {
-    console.log('GIS credential received');
-    closeSheet();
-
-    const credential = GoogleAuthProvider.credential(response.credential);
-
-    const result = await signInWithCredential(auth, credential);
-    console.log('Firebase sign-in success:', result.user.email);
+    setEmailAuthStatus('Signing in…');
+    await signInWithEmailAndPassword(auth, email, password);
+    setEmailAuthStatus('');
     toast('Signed in!', 'success');
-  } catch (err) {
-    console.error('Firebase credential error:', err.code, err.message);
-    toast('Sign-in failed: ' + err.message, 'error', 5000);
+  } catch (error) {
+    const message = authErrorMessage(error, 'email');
+    setEmailAuthStatus(message, true);
+    console.error('[CODMPanda] Email sign-in failed:', error?.code || error);
+  }
+}
+
+async function handleEmailSignUp() {
+  const { email, password } = readEmailAuthFields();
+  if (!email || !password) {
+    setEmailAuthStatus('Enter an email and choose a password.', true);
+    return;
+  }
+  if (password.length < 6) {
+    setEmailAuthStatus('Choose a password with at least 6 characters.', true);
+    return;
+  }
+  try {
+    setEmailAuthStatus('Creating your account…');
+    await createUserWithEmailAndPassword(auth, email, password);
+    setEmailAuthStatus('');
+    toast('Account created!', 'success');
+    // onAuthStateChanged + ensureUserProfile creates one profile for this new UID.
+  } catch (error) {
+    const message = authErrorMessage(error, 'signup');
+    setEmailAuthStatus(message, true);
+    console.error('[CODMPanda] Email sign-up failed:', error?.code || error);
+  }
+}
+
+async function handlePasswordReset() {
+  const email = String(document.getElementById('auth-email')?.value || '').trim();
+  if (!email) {
+    setEmailAuthStatus('Enter your email address first, then tap Forgot password.', true);
+    return;
+  }
+  try {
+    await sendPasswordResetEmail(auth, email);
+    setEmailAuthStatus('Password reset email sent. Check your inbox and spam folder.');
+    toast('Password reset email sent.', 'success');
+  } catch (error) {
+    const message = authErrorMessage(error, 'reset');
+    setEmailAuthStatus(message, true);
+    console.error('[CODMPanda] Password reset failed:', error?.code || error);
   }
 }
 
 window.handleSignIn = handleSignIn;
-window.initGIS = initGIS;
-window.handleGISResponse = handleGISResponse;
+window.handleEmailSignIn = handleEmailSignIn;
+window.handleEmailSignUp = handleEmailSignUp;
+window.handlePasswordReset = handlePasswordReset;
 
 async function checkRedirect() {
   try {
-    await getRedirectResult(auth);
-  } catch (e) {
-    console.error('Redirect error:', e);
+    const result = await getRedirectResult(auth);
+    if (result?.user) {
+      setEmailAuthStatus('');
+      toast('Signed in with Google!', 'success');
+    }
+  } catch (error) {
+    const message = authErrorMessage(error, 'google');
+    setEmailAuthStatus(message, true);
+    console.error('[CODMPanda] Google redirect sign-in failed:', error?.code || error);
   }
 }
 async function handleSignOut() {
@@ -2766,7 +2803,7 @@ function renderYouTab() {
             <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-2xl overflow-hidden">
               ${p.avatar ? `<img src="${esc(p.avatar)}" class="w-full h-full object-cover" />` : getInitials(p.ign || '?')}
             </div>
-            ${isPro ? `<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card"><span class="text-sm">👑</span></div>` : ''}
+            
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
@@ -2915,8 +2952,7 @@ function settingsRow(action, icon, label, sub, danger = false) {
 function renderProUpsell() {
   return `
     <div class="bg-gradient-to-br from-black via-black to-[#1a1200] border border-gold/40 rounded-2xl p-5 mb-4 shimmer relative overflow-hidden">
-      <div class="absolute top-3 right-3 text-3xl">👑</div>
-      <div class="text-xs font-black text-gold uppercase tracking-wider mb-1">Upgrade</div>
+            <div class="text-xs font-black text-gold uppercase tracking-wider mb-1">Upgrade</div>
       <h3 class="text-xl font-black mb-3">Go <span class="text-gold glow-text-gold">Pro</span></h3>
       <div class="text-xs text-gray-300 mb-4">
         <div class="font-bold text-gold mb-2">$1.99/mo · $9.99 lifetime</div>
@@ -2927,7 +2963,7 @@ function renderProUpsell() {
           <li>✦ Pin LFG posts</li>
           <li>✦ Instant leak alerts</li>
           <li>✦ Zero ads, forever</li>
-          <li>✦ Gold crown badge 👑</li>
+          <li>✦ Obsidian Spike Pro badge </li>
         </ul>
       </div>
       <button id="unlock-pro-btn" class="btn-press w-full py-3.5 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold">
@@ -2942,8 +2978,7 @@ function renderProActive(p) {
   return `
     <div class="bg-gradient-to-br from-[#1a1200] to-black border border-gold glow-gold rounded-2xl p-5 mb-4">
       <div class="flex items-center gap-2 mb-3">
-        <span class="text-2xl">👑</span>
-        <div>
+                <div>
           <div class="text-sm font-black text-gold glow-text-gold">PRO ACTIVE</div>
           <div class="text-[10px] text-gray-400">Expires: ${expiry}</div>
         </div>
@@ -3288,8 +3323,7 @@ function deleteAccount() {
 function showProPaywall(message) {
   openSheet(`
     <div class="text-center space-y-4">
-      <div class="text-5xl">👑</div>
-      <div>
+            <div>
         <h3 class="text-xl font-black text-gold glow-text-gold mb-2">Pro Feature</h3>
         <p class="text-sm text-gray-400">${message}</p>
       </div>
@@ -3299,7 +3333,7 @@ function showProPaywall(message) {
           <div>✦ Full Camo Tracker</div>
           <div>✦ Create Clans</div>
           <div>✦ Zero Ads</div>
-          <div>✦ Gold Crown Badge</div>
+          <div>✦ Obsidian Spike Pro badge</div>
         </div>
       </div>
       <button onclick="closeSheet(); goPro();" class="btn-press w-full py-4 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black glow-gold">Go Pro — $1.99/mo</button>
@@ -3317,7 +3351,7 @@ async function goPro() {
       });
       State.profile.isPro = true;
       window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid: State.user.uid } }));
-      toast('👑 Pro unlocked!', 'success');
+      toast(' Pro unlocked!', 'success');
       hideAd();
       renderYouTab();
     } catch (e) { toast('Failed', 'error'); }
@@ -3328,8 +3362,7 @@ function showManagePro() {
   openSheet(`
     <div class="space-y-4">
       <div class="text-center">
-        <div class="text-5xl mb-2">👑</div>
-        <div class="text-lg font-black text-gold">Pro Member</div>
+                <div class="text-lg font-black text-gold">Pro Member</div>
       </div>
       <div class="bg-cardAlt border border-border rounded-xl p-3 text-xs text-gray-400">Manage your subscription via Paystack. Cancel anytime.</div>
       <button onclick="closeSheet()" class="btn-press w-full py-3 rounded-xl bg-primary font-bold">Done</button>
@@ -4289,7 +4322,7 @@ async function grantProToContributor(uid) {
       proFromContribution: true
     });
     window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid } }));
-    toast('👑 7-day Pro granted!', 'success');
+    toast(' 7-day Pro granted!', 'success');
   } catch (e) {
     toast('Failed: ' + e.message, 'error');
   }
@@ -4339,7 +4372,7 @@ function renderContributorCard() {
               <div class="text-[10px] text-gray-500">Next reward at <span class="font-bold text-white">${nextMilestone}</span></div>
               <div class="text-[10px] text-gold font-bold">${nextMilestone - count} more needed</div>
             ` : `
-              <div class="text-[10px] text-gold font-bold glow-text-gold">ALL MILESTONES HIT 👑</div>
+              <div class="text-[10px] text-gold font-bold glow-text-gold">ALL MILESTONES HIT </div>
             `}
           </div>
         </div>
@@ -4468,7 +4501,7 @@ function showGrantProDialog(uid, ign) {
           proFromContribution: true
         });
         window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid } }));
-        toast(`👑 Pro granted to ${ign}!`, 'success');
+        toast(` Pro granted to ${ign}!`, 'success');
       } catch (e) {
         toast('Failed: ' + e.message, 'error');
       }
@@ -4514,7 +4547,7 @@ showAdminUsers = async function() {
             </div>
             ${isContributor ? `
               <button class="grant-pro-btn w-full mt-2 py-2 rounded-lg bg-gold/15 border border-gold/40 text-gold text-xs font-bold" data-uid="${u.id}" data-ign="${esc(u.ign)}">
-                👑 Grant 7-Day Pro (Contributor)
+                 Grant 7-Day Pro (Contributor)
               </button>
             ` : ''}
           </div>
@@ -4934,7 +4967,7 @@ function renderLeaderboard() {
               <div class="w-10 h-10 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center font-bold text-sm">
                 ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
               </div>
-              ${u.isPro ? `<div class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-gold flex items-center justify-center border-2 border-card text-[8px]">👑</div>` : ''}
+              
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
@@ -5061,8 +5094,7 @@ function openUpgradeSheet() {
 
   openSheet(`
     <div class="text-center space-y-4">
-      <div class="text-5xl">👑</div>
-      <div>
+            <div>
         <h3 class="text-xl font-black text-gold glow-text-gold mb-1">CODMPanda Pro</h3>
         <p class="text-xs text-gray-400">Unlock everything. Support the app.</p>
       </div>
@@ -5076,7 +5108,7 @@ function openUpgradeSheet() {
         <div class="flex items-center gap-2"><span class="text-gold">✦</span> Pin your LFG posts</div>
         <div class="flex items-center gap-2"><span class="text-gold">✦</span> Instant leak alerts</div>
         <div class="flex items-center gap-2"><span class="text-gold">✦</span> Zero ads, forever</div>
-        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Gold crown badge 👑</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Obsidian Spike Pro badge </div>
       </div>
     </div>
 
@@ -5198,7 +5230,7 @@ async function checkProStatus() {
       if (data.isPro) {
         State.profile = { ...State.profile, ...data };
         window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid: State.user.uid } }));
-        toast('👑 Pro activated! Welcome to the club.', 'success', 4000);
+        toast(' Pro activated! Welcome to the club.', 'success', 4000);
         closeSheet();
         hideAd();
         setTimeout(() => {
@@ -5218,8 +5250,7 @@ const _origRenderProUpsell = renderProUpsell;
 renderProUpsell = function() {
   return `
     <div class="bg-gradient-to-br from-black via-black to-[#1a1200] border border-gold/40 rounded-2xl p-5 mb-4 shimmer relative overflow-hidden">
-      <div class="absolute top-3 right-3 text-3xl">👑</div>
-      <div class="text-xs font-black text-gold uppercase tracking-wider mb-1">Upgrade</div>
+            <div class="text-xs font-black text-gold uppercase tracking-wider mb-1">Upgrade</div>
       <h3 class="text-xl font-black mb-3">Go <span class="text-gold glow-text-gold">Pro</span></h3>
       <div class="text-xs text-gray-300 mb-4">
         <div class="font-bold text-gold mb-2">$1.99/mo · $9.99 lifetime</div>
@@ -5230,7 +5261,7 @@ renderProUpsell = function() {
           <li>✦ Pin LFG posts</li>
           <li>✦ Instant leak alerts</li>
           <li>✦ Zero ads, forever</li>
-          <li>✦ Gold crown badge 👑</li>
+          <li>✦ Obsidian Spike Pro badge </li>
         </ul>
       </div>
       <button id="unlock-pro-btn" class="btn-press w-full py-3.5 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold">
@@ -5790,12 +5821,6 @@ async function generateProfileCard() {
     drawInitials(ctx, p.ign, W / 2, avatarY, avatarR);
   }
 
-  // Pro crown overlay
-  if (p.isPro) {
-    ctx.font = 'bold 90px Inter, sans-serif';
-    ctx.fillText('👑', W / 2 + 130, avatarY - 100);
-  }
-
   // ---------- NAME ----------
   ctx.font = 'bold 72px Inter, sans-serif';
   ctx.fillStyle = '#ffffff';
@@ -5809,7 +5834,7 @@ async function generateProfileCard() {
 
   if (p.isPro) {
     // Pro pill
-    const proText = '👑 PRO MEMBER';
+    const proText = 'PRO MEMBER';
     ctx.font = 'bold 30px Inter, sans-serif';
     const proW = ctx.measureText(proText).width + 60;
     const proX = W / 2 - proW / 2;
@@ -6447,8 +6472,7 @@ async function showAdminAnalytics() {
         <!-- REVENUE CARD -->
         <div class="bg-gradient-to-br from-gold/10 to-black border border-gold/40 rounded-2xl p-4">
           <div class="flex items-center gap-2 mb-3">
-            <i data-lucide="crown" class="w-4 h-4 text-gold"></i>
-            <div class="text-xs font-bold text-gold uppercase">Revenue</div>
+                        <div class="text-xs font-bold text-gold uppercase">Revenue</div>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div class="bg-black/40 rounded-xl p-3">
@@ -7271,8 +7295,7 @@ async function renderClanWarsSub() {
 
       ${champion ? `
         <div class="bg-gradient-to-r from-gold/10 to-transparent border border-gold/30 rounded-xl p-3 mb-4 flex items-center gap-3">
-          <div class="text-2xl">👑</div>
-          <div class="flex-1 min-w-0">
+                    <div class="flex-1 min-w-0">
             <div class="text-[10px] text-gold uppercase font-bold">Reigning Champion</div>
             <div class="text-sm font-black truncate">${esc(champion.clanName)}</div>
             <div class="text-[10px] text-gray-500">Season ${champion.season}</div>
@@ -7356,7 +7379,7 @@ async function renderClanWarsSub() {
 
       <!-- HALL OF FAME -->
       <div class="bg-card border border-border rounded-2xl p-4 mb-4">
-        <div class="text-xs font-bold text-gray-400 uppercase mb-3">👑 Hall of Fame</div>
+        <div class="text-xs font-bold text-gray-400 uppercase mb-3"> Hall of Fame</div>
         <div id="hall-of-fame-list">
           <div class="text-center py-4 text-[10px] text-gray-600">Loading history...</div>
         </div>
@@ -9571,7 +9594,7 @@ function renderRoundMatches(tournament, round, rounds, canManage) {
           <div class="mt-3 pt-2 border-t border-border">
             <div class="text-[10px] text-red-400 font-bold mb-2 text-center">⚠️ Dispute — override required</div>
             <button class="override-btn btn-press w-full py-2 rounded-lg bg-gold text-black text-xs font-bold" data-match="${m.round}-${m.matchIndex}">
-              👑 Override Result
+               Override Result
             </button>
           </div>
         ` : ''}
@@ -9794,7 +9817,7 @@ function openOverrideSheet(tournamentId, matchKey) {
   openSheet(`
     <div class="space-y-4">
       <div class="bg-gold/10 border border-gold/30 rounded-xl p-3">
-        <div class="text-[10px] text-gold font-bold mb-1">👑 Host Override</div>
+        <div class="text-[10px] text-gold font-bold mb-1"> Host Override</div>
         <div class="text-[10px] text-gray-400">Force-resolve this match. Use only when both teams dispute.</div>
       </div>
 
@@ -10561,7 +10584,7 @@ async function openUserProfile(uid) {
               <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-2xl overflow-hidden">
                 ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
               </div>
-              ${u.isPro ? `<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>` : ''}
+              
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5 flex-wrap">
@@ -10811,7 +10834,7 @@ function openAdvancedSettings() {
           <div class="flex justify-between"><span class="text-gray-500">Version</span><span class="font-bold">1.0.0</span></div>
           <div class="flex justify-between"><span class="text-gray-500">Build</span><span class="font-mono text-gray-400">${new Date().toISOString().slice(0, 10)}</span></div>
           <div class="flex justify-between"><span class="text-gray-500">Environment</span><span class="font-bold text-green-400">Production</span></div>
-          ${p.isPro ? `<div class="flex justify-between"><span class="text-gray-500">Account</span><span class="font-bold text-gold">👑 Pro Member</span></div>` : ''}
+          ${p.isPro ? `<div class="flex justify-between"><span class="text-gray-500">Account</span><span class="font-bold text-gold"> Pro Member</span></div>` : ''}
         </div>
       </div>
 
@@ -14599,7 +14622,7 @@ renderClans = function() {
             <span class="text-5xl">🛡️</span>
           </div>
         </div>
-        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">👑 Pro feature</div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2"> Pro feature</div>
         <div class="text-xl font-black mb-3">No clans yet</div>
         <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
           Create your own clan, recruit members, compete in Clan Wars, and earn badges.
@@ -14762,7 +14785,7 @@ renderTournamentsSub = async function() {
               <span class="text-5xl">🏆</span>
             </div>
           </div>
-          <div class="text-[10px] font-black text-gold uppercase tracking-widest mb-2">👑 Host your own</div>
+          <div class="text-[10px] font-black text-gold uppercase tracking-widest mb-2"> Host your own</div>
           <div class="text-xl font-black mb-3">No tournaments yet</div>
           <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
             Create a bracket in 60 seconds. Auto-registration, auto-brackets, auto-resolve. Zero admin needed.
@@ -14806,7 +14829,7 @@ renderClans = function() {
             <span class="text-5xl">🛡️</span>
           </div>
         </div>
-        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">👑 Pro feature</div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2"> Pro feature</div>
         <div class="text-xl font-black mb-3">No clans yet</div>
         <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
           Create your own clan, recruit members, compete in Clan Wars, and earn badges.
@@ -14883,7 +14906,7 @@ const TOUR_STEPS = [
   },
   {
     id: 'you',
-    emoji: '👑',
+    emoji: '👤',
     title: 'Your Profile',
     body: 'Track your stats, earn badges, unlock Pro features. Everything personalized.',
     tab: 'you',
@@ -15195,7 +15218,7 @@ console.log('✅ Chunk 38: Onboarding tour loaded');
 // Add founder badge to any content posted by the admin
 function getFounderBadge(uid) {
   if (uid === ADMIN_UID) {
-    return '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex items-center gap-0.5">👑 FOUNDER</span>';
+    return '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex items-center gap-0.5"> FOUNDER</span>';
   }
   return '';
 }
@@ -15218,7 +15241,7 @@ renderLobbies = function() {
         if (!card.querySelector('.founder-badge')) {
           const badge = document.createElement('span');
           badge.className = 'founder-badge text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black';
-          badge.textContent = '👑 FOUNDER';
+          badge.textContent = ' FOUNDER';
           ignEl.parentNode.insertBefore(badge, ignEl.nextSibling);
         }
       }
@@ -18653,7 +18676,7 @@ function renderHomeLobbyCard(l) {
           <div class="flex items-center gap-1.5 flex-wrap">
             <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
-            ${l.uid === ADMIN_UID ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑</span>' : ''}
+            
           </div>
           <div class="text-[10px] text-gray-500 mt-0.5">${esc(l.mode)} · ${esc(l.region)}${l.mic ? ' · 🎤' : ''}</div>
         </div>
@@ -19914,11 +19937,6 @@ generateProfileCard = async function() {
     drawInitials(ctx, p.ign, W / 2, avatarY, avatarR);
   }
 
-  if (p.isPro) {
-    ctx.font = 'bold 90px Inter, sans-serif';
-    ctx.fillText('👑', W / 2 + 115, avatarY - 85);
-  }
-
   ctx.font = 'bold 72px Inter, sans-serif';
   ctx.fillStyle = '#ffffff';
   ctx.fillText(truncateText(ctx, p.ign || 'Panda Player', W - 100), W / 2, 700);
@@ -19928,7 +19946,7 @@ generateProfileCard = async function() {
   ctx.fillText(`${p.rank || 'Rookie'} • ${p.region || 'Global'}`, W / 2, 760);
 
   if (p.isPro) {
-    const proText = '👑 PRO MEMBER';
+    const proText = 'PRO MEMBER';
     ctx.font = 'bold 30px Inter, sans-serif';
     const proW = ctx.measureText(proText).width + 60;
     const proX = W / 2 - proW / 2;
@@ -20050,7 +20068,7 @@ function openWritePostSheet() {
         </div>
         <div>
           <div data-uid="${esc(State.profile?.uid || State.user?.uid || '')}" class="text-sm font-bold">${esc(State.profile?.ign || 'You')}</div>
-          <div class="text-[10px] text-gray-500">${isPro ? '👑 Pro · Unlimited' : 'Free · 500 chars'}</div>
+          <div class="text-[10px] text-gray-500">${isPro ? ' Pro · Unlimited' : 'Free · 500 chars'}</div>
         </div>
       </div>
 
@@ -20058,7 +20076,7 @@ function openWritePostSheet() {
         <textarea id="post-text" rows="6" maxlength="${limit}" placeholder="What's on your mind, Panda?" style="font-size: 15px; line-height: 1.5;"></textarea>
         <div class="flex items-center justify-between mt-2">
           <span id="post-counter" class="text-[10px] text-gray-500">0 / ${limit}</span>
-          ${!isPro ? `<span id="pro-hint" class="text-[10px] text-gold font-bold hidden">👑 Upgrade for unlimited</span>` : ''}
+          ${!isPro ? `<span id="pro-hint" class="text-[10px] text-gold font-bold hidden"> Upgrade for unlimited</span>` : ''}
         </div>
       </div>
 
@@ -20233,7 +20251,7 @@ function renderHomePostCard(post) {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
             <span data-uid="${esc(post.uid || '')}" class="font-bold text-sm cursor-pointer">${esc(post.ign || 'Unknown')}</span>
-            ${post.uid === ADMIN_UID ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑</span>' : ''}
+            
           </div>
           <div class="text-[10px] text-gray-500 mt-0.5">
             ${timeAgo(post.createdAt)}${wasEdited ? ' · edited' : ''}
@@ -21658,9 +21676,8 @@ function renderVerifiedBadge(user) {
   return '<span class="verified-badge cp-verified-blue" title="Verified Creator" aria-label="Verified Creator" role="img"><svg class="cp-verified-emblem" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 1.2 14.6 2.6 17.5 2.4 18.7 5 21.3 6.5 21 9.4 22.5 12 21 14.6 21.3 17.5 18.7 19 17.5 21.6 14.6 21.4 12 22.8 9.4 21.4 6.5 21.6 5.3 19 2.7 17.5 3 14.6 1.5 12 3 9.4 2.7 6.5 5.3 5 6.5 2.4 9.4 2.6Z" fill="#1877F2"/><path d="M7.2 12.1 10.2 15.1 16.9 8.7" fill="none" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 }
 
-function renderProCrown(user) {
-  if (!user || !user.isPro) return '';
-  return `<span style="font-size: 11px; flex-shrink: 0;" title="Pro Member">👑</span>`;
+function renderProBadge(user) {
+  return window.CODMRenderProBadge?.(user) || '';
 }
 
 // ============================================
@@ -21788,7 +21805,7 @@ function openThemePicker() {
 
   openSheet(`
     <div class="space-y-4">
-      <div class="text-xs text-gray-500">${isPro ? '👑 Pro — All themes unlocked' : 'Free — 1 theme, upgrade for all'}</div>
+      <div class="text-xs text-gray-500">${isPro ? ' Pro — All themes unlocked' : 'Free — 1 theme, upgrade for all'}</div>
 
       <div class="grid grid-cols-2 gap-3">
         ${Object.entries(PROFILE_THEMES).map(([key, theme]) => {
@@ -21818,7 +21835,7 @@ function openThemePicker() {
 
       ${!isPro ? `
         <button id="theme-upgrade-btn" class="btn-press w-full py-3.5 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
-          👑 Unlock All Themes — Go Pro
+           Unlock All Themes — Go Pro
         </button>
       ` : ''}
     </div>
@@ -21881,7 +21898,7 @@ function openAvatarFramePicker() {
   openSheet(`
     <div class="space-y-4">
       <div class="text-xs text-gray-500">
-        ${isPro ? '👑 Pro — all avatar frames unlocked' : 'Free — 10 free frames available; Pro unlocks the premium frames'}
+        ${isPro ? ' Pro — all avatar frames unlocked' : 'Free — 10 free frames available; Pro unlocks the premium frames'}
       </div>
       <div class="grid grid-cols-3 gap-3">
         ${entries.map(([key, frame]) => {
@@ -21921,7 +21938,7 @@ function openAvatarFramePicker() {
       </div>
       ${!isPro ? `
         <button id="frame-upgrade-btn" class="btn-press w-full py-3.5 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
-          👑 Unlock All Frames — Go Pro
+           Unlock All Frames — Go Pro
         </button>
       ` : ''}
     </div>
@@ -22028,7 +22045,7 @@ renderYouTab = function() {
       const frame = State.profile?.avatarFrame || 'none';
       if (frame !== 'none') {
         const parent = avatarContainer.parentNode;
-        const framedHTML = `<div class="relative">${getAvatarWithFrame(State.profile.avatar, State.profile.ign, 64)}${State.profile.isPro ? '<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>' : ''}</div>`;
+        const framedHTML = `<div class="relative">${getAvatarWithFrame(State.profile.avatar, State.profile.ign, 64)}</div>`;
         avatarContainer.parentNode.innerHTML = framedHTML;
       }
     }
@@ -25484,11 +25501,10 @@ window.performGlobalSearch = performGlobalSearch;
   // ============================================
 
   const REACTIONS = [
-    { key: 'heart',  emoji: '❤️', label: 'Like',   pro: false },
-    { key: 'fire',   emoji: '🔥', label: 'Fire',   pro: false },
-    { key: 'skull',  emoji: '💀', label: 'Dead',   pro: false },
-    { key: 'goat',   emoji: '🐐', label: 'GOAT',  pro: true  },
-    { key: 'crown',  emoji: '👑', label: 'Crown', pro: true  }
+    { key: 'heart', emoji: '❤️', label: 'Like', pro: false },
+    { key: 'fire', emoji: '🔥', label: 'Fire', pro: false },
+    { key: 'skull', emoji: '💀', label: 'Dead', pro: false },
+    { key: 'goat', emoji: '🐐', label: 'GOAT', pro: true }
   ];
 
   function reactionEmoji(key) {
@@ -25605,7 +25621,7 @@ window.performGlobalSearch = performGlobalSearch;
   // ============================================
 
   console.log('✅ [57] Reactions + premium frames loaded');
-  console.log('   - 5 reactions: ❤️ 🔥 💀 🐐 👑');
+  console.log('   - 4 reactions: ❤️ 🔥 💀 🐐');
   console.log('   - Free: first 3 · Pro: all 5');
   console.log('   - Hold any reaction button for 1 second to open picker');
   console.log('   - 11 premium frames including Molten, Tesla, Crystal, Void Walker');
@@ -25813,7 +25829,7 @@ window.performGlobalSearch = performGlobalSearch;
       const sheet=document.querySelector('#sheet-container .px-5');if(!sheet)return;
       const card=sheet.querySelector('.bg-card.border.rounded-2xl');if(card){const t=THEME_META[user.themeStyle]||THEME_META.dark;card.classList.add('cp-theme-profile');card.style.background=t.gradient;card.style.setProperty('--cp-theme-border',t.border);card.style.setProperty('--cp-theme-glow',t.glow);}
       const avatar=sheet.querySelector('.bg-gradient-to-br.from-primary\\/30.to-gold\\/30');
-      if(avatar){const parent=avatar.parentElement;const size=64;parent.innerHTML=renderFramedAvatar(user,size)+(user.isPro?'<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>':'');parent.classList.add('cp-avatar-parent');}
+      if(avatar){const parent=avatar.parentElement;const size=64;parent.innerHTML=renderFramedAvatar(user,size);parent.classList.add('cp-avatar-parent');}
       const title=sheet.querySelector('.text-base.font-black.truncate');if(title&&!title.parentElement.querySelector('.cp-theme-label')){const label=document.createElement('div');label.className='cp-profile-cosmetic-label cp-theme-label mt-1';label.textContent='✦ '+(THEME_META[user.themeStyle]?.name||'Operator Black')+' · '+(WAR_ARTIFACT_FRAMES[normalizeCODMFrameKey(user.avatarFrame)]?.name||FRAME_META[user.avatarFrame]?.name||'No Frame');title.parentElement.appendChild(label)}
     }catch(e){console.warn('Profile cosmetics:',e)}},350);
     return result;
@@ -25906,7 +25922,7 @@ window.performGlobalSearch = performGlobalSearch;
 
   const REACTION_META = {
     heart:{emoji:'❤️',label:'Like'}, fire:{emoji:'🔥',label:'Fire'},
-    skull:{emoji:'💀',label:'Dead'}, goat:{emoji:'🐐',label:'GOAT'}, crown:{emoji:'👑',label:'Crown'}
+    skull:{emoji:'💀',label:'Dead'}, goat:{emoji:'🐐',label:'GOAT'}
   };
   const CLASS_TYPES = {
     'post-like-btn':'post','post-detail-like':'post','detail-like':'vault','detail-like-btn':'vault',
@@ -25969,7 +25985,7 @@ window.performGlobalSearch = performGlobalSearch;
     const selectors=Object.keys(CLASS_TYPES).map(c=>'.'+c).concat('.home-like-btn');
     return Array.from(document.querySelectorAll(selectors.join(','))).filter(b=>itemType(b)===type&&itemId(b)===id);
   }
-  const reactionSummaryLabels={heart:'❤️',fire:'🔥',skull:'💀',goat:'🐐',crown:'👑'};
+  const reactionSummaryLabels={heart:'❤️',fire:'🔥',skull:'💀',goat:'🐐'};
   function paintPostReactionSummary(type,id,reactions){
     if(type!=='post')return;
     const entries=Object.entries(reactions||{}).filter(([key,n])=>reactionSummaryLabels[key] && Number(n)>0)
@@ -25994,10 +26010,10 @@ window.performGlobalSearch = performGlobalSearch;
     if(pickerOpen)return; pickerOpen=true;
     const pro=!!State.profile?.isPro;
     const choices=Object.entries(REACTION_META).map(([key,r])=>{
-      const locked=['goat','crown'].includes(key)&&!pro;
+      const locked=key==='goat'&&!pro;
       return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" style="border:1px solid ${btn.dataset.cpReaction===key?'#ff6b00':'#34343a'};border-radius:14px;background:${btn.dataset.cpReaction===key?'#2a180f':'#17171b'};padding:11px 4px;color:#eee;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0"><span style="font-size:25px">${r.emoji}</span><span style="font-size:10px;font-weight:800">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">PRO 🔒</small>':''}</button>`;
     }).join('');
-    const html=`<div class="cp-reaction-sheet" style="padding:12px 0 4px"><div style="font-size:11px;color:#aaa;text-align:center;margin-bottom:13px">${pro?'PRO OPERATOR · ALL REACTIONS':'Choose your reaction · GOAT and Crown are Pro'}</div><div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px">${choices}</div><button type="button" id="cp-reaction-cancel" style="width:100%;margin-top:12px;padding:10px;color:#999;font-size:12px">Cancel</button></div>`;
+    const html=`<div class="cp-reaction-sheet" style="padding:12px 0 4px"><div style="font-size:11px;color:#aaa;text-align:center;margin-bottom:13px">${pro?'PRO OPERATOR · ALL REACTIONS':'Choose your reaction · GOAT is a Pro reaction'}</div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px">${choices}</div><button type="button" id="cp-reaction-cancel" style="width:100%;margin-top:12px;padding:10px;color:#999;font-size:12px">Cancel</button></div>`;
     try{
       // Comment picker must be a separate overlay: opening a nested sheet destroys the comments sheet.
       if(type==='comment'){
@@ -26010,7 +26026,7 @@ window.performGlobalSearch = performGlobalSearch;
       const root=type==='comment'?(document.getElementById('cp-reaction-overlay')||document):(document.querySelector('#sheet-container')||document.getElementById('cp-reaction-overlay')||document);
       root.querySelectorAll('.cp-reaction-choice').forEach(b=>b.addEventListener('click',async()=>{
         const key=b.dataset.reaction;
-        if(b.dataset.locked==='1'){if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();if(typeof showProPaywall==='function')setTimeout(()=>showProPaywall('Unlock GOAT and Crown reactions with Pro.'),180);pickerOpen=false;return;}
+        if(b.dataset.locked==='1'){if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();if(typeof showProPaywall==='function')setTimeout(()=>showProPaywall('Unlock the GOAT reaction with Pro.'),180);pickerOpen=false;return;}
         if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;await commitReaction(btn,type,id,key);
       }));
       const cancel=root.querySelector('#cp-reaction-cancel');if(cancel)cancel.addEventListener('click',()=>{if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;});
@@ -26019,7 +26035,7 @@ window.performGlobalSearch = performGlobalSearch;
   async function commitReaction(btn,type,id,key){
     if(!State.user){if(typeof showAuthGate==='function')showAuthGate();else if(typeof toast==='function')toast('Sign in to react.','warning');return;}
     if(!COLLECTIONS[type]||!id||!REACTION_META[key])return;
-    if(['goat','crown'].includes(key)&&!State.profile?.isPro){if(typeof showProPaywall==='function')showProPaywall('Unlock all reactions with Pro.');else if(typeof toast==='function')toast('That reaction is available with Pro.','warning');return;}
+    if(key==='goat'&&!State.profile?.isPro){if(typeof showProPaywall==='function')showProPaywall('Unlock all reactions with Pro.');else if(typeof toast==='function')toast('That reaction is available with Pro.','warning');return;}
     if(btn.dataset.cpBusy==='1')return;
     const uid=State.user.uid, cacheKey=`${type}_${id}_${uid}`;
     if(pendingReactionWrites.has(cacheKey))return;
@@ -26975,7 +26991,7 @@ window.performGlobalSearch = performGlobalSearch;
     const _cpV4RenderProUpsell = renderProUpsell;
     renderProUpsell = function() {
       let html = _cpV4RenderProUpsell.apply(this, arguments);
-      html = html.replace('<li>✦ Gold crown badge 👑</li>', '<li>✦ Gold crown badge 👑</li><li>✦ All 20 War Artifact frames</li><li>✦ Meta Tracker watchlist (up to 100 weapons)</li><li>✦ Full profile achievement showcase</li>');
+      html = html.replace('<li>✦ Obsidian Spike Pro badge</li>', '<li>✦ Obsidian Spike Pro badge</li><li>✦ All 20 War Artifact frames</li><li>✦ Meta Tracker watchlist (up to 100 weapons)</li><li>✦ Full profile achievement showcase</li>');
       return html;
     };
     window.renderProUpsell = renderProUpsell;
@@ -27671,10 +27687,10 @@ if (!window.__cpLobbyExpirationSweep) {
   }
   function isLegacyProMarker(mark) {
     if (!mark || mark.matches('button,input,textarea,select') || mark.classList?.contains('cp-pro-spike-badge')) return false;
-    const label = String(mark.textContent || '').trim().replace(/^👑 */, '').trim().toUpperCase();
+    const label = String(mark.textContent || '').trim().toUpperCase();
     const classes = String(mark.className || '');
     const inlineStyles = String(mark.getAttribute?.('style') || '');
-    // Only migrate identifiable legacy "PRO" pills. Do not treat generic data attributes or crown icons as Pro badges.
+    // Only migrate identifiable legacy "PRO" pills; unrelated icons are never Pro badges.
     return label === 'PRO' && (/badge|rounded|bg-|gradient|px-|text-/i.test(classes) || /background|padding|font-size/i.test(inlineStyles));
   }
   function canonicalizeVerified(mark) {
