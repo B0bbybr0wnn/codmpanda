@@ -7,10 +7,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getAuth,
   GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  signInWithCredential,
   signOut,
   onAuthStateChanged,
   deleteUser
@@ -436,110 +438,145 @@ window.APP_VERSION = APP_VERSION;
 // ============================================
 
 // ---------- AUTH ----------
+function authErrorMessage(error, flow) {
+  const code = String(error?.code || '');
+  if (code === 'auth/unauthorized-domain') {
+    return 'This site is not authorized for sign-in. Add bobby-clone.codmpanda.pages.dev in Firebase Authentication > Settings > Authorized domains.';
+  }
+  if (code === 'auth/operation-not-allowed') {
+    return flow === 'google'
+      ? 'Google sign-in is disabled in Firebase Authentication. Enable the Google provider.'
+      : 'Email and password sign-in is disabled in Firebase Authentication. Enable the Email/Password provider.';
+  }
+  if (code === 'auth/account-exists-with-different-credential') {
+    return 'This email already uses another sign-in method. Sign in with the method already linked to your CODMPanda account; accounts will not be linked automatically.';
+  }
+  if (code === 'auth/email-already-in-use') {
+    return 'An account already exists with this email. Use its existing sign-in method so your CODMPanda account and data stay connected.';
+  }
+  if (code === 'auth/invalid-email') return 'Enter a valid email address.';
+  if (code === 'auth/weak-password') return 'Choose a password with at least 6 characters.';
+  if (['auth/invalid-credential', 'auth/invalid-login-credentials', 'auth/wrong-password', 'auth/user-not-found'].includes(code)) {
+    return 'Email or password is incorrect. Check your details or use Forgot password.';
+  }
+  if (code === 'auth/too-many-requests') return 'Too many attempts. Wait a little and try again.';
+  if (code === 'auth/network-request-failed') return 'Network error. Check your connection and try again.';
+  if (code === 'auth/popup-closed-by-user') return 'Google sign-in was cancelled. You can try again.';
+  if (code === 'auth/invalid-api-key') return 'Firebase authentication configuration is invalid. Please contact the CODMPanda admin.';
+  return 'Sign-in failed. Please try again.' + (code ? ' (' + code + ')' : '');
+}
+
+function setEmailAuthStatus(message, isError = false) {
+  const status = document.getElementById('email-auth-status');
+  if (!status) return;
+  status.textContent = message || '';
+  status.style.color = isError ? '#ff8a80' : '#a3e635';
+}
+
+function readEmailAuthFields() {
+  return {
+    email: String(document.getElementById('auth-email')?.value || '').trim(),
+    password: String(document.getElementById('auth-password')?.value || '')
+  };
+}
+
 async function handleSignIn() {
+  setEmailAuthStatus('');
   try {
-    toast('Opening Google...', 'info', 1500);
-
-    if (!window.google || !window.google.accounts) {
-      await new Promise(function(resolve, reject) {
-        let attempts = 0;
-        const check = setInterval(function() {
-          attempts++;
-          if (window.google && window.google.accounts) {
-            clearInterval(check);
-            resolve();
-          } else if (attempts > 50) {
-            clearInterval(check);
-            reject(new Error('GIS script failed to load'));
-          }
-        }, 100);
-      });
+    await signInWithPopup(auth, provider);
+    toast('Signed in with Google!', 'success');
+  } catch (error) {
+    const code = String(error?.code || '');
+    if (['auth/popup-blocked', 'auth/popup-unsupported', 'auth/operation-not-supported-in-this-environment'].includes(code)) {
+      try {
+        // Keep OAuth available in browsers that cannot open a popup.
+        await signInWithRedirect(auth, provider);
+        return;
+      } catch (redirectError) {
+        error = redirectError;
+      }
     }
-
-    initGIS();
-
-    window.google.accounts.id.prompt(function(notification) {
-      console.log('GIS prompt:', notification);
-      if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-        console.warn('One Tap not displayed');
-        fallbackRenderGISButton();
-      }
-      if (notification.isSkippedMoment && notification.isSkippedMoment()) {
-        console.warn('One Tap skipped');
-      }
-    });
-  } catch (err) {
-    console.error('GIS error:', err);
-    toast('Sign-in failed: ' + err.message, 'error', 5000);
+    const message = authErrorMessage(error, 'google');
+    setEmailAuthStatus(message, true);
+    if (error?.code !== 'auth/popup-closed-by-user') toast(message, 'error', 5000);
+    console.error('[CODMPanda] Google sign-in failed:', error?.code || error);
   }
 }
 
-const GOOGLE_CLIENT_ID = "604146891375-ae5bhcm2nd2f59f0npp3en6setthjg1s.apps.googleusercontent.com";
-
-let gisInitialized = false;
-
-function initGIS() {
-  if (gisInitialized) return;
-  if (!window.google || !window.google.accounts) {
-    console.warn('GIS not loaded yet');
+async function handleEmailSignIn() {
+  const { email, password } = readEmailAuthFields();
+  if (!email || !password) {
+    setEmailAuthStatus('Enter your email and password.', true);
     return;
   }
-  window.google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: handleGISResponse,
-    auto_select: false,
-    cancel_on_tap_outside: true
-  });
-  gisInitialized = true;
-  console.log('GIS initialized');
-}
-
-function fallbackRenderGISButton() {
-  openSheet(
-    '<div class="text-center space-y-4">' +
-      '<div class="text-2xl">🎮</div>' +
-      '<div class="text-sm font-bold">Sign in with Google</div>' +
-      '<div id="gis-btn-container" class="flex justify-center"></div>' +
-      '<button onclick="closeSheet()" class="text-xs text-gray-500">Cancel</button>' +
-    '</div>',
-    'Sign In'
-  );
-
-  setTimeout(function() {
-    if (window.google && window.google.accounts) {
-      window.google.accounts.id.renderButton(
-        document.getElementById('gis-btn-container'),
-        { theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'pill', width: 280 }
-      );
-    }
-  }, 100);
-}
-
-async function handleGISResponse(response) {
   try {
-    console.log('GIS credential received');
-    closeSheet();
-
-    const credential = GoogleAuthProvider.credential(response.credential);
-
-    const result = await signInWithCredential(auth, credential);
-    console.log('Firebase sign-in success:', result.user.email);
+    setEmailAuthStatus('Signing in…');
+    await signInWithEmailAndPassword(auth, email, password);
+    setEmailAuthStatus('');
     toast('Signed in!', 'success');
-  } catch (err) {
-    console.error('Firebase credential error:', err.code, err.message);
-    toast('Sign-in failed: ' + err.message, 'error', 5000);
+  } catch (error) {
+    const message = authErrorMessage(error, 'email');
+    setEmailAuthStatus(message, true);
+    console.error('[CODMPanda] Email sign-in failed:', error?.code || error);
+  }
+}
+
+async function handleEmailSignUp() {
+  const { email, password } = readEmailAuthFields();
+  if (!email || !password) {
+    setEmailAuthStatus('Enter an email and choose a password.', true);
+    return;
+  }
+  if (password.length < 6) {
+    setEmailAuthStatus('Choose a password with at least 6 characters.', true);
+    return;
+  }
+  try {
+    setEmailAuthStatus('Creating your account…');
+    await createUserWithEmailAndPassword(auth, email, password);
+    setEmailAuthStatus('');
+    toast('Account created!', 'success');
+    // onAuthStateChanged + ensureUserProfile creates one profile for this new UID.
+  } catch (error) {
+    const message = authErrorMessage(error, 'signup');
+    setEmailAuthStatus(message, true);
+    console.error('[CODMPanda] Email sign-up failed:', error?.code || error);
+  }
+}
+
+async function handlePasswordReset() {
+  const email = String(document.getElementById('auth-email')?.value || '').trim();
+  if (!email) {
+    setEmailAuthStatus('Enter your email address first, then tap Forgot password.', true);
+    return;
+  }
+  try {
+    await sendPasswordResetEmail(auth, email);
+    setEmailAuthStatus('Password reset email sent. Check your inbox and spam folder.');
+    toast('Password reset email sent.', 'success');
+  } catch (error) {
+    const message = authErrorMessage(error, 'reset');
+    setEmailAuthStatus(message, true);
+    console.error('[CODMPanda] Password reset failed:', error?.code || error);
   }
 }
 
 window.handleSignIn = handleSignIn;
-window.initGIS = initGIS;
-window.handleGISResponse = handleGISResponse;
+window.handleEmailSignIn = handleEmailSignIn;
+window.handleEmailSignUp = handleEmailSignUp;
+window.handlePasswordReset = handlePasswordReset;
 
 async function checkRedirect() {
   try {
-    await getRedirectResult(auth);
-  } catch (e) {
-    console.error('Redirect error:', e);
+    const result = await getRedirectResult(auth);
+    if (result?.user) {
+      setEmailAuthStatus('');
+      toast('Signed in with Google!', 'success');
+    }
+  } catch (error) {
+    const message = authErrorMessage(error, 'google');
+    setEmailAuthStatus(message, true);
+    console.error('[CODMPanda] Google redirect sign-in failed:', error?.code || error);
   }
 }
 async function handleSignOut() {
@@ -602,6 +639,7 @@ onAuthStateChanged(auth, async (user) => {
     try {
       const profile = await ensureUserProfile(user);
       State.profile = profile;
+      window.dispatchEvent(new CustomEvent('codmpanda:profile-loaded', { detail: { uid: user.uid } }));
       if (!profile.ign || !profile.onboardingDone) {
         showOnboarding();
       } else {
@@ -935,16 +973,43 @@ function skeletonLobby() {
   `;
 }
 
+function cpLobbyTimestampMillis(value) {
+  if (value == null) return null;
+  try {
+    if (typeof value.toMillis === 'function') return value.toMillis();
+  } catch (_) {}
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'object') {
+    const seconds = Number(value.seconds ?? value._seconds);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return value < 1e12 ? value * 1000 : value;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// A lobby is active only while its real creation timestamp is less than two hours old.
+// Missing/invalid createdAt values are treated as expired rather than left visible forever.
+function cpLobbyIsExpired(lobby, now = Date.now()) {
+  if (!lobby) return true;
+  const createdAt = cpLobbyTimestampMillis(lobby.createdAt ?? lobby.created_at);
+  // Fail closed for missing/invalid timestamps. Every lobby expires exactly two hours after creation.
+  if (!Number.isFinite(createdAt) || createdAt <= 0 || createdAt > now + 5 * 60 * 1000) return true;
+  return now - createdAt >= 2 * 60 * 60 * 1000;
+}
+
 function loadLobbies() {
-  const now = Date.now();
-  const q = query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(50));
+  // Query active records by their immutable creation time, then re-check expiry as time passes.
+  const cutoff = Timestamp.fromMillis(Date.now() - 2 * 60 * 60 * 1000);
+  const q = query(collection(db, 'lobbies'), where('createdAt', '>', cutoff), orderBy('createdAt', 'desc'), limit(50));
 
   State.lobbiesUnsub = onSnapshot(q, (snap) => {
     const lobbies = [];
     snap.forEach(doc => {
       const data = doc.data();
-      const expires = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
-      if (expires > now) lobbies.push({ id: doc.id, ...data });
+      const lobby = { id: doc.id, ...data };
+      if (!cpLobbyIsExpired(lobby)) lobbies.push(lobby);
     });
     State.cache.lobbies = lobbies;
     renderLobbies();
@@ -959,7 +1024,7 @@ function loadLobbies() {
 function renderLobbies() {
   const feed = document.getElementById('lobbies-feed');
   if (!feed) return;
-  let lobbies = State.cache.lobbies;
+  let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
   const f = State.filters.lobbies;
   if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
@@ -985,14 +1050,14 @@ function renderLobbies() {
       <div class="bg-card border border-border rounded-2xl p-4 fade-in">
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
-              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            <div data-uid="${esc(l.uid)}" class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+              ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
             </div>
             <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
@@ -1055,7 +1120,7 @@ async function joinLobby(lobbyId) {
               ${lobby.avatar ? `<img src="${esc(lobby.avatar)}" class="w-full h-full object-cover" />` : getInitials(lobby.ign)}
             </div>
             <div class="min-w-0">
-              <div class="text-xs font-bold truncate">${esc(lobby.ign)}'s room</div>
+              <div class="text-xs font-bold truncate"><span data-uid="${esc(lobby.uid || '')}" class="font-bold">${esc(lobby.ign)}</span>'s room</div>
               <div class="text-[10px] text-gray-500">${esc(lobby.mode)} · ${esc(lobby.region)}</div>
             </div>
           </div>
@@ -1313,27 +1378,45 @@ function renderVaultSub() {
   if (window.lucide) window.lucide.createIcons();
 }
 
-function loadVaults() {
-  const q = query(
-    collection(db, 'vaults'),
-    orderBy('createdAt', 'desc'),
-    limit(60)
-  );
+function cpNormalizeVaultRecord(id, raw) {
+  const d = { id, ...(raw || {}) };
+  const rawType = String(d.type || d.vaultType || d.category || d.kind || '').toLowerCase().trim();
+  d.type = /sens|sensitivity/.test(rawType) ? 'sens'
+    : /hud|layout/.test(rawType) ? 'hud'
+    : /gun.?smith|build|loadout/.test(rawType) ? 'gunsmith'
+    : rawType || 'gunsmith';
+  if (!d.attachments || typeof d.attachments !== 'object') {
+    d.attachments = d.sensitivitySettings || d.sensitivities || d.settings || d.values || d.controls || {};
+  }
+  d.gunsmithCode = d.gunsmithCode || d.shareCode || d.code || d.loadoutCode || '';
+  d.imageUrl = d.imageUrl || d.imageURL || d.image || d.screenshotUrl || d.screenshot || d.url || '';
+  d.gunName = d.gunName || d.gun || d.weapon || d.title || 'Unknown';
+  d.uid = d.uid || d.userId || d.ownerUid || '';
+  return d;
+}
 
-  State.vaultsUnsub = onSnapshot(q, (snap) => {
+function loadVaults() {
+  if (State.vaultsUnsub) { try { State.vaultsUnsub(); } catch (_) {} }
+  // Do not limit/order before filtering: older records may have no createdAt field.
+  State.vaultsUnsub = onSnapshot(collection(db, 'vaults'), (snap) => {
     const vaults = [];
-    snap.forEach(doc => {
-      const d = doc.data();
-      if (d.type === vaultTypeFilter) vaults.push({ id: doc.id, ...d });
+    snap.forEach(docSnap => {
+      const v = cpNormalizeVaultRecord(docSnap.id, docSnap.data());
+      if (v.type === vaultTypeFilter) vaults.push(v);
+    });
+    vaults.sort((a, b) => {
+      const at = a.createdAt?.toMillis ? a.createdAt.toMillis() : (Date.parse(a.createdAt || '') || 0);
+      const bt = b.createdAt?.toMillis ? b.createdAt.toMillis() : (Date.parse(b.createdAt || '') || 0);
+      return bt - at;
     });
     State.cache.vaults = vaults;
     renderVaults();
   }, (err) => {
-    console.error('Vaults error:', err);
+    console.error('[CODMPanda] Full vault read failed:', err);
     const feed = document.getElementById('vault-feed');
     if (feed) {
       feed.className = '';
-      feed.innerHTML = emptyState('package-open', 'No vaults yet', 'Share your first build', 'Add Build', openAddVaultSheet);
+      feed.innerHTML = emptyState('package-open', 'Vault could not load', 'Check your connection and Firebase access, then retry.', 'Retry', loadVaults);
     }
     if (window.lucide) window.lucide.createIcons();
   });
@@ -2720,11 +2803,11 @@ function renderYouTab() {
             <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-2xl overflow-hidden">
               ${p.avatar ? `<img src="${esc(p.avatar)}" class="w-full h-full object-cover" />` : getInitials(p.ign || '?')}
             </div>
-            ${isPro ? `<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card"><span class="text-sm">👑</span></div>` : ''}
+            
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-base font-black truncate">${esc(p.ign || 'Set IGN')}</span>
+              <span data-uid="${esc(p.uid || State.user?.uid || '')}" class="text-base font-black truncate">${esc(p.ign || 'Set IGN')}</span>
               ${isPro ? `<span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">PRO</span>` : ''}
             </div>
             <div class="text-[11px] text-gray-500 mt-0.5">${esc(p.rank || 'Rookie')} · ${esc(p.region || 'Global')}</div>
@@ -2869,8 +2952,7 @@ function settingsRow(action, icon, label, sub, danger = false) {
 function renderProUpsell() {
   return `
     <div class="bg-gradient-to-br from-black via-black to-[#1a1200] border border-gold/40 rounded-2xl p-5 mb-4 shimmer relative overflow-hidden">
-      <div class="absolute top-3 right-3 text-3xl">👑</div>
-      <div class="text-xs font-black text-gold uppercase tracking-wider mb-1">Upgrade</div>
+            <div class="text-xs font-black text-gold uppercase tracking-wider mb-1">Upgrade</div>
       <h3 class="text-xl font-black mb-3">Go <span class="text-gold glow-text-gold">Pro</span></h3>
       <div class="text-xs text-gray-300 mb-4">
         <div class="font-bold text-gold mb-2">$1.99/mo · $9.99 lifetime</div>
@@ -2881,7 +2963,7 @@ function renderProUpsell() {
           <li>✦ Pin LFG posts</li>
           <li>✦ Instant leak alerts</li>
           <li>✦ Zero ads, forever</li>
-          <li>✦ Gold crown badge 👑</li>
+          <li>✦ Obsidian Spike Pro badge </li>
         </ul>
       </div>
       <button id="unlock-pro-btn" class="btn-press w-full py-3.5 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold">
@@ -2896,8 +2978,7 @@ function renderProActive(p) {
   return `
     <div class="bg-gradient-to-br from-[#1a1200] to-black border border-gold glow-gold rounded-2xl p-5 mb-4">
       <div class="flex items-center gap-2 mb-3">
-        <span class="text-2xl">👑</span>
-        <div>
+                <div>
           <div class="text-sm font-black text-gold glow-text-gold">PRO ACTIVE</div>
           <div class="text-[10px] text-gray-400">Expires: ${expiry}</div>
         </div>
@@ -3242,8 +3323,7 @@ function deleteAccount() {
 function showProPaywall(message) {
   openSheet(`
     <div class="text-center space-y-4">
-      <div class="text-5xl">👑</div>
-      <div>
+            <div>
         <h3 class="text-xl font-black text-gold glow-text-gold mb-2">Pro Feature</h3>
         <p class="text-sm text-gray-400">${message}</p>
       </div>
@@ -3253,7 +3333,7 @@ function showProPaywall(message) {
           <div>✦ Full Camo Tracker</div>
           <div>✦ Create Clans</div>
           <div>✦ Zero Ads</div>
-          <div>✦ Gold Crown Badge</div>
+          <div>✦ Obsidian Spike Pro badge</div>
         </div>
       </div>
       <button onclick="closeSheet(); goPro();" class="btn-press w-full py-4 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black glow-gold">Go Pro — $1.99/mo</button>
@@ -3270,7 +3350,8 @@ async function goPro() {
         proExpiry: Timestamp.fromMillis(Date.now() + 365 * 24 * 60 * 60 * 1000)
       });
       State.profile.isPro = true;
-      toast('👑 Pro unlocked!', 'success');
+      window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid: State.user.uid } }));
+      toast(' Pro unlocked!', 'success');
       hideAd();
       renderYouTab();
     } catch (e) { toast('Failed', 'error'); }
@@ -3281,8 +3362,7 @@ function showManagePro() {
   openSheet(`
     <div class="space-y-4">
       <div class="text-center">
-        <div class="text-5xl mb-2">👑</div>
-        <div class="text-lg font-black text-gold">Pro Member</div>
+                <div class="text-lg font-black text-gold">Pro Member</div>
       </div>
       <div class="bg-cardAlt border border-border rounded-xl p-3 text-xs text-gray-400">Manage your subscription via Paystack. Cancel anytime.</div>
       <button onclick="closeSheet()" class="btn-press w-full py-3 rounded-xl bg-primary font-bold">Done</button>
@@ -3334,7 +3414,7 @@ async function showAdminUsers() {
               ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-sm font-bold truncate flex items-center gap-1.5">
+              <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate flex items-center gap-1.5">
                 ${esc(u.ign || 'Unknown')}
                 ${u.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
               </div>
@@ -3421,7 +3501,7 @@ function handleDeepLinks() {
             <div class="space-y-3">
               ${v.imageUrl ? `<img src="${esc(v.imageUrl)}" class="w-full rounded-xl" />` : ''}
               <div class="text-lg font-black">${esc(v.gunName)}</div>
-              <div class="text-xs text-gray-500">${esc(v.type)} · by ${esc(v.ign || 'Unknown')}</div>
+              <div class="text-xs text-gray-500">${esc(v.type)} · by <span data-uid="${esc(v.uid || v.userId || v.ownerUid || '')}" class="text-white font-bold">${esc(v.ign || 'Unknown')}</span></div>
               ${v.gunsmithCode ? `
                 <div class="bg-cardAlt border border-border rounded-xl p-3">
                   <div class="text-[10px] text-gray-500 mb-1">Gunsmith Code</div>
@@ -4241,7 +4321,8 @@ async function grantProToContributor(uid) {
       proExpiry: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
       proFromContribution: true
     });
-    toast('👑 7-day Pro granted!', 'success');
+    window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid } }));
+    toast(' 7-day Pro granted!', 'success');
   } catch (e) {
     toast('Failed: ' + e.message, 'error');
   }
@@ -4291,7 +4372,7 @@ function renderContributorCard() {
               <div class="text-[10px] text-gray-500">Next reward at <span class="font-bold text-white">${nextMilestone}</span></div>
               <div class="text-[10px] text-gold font-bold">${nextMilestone - count} more needed</div>
             ` : `
-              <div class="text-[10px] text-gold font-bold glow-text-gold">ALL MILESTONES HIT 👑</div>
+              <div class="text-[10px] text-gold font-bold glow-text-gold">ALL MILESTONES HIT </div>
             `}
           </div>
         </div>
@@ -4419,7 +4500,8 @@ function showGrantProDialog(uid, ign) {
           proExpiry: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
           proFromContribution: true
         });
-        toast(`👑 Pro granted to ${ign}!`, 'success');
+        window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid } }));
+        toast(` Pro granted to ${ign}!`, 'success');
       } catch (e) {
         toast('Failed: ' + e.message, 'error');
       }
@@ -4452,7 +4534,7 @@ showAdminUsers = async function() {
                 ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-bold truncate flex items-center gap-1.5">
+                <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate flex items-center gap-1.5">
                   ${esc(u.ign || 'Unknown')}
                   ${u.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
                 </div>
@@ -4465,7 +4547,7 @@ showAdminUsers = async function() {
             </div>
             ${isContributor ? `
               <button class="grant-pro-btn w-full mt-2 py-2 rounded-lg bg-gold/15 border border-gold/40 text-gold text-xs font-bold" data-uid="${u.id}" data-ign="${esc(u.ign)}">
-                👑 Grant 7-Day Pro (Contributor)
+                 Grant 7-Day Pro (Contributor)
               </button>
             ` : ''}
           </div>
@@ -4885,11 +4967,11 @@ function renderLeaderboard() {
               <div class="w-10 h-10 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center font-bold text-sm">
                 ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
               </div>
-              ${u.isPro ? `<div class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-gold flex items-center justify-center border-2 border-card text-[8px]">👑</div>` : ''}
+              
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
-                <span class="text-sm font-bold truncate">${esc(u.ign)}</span>
+                <span data-uid="${esc(u.uid || u.id || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</span>
                 ${isMe ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-primary text-white font-black">YOU</span>' : ''}
               </div>
               <div class="text-[10px] text-gray-500 truncate">${esc(u.rank)} · ${esc(u.region)}</div>
@@ -5012,8 +5094,7 @@ function openUpgradeSheet() {
 
   openSheet(`
     <div class="text-center space-y-4">
-      <div class="text-5xl">👑</div>
-      <div>
+            <div>
         <h3 class="text-xl font-black text-gold glow-text-gold mb-1">CODMPanda Pro</h3>
         <p class="text-xs text-gray-400">Unlock everything. Support the app.</p>
       </div>
@@ -5027,7 +5108,7 @@ function openUpgradeSheet() {
         <div class="flex items-center gap-2"><span class="text-gold">✦</span> Pin your LFG posts</div>
         <div class="flex items-center gap-2"><span class="text-gold">✦</span> Instant leak alerts</div>
         <div class="flex items-center gap-2"><span class="text-gold">✦</span> Zero ads, forever</div>
-        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Gold crown badge 👑</div>
+        <div class="flex items-center gap-2"><span class="text-gold">✦</span> Obsidian Spike Pro badge </div>
       </div>
     </div>
 
@@ -5148,7 +5229,8 @@ async function checkProStatus() {
       const data = snap.data();
       if (data.isPro) {
         State.profile = { ...State.profile, ...data };
-        toast('👑 Pro activated! Welcome to the club.', 'success', 4000);
+        window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid: State.user.uid } }));
+        toast(' Pro activated! Welcome to the club.', 'success', 4000);
         closeSheet();
         hideAd();
         setTimeout(() => {
@@ -5168,8 +5250,7 @@ const _origRenderProUpsell = renderProUpsell;
 renderProUpsell = function() {
   return `
     <div class="bg-gradient-to-br from-black via-black to-[#1a1200] border border-gold/40 rounded-2xl p-5 mb-4 shimmer relative overflow-hidden">
-      <div class="absolute top-3 right-3 text-3xl">👑</div>
-      <div class="text-xs font-black text-gold uppercase tracking-wider mb-1">Upgrade</div>
+            <div class="text-xs font-black text-gold uppercase tracking-wider mb-1">Upgrade</div>
       <h3 class="text-xl font-black mb-3">Go <span class="text-gold glow-text-gold">Pro</span></h3>
       <div class="text-xs text-gray-300 mb-4">
         <div class="font-bold text-gold mb-2">$1.99/mo · $9.99 lifetime</div>
@@ -5180,7 +5261,7 @@ renderProUpsell = function() {
           <li>✦ Pin LFG posts</li>
           <li>✦ Instant leak alerts</li>
           <li>✦ Zero ads, forever</li>
-          <li>✦ Gold crown badge 👑</li>
+          <li>✦ Obsidian Spike Pro badge </li>
         </ul>
       </div>
       <button id="unlock-pro-btn" class="btn-press w-full py-3.5 rounded-xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold">
@@ -5331,7 +5412,7 @@ const _origRenderLobbies = renderLobbies;
 renderLobbies = function() {
   const feed = document.getElementById('lobbies-feed');
   if (!feed) return;
-  let lobbies = State.cache.lobbies;
+  let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
   const f = State.filters.lobbies;
   if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
@@ -5357,14 +5438,14 @@ renderLobbies = function() {
       <div class="bg-card border border-border rounded-2xl p-4 fade-in">
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
-              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            <div data-uid="${esc(l.uid || l.userId || l.ownerUid || l.createdBy || l.authorUid || '')}" class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+              ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
             </div>
             <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
@@ -5740,12 +5821,6 @@ async function generateProfileCard() {
     drawInitials(ctx, p.ign, W / 2, avatarY, avatarR);
   }
 
-  // Pro crown overlay
-  if (p.isPro) {
-    ctx.font = 'bold 90px Inter, sans-serif';
-    ctx.fillText('👑', W / 2 + 130, avatarY - 100);
-  }
-
   // ---------- NAME ----------
   ctx.font = 'bold 72px Inter, sans-serif';
   ctx.fillStyle = '#ffffff';
@@ -5759,7 +5834,7 @@ async function generateProfileCard() {
 
   if (p.isPro) {
     // Pro pill
-    const proText = '👑 PRO MEMBER';
+    const proText = 'PRO MEMBER';
     ctx.font = 'bold 30px Inter, sans-serif';
     const proW = ctx.measureText(proText).width + 60;
     const proX = W / 2 - proW / 2;
@@ -6397,8 +6472,7 @@ async function showAdminAnalytics() {
         <!-- REVENUE CARD -->
         <div class="bg-gradient-to-br from-gold/10 to-black border border-gold/40 rounded-2xl p-4">
           <div class="flex items-center gap-2 mb-3">
-            <i data-lucide="crown" class="w-4 h-4 text-gold"></i>
-            <div class="text-xs font-bold text-gold uppercase">Revenue</div>
+                        <div class="text-xs font-bold text-gold uppercase">Revenue</div>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div class="bg-black/40 rounded-xl p-3">
@@ -6489,7 +6563,7 @@ async function showAdminAnalytics() {
                       ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
                     </div>
                     <div class="flex-1 min-w-0">
-                      <div class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
+                      <div data-uid="${esc(u.id || u.uid || '')}" class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
                     </div>
                     <div class="text-xs font-black text-primary">${u.approvedCount}</div>
                   </div>
@@ -6539,7 +6613,7 @@ async function showAdminAnalytics() {
                     ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
                   </div>
                   <div class="flex-1 min-w-0">
-                    <div class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
+                    <div data-uid="${esc(u.id || u.uid || '')}" class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
                     <div class="text-[10px] text-gray-500">${esc(u.region || 'Unknown')}</div>
                   </div>
                   <div class="text-[10px] text-gray-500">${timeAgo({ seconds: Math.floor(u.createdAt / 1000) })}</div>
@@ -6723,7 +6797,7 @@ async function renderFriendsList(body, friendUids) {
         ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
       </div>
       <div class="flex-1 min-w-0">
-        <div class="text-sm font-bold truncate flex items-center gap-1.5">
+        <div data-uid="${esc(f.id || f.uid || '')}" class="text-sm font-bold truncate flex items-center gap-1.5">
           ${esc(f.ign || 'Unknown')}
           ${f.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
         </div>
@@ -6771,7 +6845,7 @@ async function renderRequestsList(body, incomingReqs, outgoingReqs) {
           ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+          <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</div>
           <div class="text-[10px] text-gray-500">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
         </div>
         <button class="accept-friend-btn w-9 h-9 rounded-lg bg-green-500 flex items-center justify-center" data-uid="${u.id}" data-ign="${esc(u.ign)}">
@@ -6800,7 +6874,7 @@ async function renderRequestsList(body, incomingReqs, outgoingReqs) {
           ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+          <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</div>
           <div class="text-[10px] text-yellow-400">Pending...</div>
         </div>
         <button class="cancel-req-btn w-9 h-9 rounded-lg bg-cardAlt border border-border flex items-center justify-center" data-uid="${u.id}">
@@ -6957,7 +7031,7 @@ async function performFriendSearch(query) {
             ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+            <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</div>
             <div class="text-[10px] text-gray-500">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
           </div>
           ${actionHTML}
@@ -7221,8 +7295,7 @@ async function renderClanWarsSub() {
 
       ${champion ? `
         <div class="bg-gradient-to-r from-gold/10 to-transparent border border-gold/30 rounded-xl p-3 mb-4 flex items-center gap-3">
-          <div class="text-2xl">👑</div>
-          <div class="flex-1 min-w-0">
+                    <div class="flex-1 min-w-0">
             <div class="text-[10px] text-gold uppercase font-bold">Reigning Champion</div>
             <div class="text-sm font-black truncate">${esc(champion.clanName)}</div>
             <div class="text-[10px] text-gray-500">Season ${champion.season}</div>
@@ -7306,7 +7379,7 @@ async function renderClanWarsSub() {
 
       <!-- HALL OF FAME -->
       <div class="bg-card border border-border rounded-2xl p-4 mb-4">
-        <div class="text-xs font-bold text-gray-400 uppercase mb-3">👑 Hall of Fame</div>
+        <div class="text-xs font-bold text-gray-400 uppercase mb-3"> Hall of Fame</div>
         <div id="hall-of-fame-list">
           <div class="text-center py-4 text-[10px] text-gray-600">Loading history...</div>
         </div>
@@ -9141,7 +9214,7 @@ async function openTournamentDetail(tournamentId) {
                   <div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden">
                     ${tm.avatar ? `<img src="${esc(tm.avatar)}" class="w-full h-full object-cover" />` : getInitials(tm.ign)}
                   </div>
-                  <div class="flex-1 text-xs font-bold truncate">${esc(tm.ign)}</div>
+                  <div data-uid="${esc(tm.uid || '')}" class="flex-1 text-xs font-bold truncate">${esc(tm.ign)}</div>
                   ${tm.uid === t.creatorUid ? '<span class="text-[8px] px-1.5 py-0.5 rounded bg-gold text-black font-black">HOST</span>' : ''}
                 </div>
               `).join('')}
@@ -9406,7 +9479,7 @@ async function openBracketView(tournamentId) {
         <div class="bg-gradient-to-br from-primary/10 to-black border border-primary/30 rounded-2xl p-4">
           <div class="text-base font-black mb-1">${esc(t2.name)}</div>
           <div class="text-[10px] text-gray-500">${esc(t2.mode)} · ${esc(t2.region)} · ${(t2.teams || []).length} teams</div>
-          ${t2.status === 'completed' ? `<div class="mt-2 text-xs font-bold text-gold">🏆 Winner: ${esc(t2.winner?.ign || 'TBD')}</div>` : ''}
+          ${t2.status === 'completed' ? `<div class="mt-2 text-xs font-bold text-gold">🏆 Winner: <span data-uid="${esc(t2.winner?.uid || '')}" class="font-bold">${esc(t2.winner?.ign || 'TBD')}</span></div>` : ''}
         </div>
 
         <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2" id="round-tabs">
@@ -9473,7 +9546,7 @@ function renderRoundMatches(tournament, round, rounds, canManage) {
             <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden flex-shrink-0">
               ${team1.avatar ? `<img src="${esc(team1.avatar)}" class="w-full h-full object-cover" />` : getInitials(team1.ign)}
             </div>
-            <div class="text-xs font-bold truncate">${esc(team1.ign)}</div>
+            <div data-uid="${esc(team1.uid || '')}" class="text-xs font-bold truncate">${esc(team1.ign)}</div>
             ${m.winner?.uid === team1.uid ? '<span class="text-[8px] text-green-400 font-black">✓ WIN</span>' : ''}
           </div>
           <div class="text-sm font-black ${m.score1 !== null && m.score1 !== undefined ? 'text-primary' : 'text-gray-600'}">
@@ -9489,7 +9562,7 @@ function renderRoundMatches(tournament, round, rounds, canManage) {
             <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden flex-shrink-0">
               ${team2.avatar ? `<img src="${esc(team2.avatar)}" class="w-full h-full object-cover" />` : getInitials(team2.ign)}
             </div>
-            <div class="text-xs font-bold truncate">${esc(team2.ign)}</div>
+            <div data-uid="${esc(team2.uid || '')}" class="text-xs font-bold truncate">${esc(team2.ign)}</div>
             ${m.winner?.uid === team2.uid ? '<span class="text-[8px] text-green-400 font-black">✓ WIN</span>' : ''}
           </div>
           <div class="text-sm font-black ${m.score2 !== null && m.score2 !== undefined ? 'text-primary' : 'text-gray-600'}">
@@ -9521,7 +9594,7 @@ function renderRoundMatches(tournament, round, rounds, canManage) {
           <div class="mt-3 pt-2 border-t border-border">
             <div class="text-[10px] text-red-400 font-bold mb-2 text-center">⚠️ Dispute — override required</div>
             <button class="override-btn btn-press w-full py-2 rounded-lg bg-gold text-black text-xs font-bold" data-match="${m.round}-${m.matchIndex}">
-              👑 Override Result
+               Override Result
             </button>
           </div>
         ` : ''}
@@ -9744,7 +9817,7 @@ function openOverrideSheet(tournamentId, matchKey) {
   openSheet(`
     <div class="space-y-4">
       <div class="bg-gold/10 border border-gold/30 rounded-xl p-3">
-        <div class="text-[10px] text-gold font-bold mb-1">👑 Host Override</div>
+        <div class="text-[10px] text-gold font-bold mb-1"> Host Override</div>
         <div class="text-[10px] text-gray-400">Force-resolve this match. Use only when both teams dispute.</div>
       </div>
 
@@ -9977,7 +10050,7 @@ renderTournamentCard = function(t) {
             <div class="w-8 h-8 rounded-full bg-gold/20 flex items-center justify-center text-[10px] font-bold overflow-hidden">
               ${t.winner.avatar ? `<img src="${esc(t.winner.avatar)}" class="w-full h-full object-cover" />` : getInitials(t.winner.ign)}
             </div>
-            <div class="text-sm font-black text-gold glow-text-gold truncate">${esc(t.winner.ign || 'Unknown')}</div>
+            <div data-uid="${esc(t.winner.uid || '')}" class="text-sm font-black text-gold glow-text-gold truncate">${esc(t.winner.ign || 'Unknown')}</div>
           </div>
         </div>
 
@@ -10511,11 +10584,11 @@ async function openUserProfile(uid) {
               <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-2xl overflow-hidden">
                 ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
               </div>
-              ${u.isPro ? `<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>` : ''}
+              
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5 flex-wrap">
-                <span class="text-base font-black truncate">${esc(u.ign || 'Unknown')}</span>
+                <span data-uid="${esc(u.uid || u.id || '')}" class="text-base font-black truncate">${esc(u.ign || 'Unknown')}</span>
                 ${u.isPro ? `<span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">PRO</span>` : ''}
               </div>
               <div class="text-[11px] text-gray-500 mt-0.5">${esc(u.rank || 'Rookie')} · ${esc(u.region || 'Global')}</div>
@@ -10761,7 +10834,7 @@ function openAdvancedSettings() {
           <div class="flex justify-between"><span class="text-gray-500">Version</span><span class="font-bold">1.0.0</span></div>
           <div class="flex justify-between"><span class="text-gray-500">Build</span><span class="font-mono text-gray-400">${new Date().toISOString().slice(0, 10)}</span></div>
           <div class="flex justify-between"><span class="text-gray-500">Environment</span><span class="font-bold text-green-400">Production</span></div>
-          ${p.isPro ? `<div class="flex justify-between"><span class="text-gray-500">Account</span><span class="font-bold text-gold">👑 Pro Member</span></div>` : ''}
+          ${p.isPro ? `<div class="flex justify-between"><span class="text-gray-500">Account</span><span class="font-bold text-gold"> Pro Member</span></div>` : ''}
         </div>
       </div>
 
@@ -11278,7 +11351,7 @@ function renderFriendActivityCard(f, status) {
         <div class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${dotColor} border-2 border-card"></div>
       </div>
       <div class="flex-1 min-w-0">
-        <div class="text-sm font-bold truncate flex items-center gap-1.5">
+        <div data-uid="${esc(f.id || f.uid || '')}" class="text-sm font-bold truncate flex items-center gap-1.5">
           ${esc(f.ign || 'Unknown')}
           ${f.isPro ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
         </div>
@@ -11798,7 +11871,7 @@ async function openTeamRegisterSheet(tournamentId, tournament) {
           ${State.profile.avatar ? `<img src="${esc(State.profile.avatar)}" class="w-full h-full object-cover" />` : getInitials(State.profile.ign)}
         </div>
         <div class="flex-1">
-          <div class="text-xs font-bold">${esc(State.profile.ign)} (You · Captain)</div>
+          <div data-uid="${esc(State.user?.uid || '')}" class="text-xs font-bold">${esc(State.profile.ign)} (You · Captain)</div>
         </div>
       </label>
       ${friendData.map(f => `
@@ -11808,7 +11881,7 @@ async function openTeamRegisterSheet(tournamentId, tournament) {
             ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
           </div>
           <div class="flex-1">
-            <div class="text-xs font-bold">${esc(f.ign)}</div>
+            <div data-uid="${esc(f.id || f.uid || '')}" class="text-xs font-bold">${esc(f.ign)}</div>
             <div class="text-[10px] text-gray-500">${esc(f.rank || '—')} · ${esc(f.region || '—')}</div>
           </div>
         </label>
@@ -12119,7 +12192,7 @@ function renderPartyPanel(party) {
                 ${m.avatar ? `<img src="${esc(m.avatar)}" class="w-full h-full object-cover" />` : getInitials(m.ign)}
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-bold truncate flex items-center gap-1.5">
+                <div data-uid="${esc(m.uid || '')}" class="text-sm font-bold truncate flex items-center gap-1.5">
                   ${esc(m.ign)}
                   ${m.uid === party.leaderUid ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">LEADER</span>' : ''}
                 </div>
@@ -12227,7 +12300,7 @@ async function openInviteFriendsSheet(party) {
           ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-bold truncate">${esc(f.ign)}</div>
+          <div data-uid="${esc(f.id || f.uid || '')}" class="text-sm font-bold truncate">${esc(f.ign)}</div>
           <div class="text-[10px] text-gray-500">${esc(f.rank || '—')}</div>
         </div>
         <button class="invite-friend-btn btn-press px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold" data-uid="${f.id}" data-ign="${esc(f.ign)}">
@@ -12874,10 +12947,7 @@ renderYouTab = function() {
 setInterval(() => {
   if (State.currentTab === 'play' && State.cache.lobbies.length > 0) {
     const now = Date.now();
-    const stillValid = State.cache.lobbies.filter(l => {
-      const exp = l.expiresAt?.toMillis ? l.expiresAt.toMillis() : (l.expiresAt?.seconds ? l.expiresAt.seconds * 1000 : Infinity);
-      return exp > now;
-    });
+    const stillValid = State.cache.lobbies.filter(l => !cpLobbyIsExpired(l));
     if (stillValid.length !== State.cache.lobbies.length) {
       State.cache.lobbies = stillValid;
       renderLobbies();
@@ -13081,7 +13151,7 @@ async function performGlobalSearch(searchTerm) {
               ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+              <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</div>
               <div class="text-[10px] text-gray-500 truncate">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
             </div>
             ${u.isPro ? '<span class="text-[8px] px-1.5 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
@@ -13110,7 +13180,7 @@ async function performGlobalSearch(searchTerm) {
         ${matches.posts.slice(0, 6).map(post => `
           <div class="flex items-start gap-3 p-3 bg-card border border-border rounded-xl mb-2 cursor-pointer search-result-post" data-postid="${post.id}">
             <div class="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center flex-shrink-0"><i data-lucide="file-text" class="w-4 h-4 text-primary"></i></div>
-            <div class="flex-1 min-w-0"><div class="text-xs font-bold">${esc(post.ign || 'CODMPanda player')}</div><div class="text-xs text-gray-400 line-clamp-2">${esc(post.text || '')}</div></div>
+            <div class="flex-1 min-w-0"><div data-uid="${esc(post.uid || post.userId || '')}" class="text-xs font-bold">${esc(post.ign || 'CODMPanda player')}</div><div class="text-xs text-gray-400 line-clamp-2">${esc(post.text || '')}</div></div>
           </div>
         `).join('')}
       ` : ''}
@@ -13792,12 +13862,12 @@ console.log('✅ Chunk 34: Clean version loaded');
 // Chunk 36: Delete Own Content + Smart Expiry + ToS Update
 // ============================================
 
-const LOBBY_EXPIRY_HOURS = 24;
+const LOBBY_EXPIRY_HOURS = 2;
 const SCRIM_EXPIRY_HOURS = 12;
 const SOFT_CLOSE_HOURS = 1440; // 60 days — lower this when you have more users
 
 // ============================================
-// PART 1: LOBBY POST (24h active window)
+// PART 1: LOBBY POST (2h active window)
 // ============================================
 
 openPostLobbySheet = function() {
@@ -13884,7 +13954,7 @@ openPostLobbySheet = function() {
 renderLobbies = function() {
   const feed = document.getElementById('lobbies-feed');
   if (!feed) return;
-  let lobbies = State.cache.lobbies;
+  let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
   const f = State.filters.lobbies;
   if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
@@ -13907,8 +13977,7 @@ renderLobbies = function() {
   const now = Date.now();
 
   feed.innerHTML = lobbies.map(l => {
-    const expiresAt = l.expiresAt?.toMillis ? l.expiresAt.toMillis() : (l.expiresAt?.seconds ? l.expiresAt.seconds * 1000 : Infinity);
-    const isExpired = expiresAt < now;
+    const isExpired = cpLobbyIsExpired(l);
     const isMine = l.uid === State.user.uid;
     const playersText = `${l.players || 1}/5`;
 
@@ -13916,14 +13985,14 @@ renderLobbies = function() {
       <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : 'border-border'} rounded-2xl p-4 fade-in">
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
-              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+              ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
               ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
             </div>
@@ -14342,8 +14411,11 @@ async function cleanupExpiredContent() {
     const lobbiesToDelete = [];
     lobbiesSnap.forEach(d => {
       const data = d.data();
-      const exp = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
-      if (exp + graceMs < now) lobbiesToDelete.push(d.id);
+      const createdAt = cpLobbyTimestampMillis(data.createdAt ?? data.created_at);
+      const expiresAt = Number.isFinite(createdAt) && createdAt > 0
+        ? createdAt + 2 * 60 * 60 * 1000
+        : Infinity;
+      if (expiresAt + graceMs < now) lobbiesToDelete.push(d.id);
     });
     if (lobbiesToDelete.length > 0) {
       await Promise.all(lobbiesToDelete.map(id => deleteDoc(doc(db, 'lobbies', id))));
@@ -14448,7 +14520,7 @@ const _origRenderLobbiesEmpty = renderLobbies;
 renderLobbies = function() {
   const feed = document.getElementById('lobbies-feed');
   if (!feed) return;
-  let lobbies = State.cache.lobbies;
+  let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
   const f = State.filters.lobbies;
   if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
@@ -14550,7 +14622,7 @@ renderClans = function() {
             <span class="text-5xl">🛡️</span>
           </div>
         </div>
-        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">👑 Pro feature</div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2"> Pro feature</div>
         <div class="text-xl font-black mb-3">No clans yet</div>
         <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
           Create your own clan, recruit members, compete in Clan Wars, and earn badges.
@@ -14713,7 +14785,7 @@ renderTournamentsSub = async function() {
               <span class="text-5xl">🏆</span>
             </div>
           </div>
-          <div class="text-[10px] font-black text-gold uppercase tracking-widest mb-2">👑 Host your own</div>
+          <div class="text-[10px] font-black text-gold uppercase tracking-widest mb-2"> Host your own</div>
           <div class="text-xl font-black mb-3">No tournaments yet</div>
           <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
             Create a bracket in 60 seconds. Auto-registration, auto-brackets, auto-resolve. Zero admin needed.
@@ -14757,7 +14829,7 @@ renderClans = function() {
             <span class="text-5xl">🛡️</span>
           </div>
         </div>
-        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">👑 Pro feature</div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2"> Pro feature</div>
         <div class="text-xl font-black mb-3">No clans yet</div>
         <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
           Create your own clan, recruit members, compete in Clan Wars, and earn badges.
@@ -14834,7 +14906,7 @@ const TOUR_STEPS = [
   },
   {
     id: 'you',
-    emoji: '👑',
+    emoji: '👤',
     title: 'Your Profile',
     body: 'Track your stats, earn badges, unlock Pro features. Everything personalized.',
     tab: 'you',
@@ -15146,7 +15218,7 @@ console.log('✅ Chunk 38: Onboarding tour loaded');
 // Add founder badge to any content posted by the admin
 function getFounderBadge(uid) {
   if (uid === ADMIN_UID) {
-    return '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex items-center gap-0.5">👑 FOUNDER</span>';
+    return '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex items-center gap-0.5"> FOUNDER</span>';
   }
   return '';
 }
@@ -15169,7 +15241,7 @@ renderLobbies = function() {
         if (!card.querySelector('.founder-badge')) {
           const badge = document.createElement('span');
           badge.className = 'founder-badge text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black';
-          badge.textContent = '👑 FOUNDER';
+          badge.textContent = ' FOUNDER';
           ignEl.parentNode.insertBefore(badge, ignEl.nextSibling);
         }
       }
@@ -15197,7 +15269,7 @@ renderVaults = function() {
 // PART 2: UPDATE AVAILABLE BANNER
 // ============================================
 
-const APP_BUILD_DATE = '2026-10-06'; // Update this each deploy
+const APP_BUILD_DATE = '2026-10-23'; // Update this each deploy
 const STORED_BUILD_KEY = 'codmpanda_build_date';
 
 function checkForUpdates() {
@@ -15448,7 +15520,7 @@ async function openCommentsSheet(contentType, contentId, contentTitle) {
             </div>
             <div class="flex-1 min-w-0 ${isMine ? 'text-right' : ''}">
               <div class="inline-block max-w-full ${isMine ? 'bg-primary text-white' : 'bg-card border border-border'} rounded-2xl px-3 py-2 text-left">
-                <div class="text-[10px] font-bold ${isMine ? 'text-white/90' : 'text-primary'} mb-0.5">${esc(c.ign)}</div>
+                <div data-uid="${esc(c.uid || '')}" class="text-[10px] font-bold ${isMine ? 'text-white/90' : 'text-primary'} mb-0.5">${esc(c.ign)}</div>
                 <div class="text-xs break-words">${esc(c.text)}</div>
               </div>
               <div class="flex items-center gap-2 mt-1 ${isMine ? 'justify-end' : ''}">
@@ -15990,6 +16062,7 @@ async function loadMentionFriends(forceRefresh = false) {
       } catch (_) { return null; }
     }))).filter(Boolean);
     mentionFriends = people.sort((a, b) => a.ign.localeCompare(b.ign));
+    window.__cpMentionUidByName = Object.fromEntries(mentionFriends.filter(person => person.uid && person.ign).map(person => [String(person.ign).replace(/^@/, '').trim().toLowerCase(), person.uid]));
     mentionFriendsOwner = ownerUid;
     return mentionFriends;
   } catch (e) {
@@ -16044,7 +16117,7 @@ function showMentionDropdown(inputEl, filter = '') {
       <div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
         ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
       </div>
-      <span class="text-xs font-bold text-white flex-1">@${esc(f.ign)}</span>
+      <span data-uid="${esc(f.id || f.uid || '')}" class="text-xs font-bold text-white flex-1">@${esc(f.ign)}</span>
     </button>
   `).join('');
 
@@ -16227,24 +16300,73 @@ openDMThread = async function(friendUid, friendIgn) {
 function highlightMentions(text) {
   if (!text) return '';
   const escaped = esc(text);
-  return escaped.replace(/@([A-Za-z0-9_]{2,24})/g, '<span class="mention-text text-primary font-bold">@$1</span>');
+  return escaped.replace(/(^|[^A-Za-z0-9._%+-])@([A-Za-z0-9_]{2,24})/g, '$1<a href="#" role="link" aria-label="Open @$2 profile" data-mention-name="$2" class="mention-text text-sky-400 font-bold hover:underline" style="color:#38bdf8;cursor:pointer;text-decoration:none">@$2</a>');
 }
 
-// Make mentions tappable
-document.addEventListener('click', async (e) => {
-  const mention = e.target.closest('.mention-text');
+// Resolve mentions in one capture-phase handler so card/feed click handlers cannot swallow taps.
+document.addEventListener('click', async (event) => {
+  const mention = event.target.closest?.('.mention-text');
   if (!mention) return;
-  e.stopPropagation();
-
-  const ign = mention.textContent.replace('@', '').trim();
-  await loadMentionFriends();
-  const friend = mentionFriends.find(f => f.ign.toLowerCase() === ign.toLowerCase());
-  if (friend) {
-    openUserProfile(friend.uid);
-  } else {
-    toast('User not found', 'info');
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  const ign = String(mention.dataset.mentionName || mention.textContent.replace(/^@/, '')).trim().replace(/^@/, '');
+  if (!ign) return;
+  if (mention.dataset.opening === '1') return;
+  mention.dataset.opening = '1';
+  try {
+    const normalized = ign.toLowerCase();
+    let found = null;
+    const mappedUid = mention.dataset.mentionUid || window.__cpMentionUidByName?.[normalized];
+    if (mappedUid && typeof openUserProfile === 'function') {
+      await openUserProfile(mappedUid);
+      return;
+    }
+    try {
+      await loadMentionFriends();
+      const friend = Array.isArray(mentionFriends) ? mentionFriends.find(f =>
+        String(f.ign || f.username || '').replace(/^@/, '').toLowerCase() === normalized
+      ) : null;
+      if (friend?.uid) { await openUserProfile(friend.uid); return; }
+    } catch (_) {}
+    const [byIgn, byUsername, byDisplay, byHandle] = await Promise.all([
+      getDocs(query(collection(db, 'users'), where('ign', '==', ign), limit(1))).catch(() => null),
+      getDocs(query(collection(db, 'users'), where('username', '==', ign), limit(1))).catch(() => null),
+      getDocs(query(collection(db, 'users'), where('displayName', '==', ign), limit(1))).catch(() => null),
+      getDocs(query(collection(db, 'users'), where('handle', '==', ign), limit(1))).catch(() => null)
+    ]);
+    found = (byIgn && !byIgn.empty ? byIgn.docs[0] : null) ||
+      (byUsername && !byUsername.empty ? byUsername.docs[0] : null) ||
+      (byDisplay && !byDisplay.empty ? byDisplay.docs[0] : null) ||
+      (byHandle && !byHandle.empty ? byHandle.docs[0] : null);
+    if (!found) {
+      // Case-insensitive fallback for usernames/IGNs whose capitalization differs.
+      const all = await getDocs(query(collection(db, 'users'), limit(1000))).catch(() => null);
+      if (all) {
+        const matches = all.docs.filter(d => {
+          const u = d.data() || {};
+          return [u.ign, u.username, u.displayName, u.handle, u.codmName].some(v => String(v || '').replace(/^@/, '').trim().toLowerCase() === normalized);
+        });
+        // Prefer exact IGN; don't silently open an arbitrary account if names collide.
+        const exactMatches = matches.filter(d => String(d.data()?.ign || '').replace(/^@/, '') === ign);
+        found = matches.length === 1 ? matches[0] : (exactMatches.length === 1 ? exactMatches[0] : null);
+        if (matches.length > 1 && !found) toast('That username matches more than one account. Ask them to use a unique IGN.', 'info');
+      }
+    }
+    if (found) {
+      if (typeof openUserProfile === 'function') await openUserProfile(found.id);
+      else if (typeof showUserProfile === 'function') await showUserProfile(found.id);
+      else toast('Profile viewer is unavailable right now', 'info');
+      return;
+    }
+    toast('Could not find that profile', 'info');
+  } catch (error) {
+    console.warn('[CODMPanda] Mention profile lookup failed:', error);
+    toast('Could not open that profile. Try again.', 'info');
+  } finally {
+    delete mention.dataset.opening;
   }
-});
+}, true);
 
 window.openMessageOptions = openMessageOptions;
 window.openEditMessageModal = openEditMessageModal;
@@ -16765,7 +16887,7 @@ async function renderMessagesTabFast() {
               </div>
               <div style="flex: 1; min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
-                  <span style="font-size: 14px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(f.ign || 'Unknown')}</span>
+                  <span data-uid="${esc(f.id || f.uid || '')}" style="font-size: 14px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(f.ign || 'Unknown')}</span>
                   ${f.isPro ? '<span style="font-size: 8px; padding: 2px 5px; border-radius: 4px; background: #FFD700; color: #000; font-weight: 900;">PRO</span>' : ''}
                 </div>
                 <div style="font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(preview)}</div>
@@ -17352,7 +17474,7 @@ function openVaultDetail(vaultId) {
         <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
           ${vault.avatar ? `<img src="${esc(vault.avatar)}" class="w-full h-full object-cover" />` : getInitials(vault.ign || '?')}
         </div>
-        <span class="text-gray-400">by <span class="text-white font-bold">${esc(vault.ign || 'Unknown')}</span> · ${timeAgo(vault.createdAt)}</span>
+        <span class="text-gray-400">by <span data-uid="${esc(vault.uid || vault.userId || vault.ownerUid || '')}" class="text-white font-bold">${esc(vault.ign || 'Unknown')}</span> · ${timeAgo(vault.createdAt)}</span>
       </div>
 
       <!-- Content -->
@@ -18309,7 +18431,7 @@ async function fetchHomeFeed() {
 
     // Parallel fetch all 4 sources
     const [lobbiesSnap, vaultsSnap, clipsSnap, leaksSnap] = await Promise.all([
-      getDocs(query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'lobbies'), where('createdAt', '>', Timestamp.fromMillis(now - 2 * 60 * 60 * 1000)), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'clips'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'leaks'), limit(20))).catch(() => ({ forEach: () => {} }))
@@ -18320,8 +18442,7 @@ async function fetchHomeFeed() {
     // Lobbies → feed
     lobbiesSnap.forEach(d => {
       const data = d.data();
-      const expiresAt = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
-      if (expiresAt < now) return; // Skip expired
+      if (cpLobbyIsExpired({ id: d.id, ...data })) return; // Strict two-hour lifetime from creation
       feed.push({
         id: d.id,
         type: 'lobby',
@@ -18534,6 +18655,7 @@ function renderHomeCard(item) {
 }
 
 function renderHomeLobbyCard(l) {
+  if (cpLobbyIsExpired(l)) return '';
   const isMine = l.uid === State.user.uid;
   const playersText = `${l.players || 1}/5`;
   return `
@@ -18547,14 +18669,14 @@ function renderHomeLobbyCard(l) {
       </div>
 
       <div class="flex items-start gap-3 mb-3">
-        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0">
-          ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+        <div data-uid="${esc(l.uid)}" class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0">
+          ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 44) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+            <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
-            ${l.uid === ADMIN_UID ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑</span>' : ''}
+            
           </div>
           <div class="text-[10px] text-gray-500 mt-0.5">${esc(l.mode)} · ${esc(l.region)}${l.mic ? ' · 🎤' : ''}</div>
         </div>
@@ -18592,13 +18714,13 @@ function renderHomeVaultCard(v) {
       </div>
 
       <div class="flex items-start gap-3 mb-3">
-        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0">
+        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0">
           ${v.avatar ? `<img src="${esc(v.avatar)}" class="w-full h-full object-cover" />` : getInitials(v.ign)}
         </div>
         <div class="flex-1 min-w-0">
           <div class="font-bold text-sm">${esc(v.gunName || 'Build')}</div>
           <div class="text-[10px] text-gray-500 mt-0.5">
-            by ${esc(v.ign || 'Unknown')}
+            by <span data-uid="${esc(v.uid || v.userId || v.ownerUid || '')}" class="text-white font-bold">${esc(v.ign || 'Unknown')}</span>
             ${v.approved ? ' · <span class="text-green-400">✓ Approved</span>' : ''}
           </div>
         </div>
@@ -18657,7 +18779,7 @@ function renderHomeClipCard(c) {
           <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
             ${c.submittedByAvatar ? `<img src="${esc(c.submittedByAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName)}
           </div>
-          <div class="text-xs text-gray-400">by <span class="text-white font-bold">${esc(authorName)}</span> · ${esc(c.gunTag || 'CODM')}</div>
+          <div class="text-xs text-gray-400">by <span data-uid="${esc(c.submittedByUid || c.uid || c.userId || c.authorUid || '')}" class="text-white font-bold">${esc(authorName)}</span> · ${esc(c.gunTag || 'CODM')}</div>
         </div>
         ${c.caption ? `<p class="text-xs text-gray-300 mt-2 break-words">${esc(c.caption)}</p>` : ''}
       </div>
@@ -19815,11 +19937,6 @@ generateProfileCard = async function() {
     drawInitials(ctx, p.ign, W / 2, avatarY, avatarR);
   }
 
-  if (p.isPro) {
-    ctx.font = 'bold 90px Inter, sans-serif';
-    ctx.fillText('👑', W / 2 + 115, avatarY - 85);
-  }
-
   ctx.font = 'bold 72px Inter, sans-serif';
   ctx.fillStyle = '#ffffff';
   ctx.fillText(truncateText(ctx, p.ign || 'Panda Player', W - 100), W / 2, 700);
@@ -19829,7 +19946,7 @@ generateProfileCard = async function() {
   ctx.fillText(`${p.rank || 'Rookie'} • ${p.region || 'Global'}`, W / 2, 760);
 
   if (p.isPro) {
-    const proText = '👑 PRO MEMBER';
+    const proText = 'PRO MEMBER';
     ctx.font = 'bold 30px Inter, sans-serif';
     const proW = ctx.measureText(proText).width + 60;
     const proX = W / 2 - proW / 2;
@@ -19950,8 +20067,8 @@ function openWritePostSheet() {
           ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" class="w-full h-full object-cover" />` : getInitials(State.profile?.ign || '?')}
         </div>
         <div>
-          <div class="text-sm font-bold">${esc(State.profile?.ign || 'You')}</div>
-          <div class="text-[10px] text-gray-500">${isPro ? '👑 Pro · Unlimited' : 'Free · 500 chars'}</div>
+          <div data-uid="${esc(State.profile?.uid || State.user?.uid || '')}" class="text-sm font-bold">${esc(State.profile?.ign || 'You')}</div>
+          <div class="text-[10px] text-gray-500">${isPro ? ' Pro · Unlimited' : 'Free · 500 chars'}</div>
         </div>
       </div>
 
@@ -19959,7 +20076,7 @@ function openWritePostSheet() {
         <textarea id="post-text" rows="6" maxlength="${limit}" placeholder="What's on your mind, Panda?" style="font-size: 15px; line-height: 1.5;"></textarea>
         <div class="flex items-center justify-between mt-2">
           <span id="post-counter" class="text-[10px] text-gray-500">0 / ${limit}</span>
-          ${!isPro ? `<span id="pro-hint" class="text-[10px] text-gold font-bold hidden">👑 Upgrade for unlimited</span>` : ''}
+          ${!isPro ? `<span id="pro-hint" class="text-[10px] text-gold font-bold hidden"> Upgrade for unlimited</span>` : ''}
         </div>
       </div>
 
@@ -20055,7 +20172,7 @@ fetchHomeFeed = async function() {
     const now = Date.now();
 
     const [lobbiesSnap, vaultsSnap, clipsSnap, leaksSnap, postsSnap] = await Promise.all([
-      getDocs(query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'lobbies'), where('createdAt', '>', Timestamp.fromMillis(now - 2 * 60 * 60 * 1000)), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'clips'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'leaks'), limit(20))).catch(() => ({ forEach: () => {} })),
@@ -20066,8 +20183,7 @@ fetchHomeFeed = async function() {
 
     lobbiesSnap.forEach(d => {
       const data = d.data();
-      const expiresAt = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
-      if (expiresAt < now) return;
+      if (cpLobbyIsExpired({ id: d.id, ...data })) return;
       feed.push({ id: d.id, type: 'lobby', ...data, _sortTime: data.createdAt?.seconds || 0 });
     });
 
@@ -20129,13 +20245,13 @@ function renderHomePostCard(post) {
   return `
     <div class="home-card bg-card border border-border rounded-2xl p-4 mb-3 fade-in" data-type="post" data-id="${post.id}">
       <div class="flex items-start gap-3 mb-3">
-        <div data-uid="${esc(post.uid || '')}" class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0 cursor-pointer">
+        <div data-uid="${esc(post.uid || '')}" class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0 cursor-pointer">
           ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
             <span data-uid="${esc(post.uid || '')}" class="font-bold text-sm cursor-pointer">${esc(post.ign || 'Unknown')}</span>
-            ${post.uid === ADMIN_UID ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑</span>' : ''}
+            
           </div>
           <div class="text-[10px] text-gray-500 mt-0.5">
             ${timeAgo(post.createdAt)}${wasEdited ? ' · edited' : ''}
@@ -21065,6 +21181,12 @@ const _origJoinLobbyVoice = joinLobby;
 joinLobby = async function(lobbyId) {
   const lobby = State.cache.lobbies.find(l => l.id === lobbyId);
   if (!lobby) { toast('Lobby not found', 'error'); return; }
+  if (cpLobbyIsExpired(lobby)) {
+    State.cache.lobbies = State.cache.lobbies.filter(item => item.id !== lobbyId && !cpLobbyIsExpired(item));
+    if (document.getElementById('lobbies-feed')) renderLobbies();
+    toast('This lobby has expired.', 'warning');
+    return;
+  }
 
   // Increment player count
   try {
@@ -21195,7 +21317,7 @@ function openVoiceRoom(lobby) {
           ${lobby.avatar ? `<img src="${esc(lobby.avatar)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(lobby.ign)}
         </div>
 
-        <div style="font-size: 22px; font-weight: 900; color: #fff; margin-bottom: 6px;">${esc(lobby.ign)}'s room</div>
+        <div style="font-size: 22px; font-weight: 900; color: #fff; margin-bottom: 6px;"><span data-uid="${esc(lobby.uid || '')}" style="font-weight:900;">${esc(lobby.ign)}</span>'s room</div>
         <div style="font-size: 12px; color: #888;">${esc(lobby.note || lobby.mode + ' squad')}</div>
 
         <div style="margin-top: 20px; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 20px; background: #111; border: 1px solid #222;">
@@ -21550,26 +21672,12 @@ async function checkVerifiedStatus() {
 // ============================================
 
 function renderVerifiedBadge(user) {
-  if (!user || !user.verified) return '';
-  return `<span class="verified-badge" title="Verified Creator" style="
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: #1DA1F2;
-    color: #fff;
-    font-size: 9px;
-    font-weight: 900;
-    flex-shrink: 0;
-    box-shadow: 0 0 8px rgba(29, 161, 242, 0.5);
-  ">✓</span>`;
+  if (!user || user.verified !== true) return '';
+  return '<span class="verified-badge cp-verified-blue" title="Verified Creator" aria-label="Verified Creator" role="img"><svg class="cp-verified-emblem" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 1.2 14.6 2.6 17.5 2.4 18.7 5 21.3 6.5 21 9.4 22.5 12 21 14.6 21.3 17.5 18.7 19 17.5 21.6 14.6 21.4 12 22.8 9.4 21.4 6.5 21.6 5.3 19 2.7 17.5 3 14.6 1.5 12 3 9.4 2.7 6.5 5.3 5 6.5 2.4 9.4 2.6Z" fill="#1877F2"/><path d="M7.2 12.1 10.2 15.1 16.9 8.7" fill="none" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 }
 
-function renderProCrown(user) {
-  if (!user || !user.isPro) return '';
-  return `<span style="font-size: 11px; flex-shrink: 0;" title="Pro Member">👑</span>`;
+function renderProBadge(user) {
+  return window.CODMRenderProBadge?.(user) || '';
 }
 
 // ============================================
@@ -21697,7 +21805,7 @@ function openThemePicker() {
 
   openSheet(`
     <div class="space-y-4">
-      <div class="text-xs text-gray-500">${isPro ? '👑 Pro — All themes unlocked' : 'Free — 1 theme, upgrade for all'}</div>
+      <div class="text-xs text-gray-500">${isPro ? ' Pro — All themes unlocked' : 'Free — 1 theme, upgrade for all'}</div>
 
       <div class="grid grid-cols-2 gap-3">
         ${Object.entries(PROFILE_THEMES).map(([key, theme]) => {
@@ -21727,7 +21835,7 @@ function openThemePicker() {
 
       ${!isPro ? `
         <button id="theme-upgrade-btn" class="btn-press w-full py-3.5 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
-          👑 Unlock All Themes — Go Pro
+           Unlock All Themes — Go Pro
         </button>
       ` : ''}
     </div>
@@ -21768,42 +21876,69 @@ function openThemePicker() {
 // ============================================
 
 function openAvatarFramePicker() {
-  const isPro = State.profile?.isPro;
-  const currentFrame = State.profile?.avatarFrame || 'none';
+  const frameCatalog = window.CODM_WAR_ARTIFACT_FRAMES || {};
+  const normalize = window.CODMNormalizeFrameKey || (value => String(value || 'none').trim().toLowerCase());
+  const hasPro = () => State.profile?.isPro === true
+    || State.profile?.pro === true
+    || State.profile?.subscription === 'pro'
+    || State.profile?.proStatus === 'active';
+  const isPro = hasPro();
+  const currentFrameStored = [
+    State.profile?.avatarFrame, State.profile?.equippedAvatarFrame, State.profile?.equippedFrame,
+    State.profile?.selectedFrame, State.profile?.frameId, State.profile?.frame, State.profile?.profileFrame
+  ].map(normalize).find(key => key !== 'none' && frameCatalog[key]) || 'none';
+  const currentFrame = frameCatalog[currentFrameStored]?.tier === 'PRO' && !isPro ? 'none' : currentFrameStored;
+  const entries = [['none', { name: 'No Frame', tier: 'FREE', file: null }], ...Object.entries(frameCatalog)];
+
+  if (!Object.keys(frameCatalog).length || typeof window.CODMRenderFramedAvatar !== 'function') {
+    toast('Avatar frames are still loading. Please reopen the picker.', 'info');
+    return;
+  }
 
   openSheet(`
     <div class="space-y-4">
-      <div class="text-xs text-gray-500">${isPro ? '👑 Pro — All frames unlocked' : 'Free — frames are a Pro feature'}</div>
-
+      <div class="text-xs text-gray-500">
+        ${isPro ? ' Pro — all avatar frames unlocked' : 'Free — 10 free frames available; Pro unlocks the premium frames'}
+      </div>
       <div class="grid grid-cols-3 gap-3">
-        ${Object.entries(AVATAR_FRAMES).map(([key, frame]) => {
+        ${entries.map(([key, frame]) => {
           const isSelected = currentFrame === key;
-          const isLocked = false;
+          const isLocked = frame.tier === 'PRO' && !isPro;
+          const selected = isSelected && !isLocked;
+          const preview = window.CODMRenderFramedAvatar({
+            ...(State.profile || {}),
+            // Premium artwork is preview-only for Free users; clicking still opens the upgrade wall.
+            ...((frame.tier === 'PRO') ? { isPro: true, pro: true, subscription: 'pro', proStatus: 'active' } : {}),
+            avatar: State.profile?.avatar || '',
+            avatarFrame: key,
+            equippedAvatarFrame: key,
+            equippedFrame: key,
+            selectedFrame: key,
+            frameId: key,
+            frame: key,
+            profileFrame: key
+          }, 50);
           return `
-            <button class="frame-pick-btn btn-press flex flex-col items-center gap-2 p-3 rounded-2xl ${isSelected ? 'bg-primary/10 border-2 border-primary' : 'bg-card border border-border'}" data-frame="${key}" data-locked="${isLocked}">
-              <div style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                ${frame.style ? `
-                  <div style="${frame.style} width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; position: relative;">
-                    <div style="width: 44px; height: 44px; border-radius: 50%; background: #111; display: flex; align-items: center; justify-content: center; font-size: 14px;">
-                      ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />` : 'CP'}
-                    </div>
-                    ${isLocked ? `<div style="position: absolute; top: -4px; right: -4px; font-size: 12px;">🔒</div>` : ''}
-                  </div>
-                ` : `
-                  <div style="width: 50px; height: 50px; border-radius: 50%; background: rgba(255, 107, 0, 0.15); display: flex; align-items: center; justify-content: center; font-size: 20px;">
-                    ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />` : 'CP'}
-                  </div>
-                `}
+            <button type="button"
+              class="frame-pick-btn btn-press flex flex-col items-center gap-2 p-3 rounded-2xl ${selected ? 'bg-primary/10 border-2 border-primary' : 'bg-card border border-border'} ${isLocked ? 'opacity-80' : ''}"
+              data-frame="${key}"
+              data-locked="${isLocked}"
+              aria-pressed="${selected ? 'true' : 'false'}"
+              title="${isLocked ? 'Pro frame — tap to see upgrade options' : 'Preview and apply ' + frame.name}">
+              <div class="relative flex items-center justify-center" style="width:50px;height:50px;overflow:visible">
+                ${preview}
+                ${isLocked ? '<span aria-hidden="true" style="position:absolute;right:-6px;top:-6px;width:19px;height:19px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#171719;border:1px solid #555;font-size:11px;z-index:5">🔒</span>' : ''}
+                ${selected ? '<span aria-hidden="true" style="position:absolute;right:-6px;bottom:-6px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#FF6B00;color:#fff;font-size:10px;font-weight:900;z-index:6">✓</span>' : ''}
               </div>
-              <span class="text-[10px] font-bold ${isSelected ? 'text-primary' : 'text-gray-400'}">${frame.name}</span>
+              <span class="text-[10px] font-bold ${selected ? 'text-primary' : 'text-gray-400'}">${frame.name}</span>
+              ${isLocked ? '<span class="text-[9px] font-bold text-gold">PRO</span>' : ''}
             </button>
           `;
         }).join('')}
       </div>
-
       ${!isPro ? `
         <button id="frame-upgrade-btn" class="btn-press w-full py-3.5 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm">
-          👑 Unlock All Frames — Go Pro
+           Unlock All Frames — Go Pro
         </button>
       ` : ''}
     </div>
@@ -21811,34 +21946,56 @@ function openAvatarFramePicker() {
 
   document.querySelectorAll('.frame-pick-btn').forEach(btn => {
     btn.onclick = async () => {
-      const frameKey = btn.dataset.frame;
-      const isLocked = btn.dataset.locked === 'true';
+      const frameKey = normalize(btn.dataset.frame || 'none');
+      const frameInfo = frameKey === 'none' ? { name: 'No Frame', tier: 'FREE' } : frameCatalog[frameKey];
+      const isLocked = frameInfo?.tier === 'PRO' && !hasPro();
 
-      if (isLocked) {
-        showProPaywall('Unlock animated avatar frames with Pro.');
+      if (!frameInfo || (frameKey !== 'none' && !frameCatalog[frameKey])) {
+        toast('That frame is unavailable. Choose another frame.', 'error');
+        return;
+      }
+      if (isLocked || btn.dataset.locked === 'true') {
+        showProPaywall('Unlock this premium avatar frame with Pro.');
+        return;
+      }
+      if (!State.user?.uid) {
+        toast('Sign in to apply an avatar frame.', 'error');
         return;
       }
 
+      const frameName = frameInfo.name || 'Avatar Frame';
+      document.querySelectorAll('.frame-pick-btn').forEach(item => { item.disabled = true; });
       try {
-        await updateDoc(doc(db, 'users', State.user.uid), {
-          avatarFrame: frameKey
-        });
-        State.profile.avatarFrame = frameKey;
-        toast('✨ Frame applied!', 'success');
+        const savedFields = {
+          avatarFrame: frameKey,
+          equippedAvatarFrame: frameKey,
+          equippedFrame: frameKey,
+          selectedFrame: frameKey,
+          frameId: frameKey,
+          frame: frameKey,
+          profileFrame: frameKey
+        };
+        await updateDoc(doc(db, 'users', State.user.uid), savedFields);
+        State.profile = State.profile || {};
+        Object.assign(State.profile, savedFields);
+        window.dispatchEvent(new CustomEvent('codmpanda:avatar-frame-updated', {
+          detail: { uid: State.user.uid, avatarFrame: frameKey }
+        }));
         closeSheet();
-        if (State.currentTab === 'you') renderYouTab();
+        if (State.currentTab === 'you' && typeof renderYouTab === 'function') renderYouTab();
+        toast(frameKey === 'none' ? 'Avatar frame removed.' : '✨ ' + frameName + ' applied!', 'success');
       } catch (e) {
-        toast('Failed: ' + e.message, 'error');
+        console.error('[CODMPanda] Avatar frame save failed:', e);
+        toast('Frame was not saved: ' + (e?.message || 'Please try again.'), 'error');
+        document.querySelectorAll('.frame-pick-btn').forEach(item => { item.disabled = false; });
       }
     };
   });
 
   const upgradeBtn = document.getElementById('frame-upgrade-btn');
   if (upgradeBtn) upgradeBtn.onclick = goPro;
-
   if (window.lucide) window.lucide.createIcons();
 }
-
 // ============================================
 // PART 8: PATCH PROFILE HEADER (YOU tab)
 // ============================================
@@ -21888,7 +22045,7 @@ renderYouTab = function() {
       const frame = State.profile?.avatarFrame || 'none';
       if (frame !== 'none') {
         const parent = avatarContainer.parentNode;
-        const framedHTML = `<div class="relative">${getAvatarWithFrame(State.profile.avatar, State.profile.ign, 64)}${State.profile.isPro ? '<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>' : ''}</div>`;
+        const framedHTML = `<div class="relative">${getAvatarWithFrame(State.profile.avatar, State.profile.ign, 64)}</div>`;
         avatarContainer.parentNode.innerHTML = framedHTML;
       }
     }
@@ -21931,7 +22088,7 @@ renderHomePostCard = function(post) {
   if (post.verified) {
     html = html.replace(
       /(<span class="font-bold text-sm">[^<]+<\/span>)/,
-      `$1 <span class="verified-badge" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: #1DA1F2; color: #fff; font-size: 9px; font-weight: 900; flex-shrink: 0;">✓</span>`
+      `$1 ${renderVerifiedBadge(post)}`
     );
   }
   return html;
@@ -22247,17 +22404,9 @@ console.log('✅ Chunk 52b: Activity stats dashboard loaded');
 // ============================================
 
 function getBadgeHTML(item) {
-  if (!item) return '';
-  let badges = '';
-  if (item.uid === ADMIN_UID) {
-    badges += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex-shrink-0">👑 FOUNDER</span>';
-  } else if (item.isPro) {
-    badges += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex-shrink-0">👑 PRO</span>';
-  }
-  if (item.verified) {
-    badges += '<span class="verified-badge" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: #1DA1F2; color: #fff; font-size: 9px; font-weight: 900; flex-shrink: 0; box-shadow: 0 0 8px rgba(29, 161, 242, 0.5);">✓</span>';
-  }
-  return badges;
+  // Legacy role pills are deliberately removed; the account-backed identity badge
+  // decorator places the single Pro insignia directly beside the actual username.
+  return '';
 }
 
 // ============================================
@@ -22268,7 +22417,7 @@ var _origRenderLobbiesPriority = renderLobbies;
 renderLobbies = function() {
   const feed = document.getElementById('lobbies-feed');
   if (!feed) return;
-  let lobbies = State.cache.lobbies;
+  let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
   const f = State.filters.lobbies;
   if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
@@ -22299,25 +22448,23 @@ renderLobbies = function() {
   const now = Date.now();
 
   feed.innerHTML = lobbies.map(l => {
-    const expiresAt = l.expiresAt?.toMillis ? l.expiresAt.toMillis() : (l.expiresAt?.seconds ? l.expiresAt.seconds * 1000 : Infinity);
-    const isExpired = expiresAt < now;
+    const isExpired = cpLobbyIsExpired(l);
     const isMine = l.uid === State.user.uid;
     const isProLobby = l.isPro || false;
     const playersText = `${l.players || 1}/5`;
 
     return `
       <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : isProLobby ? 'border-gold' : 'border-border'} rounded-2xl p-4 fade-in ${isProLobby ? 'relative' : ''}" ${isProLobby ? 'style="box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);"' : ''}>
-        ${isProLobby ? `<div class="absolute top-2 right-2 text-[9px] px-2 py-0.5 rounded-full bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑 PRIORITY</div>` : ''}
         <div class="flex items-start gap-3 mb-3">
           <div class="relative">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
-              ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+              ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
             </div>
             ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+              <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               ${getBadgeHTML(l)}
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
               ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
@@ -22424,7 +22571,7 @@ renderVaults = function() {
       const nameEl = card.querySelector('.text-xs.font-bold');
       if (nameEl && !nameEl.parentNode.querySelector('.verified-badge')) {
         const badge = document.createElement('span');
-        badge.innerHTML = '<span class="verified-badge" style="display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; border-radius: 50%; background: #1DA1F2; color: #fff; font-size: 8px; font-weight: 900; flex-shrink: 0;">✓</span>';
+        badge.innerHTML = renderVerifiedBadge(vault);
         nameEl.parentNode.appendChild(badge.firstElementChild);
       }
     });
@@ -22453,14 +22600,13 @@ function checkCustomLobbyUrl() {
 
       if (!snap.empty) {
         const lobby = { id: snap.docs[0].id, ...snap.docs[0].data() };
-        const expiresAt = lobby.expiresAt?.toMillis ? lobby.expiresAt.toMillis() : (lobby.expiresAt?.seconds ? lobby.expiresAt.seconds * 1000 : Infinity);
-        if (expiresAt > Date.now()) {
+        if (!cpLobbyIsExpired(lobby)) {
           // Show join prompt
           openSheet(`
             <div class="text-center space-y-4 py-4">
               <div class="text-5xl">🎮</div>
               <div>
-                <h3 class="text-lg font-black mb-1">${esc(lobby.ign)}'s Lobby</h3>
+                <h3 class="text-lg font-black mb-1"><span data-uid="${esc(lobby.uid || '')}" class="font-black">${esc(lobby.ign)}</span>'s Lobby</h3>
                 <div class="text-xs text-gray-400">${esc(lobby.mode)} · ${esc(lobby.region)} · ${lobby.players || 1}/5 players</div>
               </div>
               ${lobby.note ? `<div class="bg-card border border-border rounded-xl p-3 text-xs text-gray-300">${esc(lobby.note)}</div>` : ''}
@@ -22841,7 +22987,7 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
     const feed = document.getElementById('lobbies-feed');
     if (!feed) return;
 
-    let lobbies = State.cache.lobbies;
+    let lobbies = (State.cache.lobbies || []).filter(l => !cpLobbyIsExpired(l));
 
     // Apply filters (from all merged chunks — same logic)
     const f = State.filters.lobbies;
@@ -22898,25 +23044,23 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
     const now = Date.now();
 
     feed.innerHTML = lobbies.map(l => {
-      const expiresAt = l.expiresAt?.toMillis ? l.expiresAt.toMillis() : (l.expiresAt?.seconds ? l.expiresAt.seconds * 1000 : Infinity);
-      const isExpired = expiresAt < now;
+      const isExpired = cpLobbyIsExpired(l);
       const isMine = l.uid === State.user.uid;
       const isProLobby = l.isPro || false;
       const playersText = `${l.players || 1}/5`;
 
       return `
         <div class="bg-card border ${isExpired ? 'border-gray-700 opacity-70' : isProLobby ? 'border-gold' : 'border-border'} rounded-2xl p-4 fade-in ${isProLobby ? 'relative' : ''}" ${isProLobby ? 'style="box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);"' : ''}>
-          ${isProLobby ? `<div class="absolute top-2 right-2 text-[9px] px-2 py-0.5 rounded-full bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑 PRIORITY</div>` : ''}
-          <div class="flex items-start gap-3 mb-3">
+        <div class="flex items-start gap-3 mb-3">
             <div class="relative">
-              <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-hidden">
-                ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+              <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-lg overflow-visible">
+                ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...l, avatarFrame:l.avatarFrame||l.equippedFrame||l.frame||l.profileFrame||"none"}, 48) : (l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" style="border-radius:50%;clip-path:circle(50% at 50% 50%)" />` : getInitials(l.ign))}
               </div>
               ${l.mic ? `<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center"><i data-lucide="mic" class="w-2.5 h-2.5 text-white"></i></div>` : ''}
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5 flex-wrap">
-                <span class="font-bold text-sm user-name-link" data-uid="${l.uid}" style="cursor: pointer; text-decoration: underline; text-decoration-color: rgba(255, 107, 0, 0.3); text-underline-offset: 2px;">${esc(l.ign || 'Unknown')}</span>
+                <span class="font-bold text-sm user-name-link" data-uid="${l.uid}" style="cursor: pointer; text-decoration: underline; text-decoration-color: rgba(255, 107, 0, 0.3); text-underline-offset: 2px;">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
                 ${getBadgeHTML(l)}
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
                 ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
@@ -24871,11 +25015,11 @@ window.performGlobalSearch = performGlobalSearch;
       <div class="space-y-4">
         <!-- Author header -->
         <div class="flex items-center gap-3">
-          <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
+          <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
             ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
           </div>
           <div class="flex-1 min-w-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
-            <div class="text-sm font-bold truncate">${esc(post.ign || 'Unknown')}</div>
+            <div data-uid="${esc(post.uid || post.userId || '')}" class="text-sm font-bold truncate">${esc(post.ign || 'Unknown')}</div>
             <div class="text-[10px] text-gray-500">${timeAgo(post.createdAt)}</div>
           </div>
           ${isMine ? `
@@ -24886,13 +25030,13 @@ window.performGlobalSearch = performGlobalSearch;
         </div>
 
         <!-- Post text and tappable hashtags -->
-        <p class="text-sm text-gray-200 whitespace-pre-wrap break-words">${esc(cpPostTextWithoutHashtags(post.text || ''))}</p>
+        <p class="text-base leading-relaxed text-gray-100 whitespace-pre-wrap break-words" style="font-size:18px;line-height:1.65;">${esc(cpPostTextWithoutHashtags(post.text || ''))}</p>
         ${(() => { const tags = cpExtractHashtags(post.text, post.hashtags); return tags.length ? `<div class="flex flex-wrap gap-1.5">${tags.map(tag => `<button type="button" class="post-hashtag text-[10px] font-bold text-primary bg-primary/10 rounded-full px-2 py-1" data-tag="${esc(tag)}">#${esc(tag)}</button>`).join('')}</div>` : ''; })()}
 
         <!-- Post image — full width, zoomable -->
         ${post.imageUrl ? `
-          <div class="post-image-wrap" style="cursor:zoom-in;">
-            <img src="${esc(post.imageUrl)}" class="w-full rounded-xl" data-zoomable />
+          <div class="post-image-wrap" style="width:100%;cursor:zoom-in;">
+            <img src="${esc(post.imageUrl)}" class="cp-post-detail-image w-full rounded-xl" style="display:block;width:100%;height:auto;max-height:none;object-fit:contain;cursor:zoom-in;background:#000;border-radius:12px;" data-zoomable />
           </div>
         ` : ''}
 
@@ -24926,6 +25070,16 @@ window.performGlobalSearch = performGlobalSearch;
     const postSheet = sheetContainer?.querySelector('.sheet');
     const postHeader = postSheet?.querySelector(':scope > .sticky');
     const postSheetBody = postSheet?.querySelector(':scope > .px-5');
+    const detailPostImage = postSheetBody?.querySelector('.post-image-wrap img[data-zoomable]');
+    if (detailPostImage) {
+      detailPostImage.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof window.openImageViewer === 'function') {
+          window.openImageViewer(detailPostImage.currentSrc || detailPostImage.src);
+        }
+      });
+    }
 
     if (postBackdrop) {
       Object.assign(postBackdrop.style, {
@@ -24947,29 +25101,30 @@ window.performGlobalSearch = performGlobalSearch;
     }
     if (postHeader) {
       postHeader.className = 'cp-post-detail-header';
-      postHeader.innerHTML = `<button type="button" class="cp-post-back" aria-label="Back to feed"><span aria-hidden="true">‹</span></button><h3>Post</h3><span class="cp-post-header-spacer" aria-hidden="true"></span>`;
+      postHeader.innerHTML = `<button type="button" class="cp-post-back" aria-label="Back to feed"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5 M12 19l-7-7 7-7"/></svg></button><h3>Post</h3><span class="cp-post-header-spacer" aria-hidden="true"></span>`;
       Object.assign(postHeader.style, {
         position: 'relative', inset: 'auto', flex: '0 0 auto', zIndex: '2',
         display: 'flex', alignItems: 'center', gap: '12px', width: '100%',
-        minHeight: 'calc(54px + env(safe-area-inset-top, 0px))',
-        padding: 'env(safe-area-inset-top, 0px) 16px 0', boxSizing: 'border-box',
+        minHeight: 'calc(44px + env(safe-area-inset-top, 0px))',
+        height: 'calc(44px + env(safe-area-inset-top, 0px))',
+        padding: 'env(safe-area-inset-top, 0px) 12px 0', boxSizing: 'border-box',
         background: '#09090b', borderBottom: '1px solid #202024', color: '#fff'
       });
       const back = postHeader.querySelector('.cp-post-back');
       if (back) {
-        back.style.cssText = 'width:40px;height:40px;flex:0 0 40px;border:0;border-radius:12px;background:transparent;color:#f4f4f5;font-size:36px;line-height:1;display:grid;place-items:center;padding:0;';
+        back.style.cssText = 'width:36px;height:36px;flex:0 0 36px;border:0;border-radius:10px;background:transparent;color:#f4f4f5;font-size:0;line-height:1;display:grid;place-items:center;padding:0;';
         back.addEventListener('click', () => closeSheet());
       }
       const heading = postHeader.querySelector('h3');
       if (heading) heading.style.cssText = 'font-size:17px;font-weight:800;margin:0;line-height:1.2;flex:1;color:#fff;';
       const spacer = postHeader.querySelector('.cp-post-header-spacer');
-      if (spacer) spacer.style.cssText = 'width:40px;flex:0 0 40px;';
+      if (spacer) spacer.style.cssText = 'width:36px;flex:0 0 36px;';
     }
     let postComposer = postSheetBody?.querySelector('section .sticky.bottom-0');
     if (postSheetBody) {
       Object.assign(postSheetBody.style, {
         position: 'relative', flex: '1 1 auto', minHeight: '0', height: 'auto', maxHeight: 'none',
-        overflowY: 'auto', overflowX: 'hidden', margin: '0', padding: '16px 16px 22px',
+        overflowY: 'auto', overflowX: 'hidden', margin: '0', padding: '10px 16px 22px',
         display: 'block', boxSizing: 'border-box', overscrollBehavior: 'contain',
         scrollPaddingBottom: '24px', WebkitOverflowScrolling: 'touch'
       });
@@ -24989,6 +25144,20 @@ window.performGlobalSearch = performGlobalSearch;
       commentList.classList.remove('max-h-[38vh]', 'overflow-y-auto');
       Object.assign(commentList.style, { maxHeight: 'none', overflow: 'visible', paddingBottom: '8px' });
     }
+
+    // The generic zoom click handler is scoped to #content, while this sheet lives outside it.
+    const postDetailImage = postSheetBody?.querySelector('.cp-post-detail-image[data-zoomable]');
+    if (postDetailImage && !postDetailImage.dataset.cpPostDetailLightboxBound) {
+      postDetailImage.dataset.cpPostDetailLightboxBound = '1';
+      postDetailImage.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof window.openImageViewer === 'function') {
+          window.openImageViewer(postDetailImage.currentSrc || postDetailImage.src);
+        }
+      });
+    }
+
     const detailStyleId = 'cp-post-detail-layout-v2';
     if (!document.getElementById(detailStyleId)) {
       const detailStyle = document.createElement('style');
@@ -25332,11 +25501,10 @@ window.performGlobalSearch = performGlobalSearch;
   // ============================================
 
   const REACTIONS = [
-    { key: 'heart',  emoji: '❤️', label: 'Like',   pro: false },
-    { key: 'fire',   emoji: '🔥', label: 'Fire',   pro: false },
-    { key: 'skull',  emoji: '💀', label: 'Dead',   pro: false },
-    { key: 'goat',   emoji: '🐐', label: 'GOAT',  pro: true  },
-    { key: 'crown',  emoji: '👑', label: 'Crown', pro: true  }
+    { key: 'heart', emoji: '❤️', label: 'Like', pro: false },
+    { key: 'fire', emoji: '🔥', label: 'Fire', pro: false },
+    { key: 'skull', emoji: '💀', label: 'Dead', pro: false },
+    { key: 'goat', emoji: '🐐', label: 'GOAT', pro: true }
   ];
 
   function reactionEmoji(key) {
@@ -25453,7 +25621,7 @@ window.performGlobalSearch = performGlobalSearch;
   // ============================================
 
   console.log('✅ [57] Reactions + premium frames loaded');
-  console.log('   - 5 reactions: ❤️ 🔥 💀 🐐 👑');
+  console.log('   - 4 reactions: ❤️ 🔥 💀 🐐');
   console.log('   - Free: first 3 · Pro: all 5');
   console.log('   - Hold any reaction button for 1 second to open picker');
   console.log('   - 11 premium frames including Molten, Tesla, Crystal, Void Walker');
@@ -25468,10 +25636,6 @@ window.performGlobalSearch = performGlobalSearch;
   if (window.__codmpandaVisualUpgrade) return;
   window.__codmpandaVisualUpgrade = true;
   const css = `
-  .cp-avatar-shell{position:relative!important;overflow:visible!important;isolation:isolate;flex-shrink:0}
-  .cp-avatar-core{position:absolute!important;z-index:8!important;left:19%;top:19%;width:62%;height:62%;margin:0!important;overflow:hidden;border-radius:50%;background:#101014;box-sizing:border-box;border:1px solid rgba(255,255,255,.16);}
-  .cp-avatar-core img{width:100%;height:100%;object-fit:cover;display:block}
-  .cp-frame-art{position:absolute;inset:-4%;width:108%;height:108%;z-index:10;pointer-events:none;overflow:visible;filter:drop-shadow(0 0 4px var(--cp-glow,#ff5a1f));}
   .cp-frame-art path,.cp-frame-art circle{vector-effect:non-scaling-stroke}.cp-frame-art-fire,.cp-frame-art-mythic{filter:drop-shadow(0 0 5px var(--cp-glow,#ff5a1f)) drop-shadow(0 0 2px #ffb12c)}.cp-frame-art-darkmatter,.cp-frame-art-neon{filter:drop-shadow(0 0 5px var(--cp-glow,#b34cff)) drop-shadow(0 0 2px #fff)}.cp-frame-art-gold,.cp-frame-art-championship{filter:drop-shadow(0 0 4px var(--cp-glow,#ffd45e))}.cp-frame-art-ice,.cp-frame-art-diamond,.cp-frame-art-aether{filter:drop-shadow(0 0 5px var(--cp-glow,#6beaff))}
   .cp-frame-inferno{--cp-glow:#ff4b18}.cp-frame-darkmatter{--cp-glow:#b34cff}.cp-frame-diamond{--cp-glow:#6beaff}.cp-frame-dragon{--cp-glow:#ffb000}.cp-frame-championship{--cp-glow:#ffd45e}.cp-frame-reaper{--cp-glow:#e33c59}.cp-frame-aether{--cp-glow:#49ffc5}.cp-frame-neon{--cp-glow:#ff36c7}
   .cp-theme-profile{position:relative;overflow:hidden;background-size:cover!important;border-color:var(--cp-theme-border,#292929)!important;box-shadow:0 0 28px var(--cp-theme-glow,transparent)!important}
@@ -25568,17 +25732,33 @@ window.performGlobalSearch = performGlobalSearch;
   };
   // Publish the registry for the later integration IIFE; JS block scope otherwise hides it.
   window.CODM_WAR_ARTIFACT_FRAMES = WAR_ARTIFACT_FRAMES;
+  function normalizeCODMFrameKey(value) {
+    const key = String(value || 'none').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    const aliases = {
+      // Legacy style-only IDs must resolve to real PNG assets instead of silently rendering no frame.
+      gold: 'legendary_rank', gold_laurel: 'legendary_rank', golden_laurel: 'legendary_rank', laurel_gold: 'legendary_rank',
+      laurel: 'legendary_rank', gold_rank: 'legendary_rank', legendary_gold: 'legendary_rank',
+      fire: 'inferno', ice: 'frost_division', neon: 'ghost_ops', mythic: 'mythic_crystal',
+      diamond: 'frost_division', darkmatter: 'mythic_crystal', championship: 'ranked_champion',
+      reaper: 'zombie_hunter', aether: 'ghost_ops',
+      champion: 'ranked_champion', champion_frame: 'ranked_champion',
+      ghostops: 'ghost_ops', crystal: 'mythic_crystal',
+      frost: 'frost_division', dragon: 'dragon_blade', cosmic: 'cosmic_vanguard'
+    };
+    return aliases[key] || key || 'none';
+  }
+  window.CODMNormalizeFrameKey = normalizeCODMFrameKey;
   function renderFramedAvatar(user,size=44){
-    const storedFrame=user?.avatarFrame||'none';
+    const storedFrame=([user?.avatarFrame,user?.equippedAvatarFrame,user?.equippedFrame,user?.selectedFrame,user?.frameId,user?.frame,user?.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
     // Old CSS/SVG frame IDs are retired. Pro-only PNG artwork must not render for a Free profile.
     const candidate=WAR_ARTIFACT_FRAMES[storedFrame];
-    const hasPro= user?.isPro===true || user?.pro===true || user?.subscription==='pro' || user?.proStatus==='active';
-    const frame=(storedFrame==='none'||(candidate&&(candidate.tier!=='PRO'||hasPro)))?storedFrame:'none';
+    // Picker enforces Pro access when equipping. A valid saved key must still render if a public profile omits plan fields.
+    const frame=(storedFrame==='none'||candidate)?storedFrame:'none';
     const name=user?.ign||user?.displayName||'Operator'; const url=user?.avatar||user?.photoURL||user?.photoUrl||''; const r=Math.max(26,Number(size)||44);
     const avatarContent=url?`<img src="${esc2(url)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block">`:esc2((typeof getInitials==='function'?getInitials(name):name.slice(0,2).toUpperCase()));
     if(frame==='none') return `<div class="cp-avatar-shell cp-avatar-no-frame" style="width:${r}px;height:${r}px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#202024;font-weight:900;font-size:${Math.round(r*.32)}px">${avatarContent}</div>`;
     const artifact=WAR_ARTIFACT_FRAMES[frame];
-    const art=`<img class="cp-war-artifact-frame" src="/frames/${artifact.file}" alt="" aria-hidden="true" loading="lazy" onerror="this.style.display='none'">`;
+    const art=`<img class="cp-war-artifact-frame" src="/frames/${artifact.file}" alt="" aria-hidden="true" loading="lazy" onerror="this.style.display='none';this.parentElement?.classList.add('cp-frame-art-error');console.warn('[CODMPanda] Frame asset failed to load:',this.src)">`;
     return `<div class="cp-avatar-shell ${FRAME_META[frame]?.cls||''}" style="width:${r}px;height:${r}px;border-radius:50%;"><div class="cp-avatar-core" style="border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:${Math.round(r*.32)}px">${avatarContent}</div>${art}</div>`;
   }
   window.CODMRenderFramedAvatar=renderFramedAvatar;
@@ -25596,8 +25776,9 @@ window.performGlobalSearch = performGlobalSearch;
   try { startOnlineCounter=cpStartOnlineCounter; } catch(_) {}
 
   // Add true frame artwork to author avatars in feed/group/comment surfaces that expose data-uid.
-  const profileCache=new Map();
-  async function getPublicProfile(uid){if(!uid)return null;if(uid===State.user?.uid)return State.profile||null;if(profileCache.has(uid))return profileCache.get(uid);try{const s=await getDoc(doc(db,'users',uid));const v=s.exists()?{id:uid,...s.data()}:null;profileCache.set(uid,v);return v}catch(_){return null}}
+  const profileCache=new Map(); const profileCacheTimes=new Map();
+  window.addEventListener('codmpanda:avatar-frame-updated',event=>{const uid=event.detail?.uid;if(uid){profileCache.delete(uid);profileCacheTimes.delete(uid);}});
+  async function getPublicProfile(uid){if(!uid)return null;if(uid===State.user?.uid)return State.profile||null;if(profileCache.has(uid)&&Date.now()-(profileCacheTimes.get(uid)||0)<15000)return profileCache.get(uid);profileCache.delete(uid);try{const s=await getDoc(doc(db,'users',uid));const v=s.exists()?{id:uid,...s.data()}:null;profileCache.set(uid,v);profileCacheTimes.set(uid,Date.now());return v}catch(_){return null}}
   async function decorateAvatars(root=document){
     if(!State.user)return;
     const nodes=root.querySelectorAll?root.querySelectorAll('[data-uid]'):[];
@@ -25611,24 +25792,25 @@ window.performGlobalSearch = performGlobalSearch;
       // propagate to old posts/comments without changing their content.
       if(!el.dataset.cpNameDone && (el.classList?.contains('user-name-link') || (el.tagName==='SPAN' && el.classList.contains('font-bold') && !el.querySelector('img')))){
         el.dataset.cpNameDone='1'; const nameUser=await getPublicProfile(el.dataset.uid);
-        if(nameUser?.ign){const badge=el.querySelector('.verified-badge');el.textContent=nameUser.ign;if(badge)el.appendChild(badge);}
+        if(nameUser?.ign){const marks=Array.from(el.querySelectorAll('.verified-badge,.cp-pro-spike-badge,[data-pro-badge="true"]'));el.textContent=nameUser.ign;marks.forEach(mark=>el.appendChild(mark));}
       }
       if(el.closest('#sheet-container')?.dataset.cpSkipFrame==='1')continue;
       if(!el.querySelector('img') && !/^w-(?:[0-9]+|\d+\.\d+)$/.test(el.className||'') && !/rounded-(?:full|2xl)/.test(el.className||''))continue;
       const rect=el.getBoundingClientRect();if(rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
       const uid=el.dataset.uid;if(!uid)continue;
       const user=await getPublicProfile(uid);if(!user)continue;
-      const frameKey=user.avatarFrame||'none';
+      const frameKey=([user.avatarFrame,user.equippedAvatarFrame,user.equippedFrame,user.selectedFrame,user.frameId,user.frame,user.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
       if(frameKey==='none'||!WAR_ARTIFACT_FRAMES[frameKey])continue;
-      if(el.dataset.cpFrameDone===frameKey)continue;
+      if(el.dataset.cpFrameDone===frameKey || el.dataset.cpFrameApplied===frameKey)continue;
       const img=el.querySelector('img');
       const avatarUrl=user.avatar||user.photoURL||user.photoUrl||img?.getAttribute('src')||'';
-      const size=Math.max(28,Math.min(72,Math.round(Math.min(rect.width,rect.height))));
+      const size=Math.max(28,Math.min(132,Math.round(Math.min(rect.width,rect.height))));
       const holder=document.createElement('div');
       holder.innerHTML=renderFramedAvatar({...user,avatar:avatarUrl,ign:user.ign||user.displayName||'Operator'},size);
       const rendered=holder.firstElementChild;if(!rendered)continue;
       el.replaceChildren(rendered);
       el.dataset.cpFrameDone=frameKey;
+      el.dataset.cpFrameApplied=frameKey;
       el.dataset.cpFrameMode='png';
       el.classList.add('cp-avatar-framed-host');
       el.style.overflow='visible';
@@ -25647,8 +25829,8 @@ window.performGlobalSearch = performGlobalSearch;
       const sheet=document.querySelector('#sheet-container .px-5');if(!sheet)return;
       const card=sheet.querySelector('.bg-card.border.rounded-2xl');if(card){const t=THEME_META[user.themeStyle]||THEME_META.dark;card.classList.add('cp-theme-profile');card.style.background=t.gradient;card.style.setProperty('--cp-theme-border',t.border);card.style.setProperty('--cp-theme-glow',t.glow);}
       const avatar=sheet.querySelector('.bg-gradient-to-br.from-primary\\/30.to-gold\\/30');
-      if(avatar){const parent=avatar.parentElement;const size=64;parent.innerHTML=renderFramedAvatar(user,size)+(user.isPro?'<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>':'');parent.classList.add('cp-avatar-parent');}
-      const title=sheet.querySelector('.text-base.font-black.truncate');if(title&&!title.parentElement.querySelector('.cp-theme-label')){const label=document.createElement('div');label.className='cp-profile-cosmetic-label cp-theme-label mt-1';label.textContent='✦ '+(THEME_META[user.themeStyle]?.name||'Operator Black')+' · '+(FRAME_META[user.avatarFrame]?.name||'No Frame');title.parentElement.appendChild(label)}
+      if(avatar){const parent=avatar.parentElement;const size=64;parent.innerHTML=renderFramedAvatar(user,size);parent.classList.add('cp-avatar-parent');}
+      const title=sheet.querySelector('.text-base.font-black.truncate');if(title&&!title.parentElement.querySelector('.cp-theme-label')){const label=document.createElement('div');label.className='cp-profile-cosmetic-label cp-theme-label mt-1';label.textContent='✦ '+(THEME_META[user.themeStyle]?.name||'Operator Black')+' · '+(WAR_ARTIFACT_FRAMES[normalizeCODMFrameKey(user.avatarFrame)]?.name||FRAME_META[user.avatarFrame]?.name||'No Frame');title.parentElement.appendChild(label)}
     }catch(e){console.warn('Profile cosmetics:',e)}},350);
     return result;
   };
@@ -25740,7 +25922,7 @@ window.performGlobalSearch = performGlobalSearch;
 
   const REACTION_META = {
     heart:{emoji:'❤️',label:'Like'}, fire:{emoji:'🔥',label:'Fire'},
-    skull:{emoji:'💀',label:'Dead'}, goat:{emoji:'🐐',label:'GOAT'}, crown:{emoji:'👑',label:'Crown'}
+    skull:{emoji:'💀',label:'Dead'}, goat:{emoji:'🐐',label:'GOAT'}
   };
   const CLASS_TYPES = {
     'post-like-btn':'post','post-detail-like':'post','detail-like':'vault','detail-like-btn':'vault',
@@ -25803,7 +25985,7 @@ window.performGlobalSearch = performGlobalSearch;
     const selectors=Object.keys(CLASS_TYPES).map(c=>'.'+c).concat('.home-like-btn');
     return Array.from(document.querySelectorAll(selectors.join(','))).filter(b=>itemType(b)===type&&itemId(b)===id);
   }
-  const reactionSummaryLabels={heart:'❤️',fire:'🔥',skull:'💀',goat:'🐐',crown:'👑'};
+  const reactionSummaryLabels={heart:'❤️',fire:'🔥',skull:'💀',goat:'🐐'};
   function paintPostReactionSummary(type,id,reactions){
     if(type!=='post')return;
     const entries=Object.entries(reactions||{}).filter(([key,n])=>reactionSummaryLabels[key] && Number(n)>0)
@@ -25828,10 +26010,10 @@ window.performGlobalSearch = performGlobalSearch;
     if(pickerOpen)return; pickerOpen=true;
     const pro=!!State.profile?.isPro;
     const choices=Object.entries(REACTION_META).map(([key,r])=>{
-      const locked=['goat','crown'].includes(key)&&!pro;
+      const locked=key==='goat'&&!pro;
       return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" style="border:1px solid ${btn.dataset.cpReaction===key?'#ff6b00':'#34343a'};border-radius:14px;background:${btn.dataset.cpReaction===key?'#2a180f':'#17171b'};padding:11px 4px;color:#eee;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0"><span style="font-size:25px">${r.emoji}</span><span style="font-size:10px;font-weight:800">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">PRO 🔒</small>':''}</button>`;
     }).join('');
-    const html=`<div class="cp-reaction-sheet" style="padding:12px 0 4px"><div style="font-size:11px;color:#aaa;text-align:center;margin-bottom:13px">${pro?'PRO OPERATOR · ALL REACTIONS':'Choose your reaction · GOAT and Crown are Pro'}</div><div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px">${choices}</div><button type="button" id="cp-reaction-cancel" style="width:100%;margin-top:12px;padding:10px;color:#999;font-size:12px">Cancel</button></div>`;
+    const html=`<div class="cp-reaction-sheet" style="padding:12px 0 4px"><div style="font-size:11px;color:#aaa;text-align:center;margin-bottom:13px">${pro?'PRO OPERATOR · ALL REACTIONS':'Choose your reaction · GOAT is a Pro reaction'}</div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px">${choices}</div><button type="button" id="cp-reaction-cancel" style="width:100%;margin-top:12px;padding:10px;color:#999;font-size:12px">Cancel</button></div>`;
     try{
       // Comment picker must be a separate overlay: opening a nested sheet destroys the comments sheet.
       if(type==='comment'){
@@ -25844,7 +26026,7 @@ window.performGlobalSearch = performGlobalSearch;
       const root=type==='comment'?(document.getElementById('cp-reaction-overlay')||document):(document.querySelector('#sheet-container')||document.getElementById('cp-reaction-overlay')||document);
       root.querySelectorAll('.cp-reaction-choice').forEach(b=>b.addEventListener('click',async()=>{
         const key=b.dataset.reaction;
-        if(b.dataset.locked==='1'){if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();if(typeof showProPaywall==='function')setTimeout(()=>showProPaywall('Unlock GOAT and Crown reactions with Pro.'),180);pickerOpen=false;return;}
+        if(b.dataset.locked==='1'){if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();if(typeof showProPaywall==='function')setTimeout(()=>showProPaywall('Unlock the GOAT reaction with Pro.'),180);pickerOpen=false;return;}
         if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;await commitReaction(btn,type,id,key);
       }));
       const cancel=root.querySelector('#cp-reaction-cancel');if(cancel)cancel.addEventListener('click',()=>{if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;});
@@ -25853,7 +26035,7 @@ window.performGlobalSearch = performGlobalSearch;
   async function commitReaction(btn,type,id,key){
     if(!State.user){if(typeof showAuthGate==='function')showAuthGate();else if(typeof toast==='function')toast('Sign in to react.','warning');return;}
     if(!COLLECTIONS[type]||!id||!REACTION_META[key])return;
-    if(['goat','crown'].includes(key)&&!State.profile?.isPro){if(typeof showProPaywall==='function')showProPaywall('Unlock all reactions with Pro.');else if(typeof toast==='function')toast('That reaction is available with Pro.','warning');return;}
+    if(key==='goat'&&!State.profile?.isPro){if(typeof showProPaywall==='function')showProPaywall('Unlock all reactions with Pro.');else if(typeof toast==='function')toast('That reaction is available with Pro.','warning');return;}
     if(btn.dataset.cpBusy==='1')return;
     const uid=State.user.uid, cacheKey=`${type}_${id}_${uid}`;
     if(pendingReactionWrites.has(cacheKey))return;
@@ -25966,18 +26148,20 @@ window.performGlobalSearch = performGlobalSearch;
 
   // Refresh author labels from the live users collection, without replacing nodes or destroying badges/content.
   const profileCache=new Map();
+  window.addEventListener('codmpanda:avatar-frame-updated',event=>{const uid=event.detail?.uid;if(uid)profileCache.delete(uid);});
   async function publicProfile(uid){
     if(!uid)return null;if(uid===State.user?.uid)return State.profile||null;
-    if(profileCache.has(uid))return profileCache.get(uid);
-    try{const snap=await getDoc(doc(db,'users',uid));const u=snap.exists()?{id:uid,...snap.data()}:null;profileCache.set(uid,u);return u;}catch(_){return null;}
+    const cached=profileCache.get(uid);
+    if(cached&&Date.now()-cached.at<15000)return cached.value;
+    try{const snap=await getDoc(doc(db,'users',uid));const u=snap.exists()?{id:uid,...snap.data()}:null;profileCache.set(uid,{value:u,at:Date.now()});return u;}catch(_){return null;}
   }
   function setNameText(el,name){
     if(!el||!name)return;
-    const badge=el.querySelector('.verified-badge');
+    const marks=Array.from(el.querySelectorAll('.verified-badge,.cp-pro-spike-badge,[data-pro-badge="true"]'));
     const textNodes=Array.from(el.childNodes).filter(n=>n.nodeType===Node.TEXT_NODE);
-    if(textNodes.length){textNodes[0].nodeValue=' '+name+' ';for(let i=1;i<textNodes.length;i++)if(textNodes[i].nodeValue.trim())textNodes[i].nodeValue='';}
-    else if(!el.querySelector('img,svg,button'))el.insertBefore(document.createTextNode(name+' '),badge||null);
-    if(badge && (badge.parentNode!==el || el.lastElementChild!==badge))el.appendChild(badge);
+    if(textNodes.length){textNodes[0].nodeValue=' '+name+' ';for(let i=1;i<textNodes.length;i++)if(i>=marks.length&&textNodes[i].nodeValue.trim())textNodes[i].nodeValue='';}
+    else if(!el.querySelector('img,svg,button'))el.insertBefore(document.createTextNode(name+' '),marks[0]||null);
+    marks.forEach(mark=>{if(mark.parentNode!==el||el.lastElementChild!==mark)el.appendChild(mark);});
   }
   async function refreshPublicNamesAndAvatars(){
     if(!State.user)return;
@@ -25990,18 +26174,18 @@ window.performGlobalSearch = performGlobalSearch;
       const rect=el.getBoundingClientRect?.();
       // data-uid is also used by report/action buttons; only decorate compact avatar hosts.
       if(el.matches('button, a, input, textarea, select') || isName)continue;
-      if(!rect||rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
+      if(!rect||rect.width<24||rect.width>180||rect.height<24||rect.height>180)continue;
       if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.querySelector('img'))continue;
       const u=await publicProfile(uid);if(!u)continue;
-      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};let frame=u.avatarFrame||'none';if(frame!=='none'&&!frameCatalog[frame])frame='none';if(!window.CODMRenderFramedAvatar)continue;
+      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};const frame=([u.avatarFrame,u.equippedAvatarFrame,u.equippedFrame,u.selectedFrame,u.frameId,u.frame,u.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&frameCatalog[key])||'none');if(!window.CODMRenderFramedAvatar)continue;
       const img=el.querySelector('img');const avatar=u.avatar||u.photoURL||u.photoUrl||img?.getAttribute('src')||'';
       const name=u.ign||u.displayName||'Operator';
-      if(frame==='none'){if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
-      if(frameDone===frame)continue;
+      if(frame==='none'){el.style.borderRadius='50%';el.style.clipPath='circle(50% at 50% 50%)';if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;clip-path:circle(50% at 50% 50%)">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;delete el.dataset.cpFrameDone;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
+      if(frameDone===frame || el.dataset.cpFrameDone===frame)continue;
       const shell=document.createElement('div');shell.innerHTML=window.CODMRenderFramedAvatar({...u,avatar,ign:name},Math.max(28,Math.min(72,Math.round(Math.min(rect.width,rect.height)))));
       const rendered=shell.firstElementChild;if(!rendered)continue;
       // Only replace the contents of a compact avatar node, never a card or profile wrapper.
-      el.innerHTML='';el.appendChild(rendered);el.dataset.cpFrameApplied=frame;el.style.overflow='visible';el.classList.add('cp-avatar-framed-host');
+      el.innerHTML='';el.appendChild(rendered);el.dataset.cpFrameApplied=frame;el.dataset.cpFrameDone=frame;el.style.overflow='visible';el.style.borderRadius='50%';el.style.clipPath='none';el.classList.add('cp-avatar-framed-host');
     }
   }
   window.__codmpandaRefreshNamesAndAvatars=refreshPublicNamesAndAvatars;
@@ -26012,10 +26196,10 @@ window.performGlobalSearch = performGlobalSearch;
   window.openAvatarFramePicker=function(){
     try {
       const pro=!!(State.profile && (State.profile.isPro===true || State.profile.pro===true || State.profile.subscription==='pro' || State.profile.proStatus==='active'));
-      const stored=State.profile?.avatarFrame||'none';
+      const stored=window.CODMNormalizeFrameKey?.([State.profile?.avatarFrame,State.profile?.equippedAvatarFrame,State.profile?.equippedFrame,State.profile?.selectedFrame,State.profile?.frameId,State.profile?.frame,State.profile?.profileFrame].find(value=>value&&String(value).trim().toLowerCase()!=='none')||'none')||'none';
       const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};
       if(!Object.keys(frameCatalog).length)throw new Error('War Artifact frame catalogue is unavailable');
-      const current=(stored==='none'||(frameCatalog[stored]&&(frameCatalog[stored].tier!=='PRO'||pro)))?stored:'none';
+      const current=(stored==='none'||frameCatalog[stored])?stored:'none';
       const avatar=State.profile?.avatar||State.profile?.photoURL||State.profile?.photoUrl||'';
       const old=document.getElementById('cp-war-frame-modal'); if(old)old.remove();
       const overlay=document.createElement('div'); overlay.id='cp-war-frame-modal';
@@ -26026,7 +26210,8 @@ window.performGlobalSearch = performGlobalSearch;
       header.innerHTML='<div><strong style="font-size:19px">✨ Avatar Frames</strong><div style="font-size:12px;color:#aaa;margin-top:4px">Choose a frame for your profile picture</div></div><button type="button" aria-label="Close frames" style="width:38px;height:38px;border:0;border-radius:50%;background:#222;color:#fff;font-size:24px">×</button>';
       header.querySelector('button').onclick=()=>overlay.remove();panel.appendChild(header);
       const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;';
-      const choices=[['none','No Frame','FREE',null],...Object.entries(frameCatalog).map(([k,v])=>[k,v.name,v.tier,v.file])];
+      const frameEntries=Object.entries(frameCatalog).sort((a,b)=>{const tierA=a[1].tier==='PRO'?1:0;const tierB=b[1].tier==='PRO'?1:0;return tierA-tierB||String(a[1].name).localeCompare(String(b[1].name));});
+      const choices=[['none','No Frame','FREE',null],...frameEntries.map(([k,v])=>[k,v.name,v.tier,v.file])];
       for(const [key,name,tier,file] of choices){
         const locked=tier==='PRO'&&!pro,selected=current===key;
         const button=document.createElement('button');button.type='button';button.dataset.frame=key;
@@ -26036,9 +26221,9 @@ window.performGlobalSearch = performGlobalSearch;
           const plain=document.createElement('div');plain.style.cssText='position:absolute;inset:8px;border-radius:50%;overflow:hidden;background:#29292d;display:grid;place-items:center;color:#aaa;font-weight:800;';
           if(avatar){const img=document.createElement('img');img.src=avatar;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover';plain.appendChild(img)}else plain.textContent='×';preview.appendChild(plain);
         } else {
-          const core=document.createElement('div');core.style.cssText='position:absolute;left:22%;top:22%;width:56%;height:56%;border-radius:50%;overflow:hidden;background:#222;display:grid;place-items:center;color:#aaa;font-size:11px;';
+          const core=document.createElement('div');core.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:74%;height:74%;border-radius:50%;overflow:hidden;background:#222;display:grid;place-items:center;color:#aaa;font-size:11px;';
           if(avatar){const img=document.createElement('img');img.src=avatar;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover';core.appendChild(img)}else core.textContent='CP';
-          const frame=document.createElement('img');frame.src='/frames/'+file;frame.alt='';frame.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;';
+          const frame=document.createElement('img');frame.src='/frames/'+file;frame.alt='';frame.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:128%;height:128%;object-fit:contain;object-position:center;pointer-events:none;';
           frame.onerror=()=>{frame.style.display='none';};preview.append(core,frame);
         }
         const label=document.createElement('strong');label.textContent=name;label.style.cssText='font-size:10px;line-height:1.2;text-align:center;';
@@ -26049,8 +26234,10 @@ window.performGlobalSearch = performGlobalSearch;
           if(!State.user){overlay.remove();if(typeof showAuthGate==='function')showAuthGate();return;}
           button.disabled=true;
           try{
-            await updateDoc(doc(db,'users',State.user.uid),{avatarFrame:key});
-            State.profile={...(State.profile||{}),avatarFrame:key};
+            const savedFields={avatarFrame:key,equippedAvatarFrame:key,equippedFrame:key,selectedFrame:key,frameId:key,frame:key,profileFrame:key};
+            await updateDoc(doc(db,'users',State.user.uid),savedFields);
+            State.profile={...(State.profile||{}),...savedFields};
+            window.dispatchEvent(new CustomEvent('codmpanda:avatar-frame-updated',{detail:{uid:State.user.uid,avatarFrame:key}}));
             if(typeof profileCache!=='undefined')profileCache.delete(State.user.uid);
             overlay.remove();
             if(typeof renderYouTab==='function'&&State.currentTab==='you')renderYouTab();
@@ -26167,7 +26354,7 @@ window.performGlobalSearch = performGlobalSearch;
   } catch (mentionError) { console.warn('[CODMPanda] final mention wiring failed', mentionError); }
 
   // Keep ad injection idempotent across repeated feed renders.
-  const adStyle=document.createElement('style');adStyle.id='cp-integration-repair-style';adStyle.textContent=`.cp-avatar-framed-host{position:relative!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;overflow:visible!important;isolation:isolate;flex-shrink:0;line-height:0!important;box-shadow:none!important;outline:0!important;border:0!important;background:transparent!important;padding:0!important;margin:0!important}.cp-avatar-profile-frame-host{position:relative!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:visible!important;flex-shrink:0;line-height:0!important;background:transparent!important;border:0!important;outline:0!important;box-shadow:none!important;border-radius:0!important;padding:0!important;margin:0!important}.cp-avatar-framed-host>.cp-avatar-shell{width:100%;height:100%;position:relative!important}.cp-avatar-shell>.cp-avatar-core{position:absolute!important;inset:22%!important;width:56%!important;height:56%!important;overflow:hidden!important;border-radius:50%!important;z-index:8!important;background:#171719!important;border:0!important;outline:0!important;box-shadow:none!important}.cp-avatar-core img{display:block!important;width:100%!important;height:100%!important;object-fit:cover!important;position:relative!important;z-index:9!important}.cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;inset:-10%!important;width:120%!important;height:120%!important;object-fit:contain!important;pointer-events:none!important;z-index:10!important;border:0!important;outline:0!important;box-shadow:none!important;filter:none!important}.cp-avatar-shell>.cp-frame-art{position:absolute!important;inset:-4%!important;width:108%!important;height:108%!important;pointer-events:none!important;z-index:10!important;overflow:visible!important}.cp-post-detail-sheet{inset:0!important;width:100vw!important;height:100dvh!important;max-height:100dvh!important;border-radius:0!important}.cp-post-detail-sheet>.px-5{min-height:0!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important}.cp-reaction-emoji{line-height:1}.cp-reaction-choice:active,.cp-frame-choice:active{transform:scale(.97)}#ad-banner.cp-ad-banner{min-height:36px!important;padding:4px 8px!important}`;document.head.appendChild(adStyle);
+  const adStyle=document.createElement('style');adStyle.id='cp-integration-repair-style';adStyle.textContent=`.cp-post-detail-sheet{inset:0!important;width:100vw!important;height:100dvh!important;max-height:100dvh!important;border-radius:0!important}.cp-post-detail-sheet>.px-5{min-height:0!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important}.cp-reaction-emoji{line-height:1}.cp-reaction-choice:active,.cp-frame-choice:active{transform:scale(.97)}#ad-banner.cp-ad-banner{min-height:36px!important;padding:4px 8px!important}`;document.head.appendChild(adStyle);
   setTimeout(refreshPublicNamesAndAvatars,1000);
   console.log('[CODMPanda] integration repair loaded: unified reactions, frames, live names, themes and verification');
 })();
@@ -26256,53 +26443,61 @@ window.performGlobalSearch = performGlobalSearch;
   async function cpV4LoadIntelArticles() {
     const host = document.getElementById('cp-v4-intel-articles');
     if (!host) return;
-    host.innerHTML = '<div class="text-center py-6 text-xs text-gray-500">Loading intel…</div>';
-    try {
-      const snap = await getDocs(query(collection(db, 'intelArticles'), orderBy('createdAt', 'desc'), limit(50)));
-      if (!document.getElementById('cp-v4-intel-articles')) return;
-      const articles = [];
-      snap.forEach(d => articles.push({ id: d.id, ...d.data() }));
-      if (!articles.length) {
-        host.innerHTML = `<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="text-3xl mb-2">📰</div><div class="font-bold mb-1">No curated briefings yet</div><p class="text-xs text-gray-500">Official source links are ready above. CODMPanda summaries will appear here when published.</p></div>`;
-        return;
-      }
-      const saved = new Set(State.profile?.savedIntelIds || []);
-      host.innerHTML = articles.map(article => {
-        const category = ['News','Patch Notes','Events','Ranked','Meta','Notice'].includes(article.category) ? article.category : 'News';
-        const isSaved = saved.has(article.id);
-        const weapons = Array.isArray(article.weapons) ? article.weapons : [];
-        const source = /^https?:\/\//i.test(article.sourceURL || '') ? article.sourceURL : '';
-        return `<article class="bg-card border border-border rounded-2xl overflow-hidden">
-          <div class="p-4">
-            <div class="flex items-center justify-between gap-2 mb-2"><span class="text-[9px] uppercase font-black tracking-widest px-2 py-1 rounded-full bg-primary/15 text-primary">${escV4(category)}</span><span class="text-[10px] text-gray-500">${escV4(cpV4Date(article.createdAt))}</span></div>
-            <h3 class="font-black text-base mb-2">${escV4(article.title || 'CODM Update')}</h3>
-            <p class="text-sm text-gray-300 whitespace-pre-wrap break-words">${escV4(article.summary || article.body || '')}</p>
-            ${weapons.length ? `<div class="flex flex-wrap gap-1.5 mt-3">${weapons.slice(0,8).map(w => `<span class="text-[10px] bg-cardAlt border border-border rounded-full px-2 py-1">${escV4(w)}</span>`).join('')}</div>` : ''}
-            <div class="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-border">
-              <span class="text-[10px] text-gray-500">${article.authorIgn ? `By ${escV4(article.authorIgn)}` : 'CODMPanda Intel'}</span>
-              <div class="flex items-center gap-3">${source ? `<a href="${escV4(source)}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-primary">Open source ↗</a>` : ''}<button class="cp-v4-save-intel text-xs font-bold ${isSaved ? 'text-gold' : 'text-gray-400'}" data-id="${escV4(article.id)}">${isSaved ? '★ Saved' : '☆ Save'}</button></div>
-            </div>
-          </div>
-        </article>`;
-      }).join('');
-      host.querySelectorAll('.cp-v4-save-intel').forEach(button => button.onclick = async () => {
-        if (!State.user) { if (typeof showAuthGate === 'function') showAuthGate(); return; }
-        const id = button.dataset.id;
-        const currentlySaved = (State.profile?.savedIntelIds || []).includes(id);
-        try {
-          await updateDoc(doc(db, 'users', State.user.uid), { savedIntelIds: currentlySaved ? arrayRemove(id) : arrayUnion(id) });
-          const current = new Set(State.profile?.savedIntelIds || []);
-          currentlySaved ? current.delete(id) : current.add(id);
-          State.profile = { ...(State.profile || {}), savedIntelIds: Array.from(current) };
-          button.textContent = currentlySaved ? '☆ Save' : '★ Saved';
-          button.classList.toggle('text-gold', !currentlySaved);
-          button.classList.toggle('text-gray-400', currentlySaved);
-        } catch (e) { console.warn('[CODMPanda] intel bookmark failed', e); toast('Could not save this briefing', 'error'); }
-      });
-    } catch (error) {
-      console.error('[CODMPanda] Intel feed failed', error);
-      host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-4 text-sm text-red-300">Could not load CODMPanda briefings. You can still use the official source links above.</div>';
+    host.innerHTML = '<div class="text-center py-6 text-xs text-gray-500">Loading official briefings…</div>';
+    const officialPromise = fetch(NOTIFY_WORKER_URL + '/briefings', { method: 'GET', cache: 'no-store' })
+      .then(async response => { if (!response.ok) throw new Error('Briefings service returned ' + response.status); const data = await response.json(); return Array.isArray(data.briefings) ? data.briefings : []; })
+      .catch(error => { console.warn('[CODMPanda] Official briefing service unavailable:', error); return []; });
+    const curatedPromise = getDocs(query(collection(db, 'intelArticles'), orderBy('createdAt', 'desc'), limit(50)))
+      .then(snap => snap.docs.map(d => ({ id: d.id, ...d.data(), _kind: 'curated' })))
+      .catch(error => { console.warn('[CODMPanda] Curated Intel unavailable:', error); return []; });
+    const [official, curated] = await Promise.all([officialPromise, curatedPromise]);
+    if (!document.getElementById('cp-v4-intel-articles')) return;
+    const saved = new Set(State.profile?.savedIntelIds || []);
+    const officialHtml = official.map(item => {
+      const title = escV4(item.title || 'Official CODM update');
+      const summary = escV4(item.summary || (item.aiSummary === false ? 'The article was found, but a trustworthy summary is unavailable right now. Open the official source for the full details.' : (item.description || 'Summary unavailable. Open the official source for full details.')));
+      const url = /^https:\/\//i.test(item.url || '') ? escV4(item.url) : '';
+      const source = escV4(item.sourceName || 'Official CODM source');
+      const date = escV4(item.publishedAt || item.updatedAt || 'Latest source snapshot');
+      return `<article class="bg-card border border-border rounded-2xl overflow-hidden"><div class="p-4">
+        <div class="flex items-center justify-between gap-2 mb-2"><span class="text-[9px] uppercase font-black tracking-widest px-2 py-1 rounded-full bg-green-500/15 text-green-300">Official source</span><span class="text-[10px] text-gray-500">${date}</span></div>
+        <div class="text-[10px] text-primary font-bold mb-1">${source}</div><h3 class="font-black text-base mb-2">${title}</h3><p class="text-sm text-gray-300 whitespace-pre-wrap break-words">${summary}</p>
+        ${url ? `<div class="mt-4 pt-3 border-t border-border"><a href="${url}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-primary">Read official update ↗</a></div>` : ''}
+      </div></article>`;
+    }).join('');
+    const curatedHtml = curated.map(article => {
+      const category = ['News','Patch Notes','Events','Ranked','Meta','Notice'].includes(article.category) ? article.category : 'News';
+      const isSaved = saved.has(article.id);
+      const source = /^https?:\/\//i.test(article.sourceURL || '') ? escV4(article.sourceURL) : '';
+      const weapons = Array.isArray(article.weapons) ? article.weapons : [];
+      return `<article class="bg-card border border-border rounded-2xl overflow-hidden"><div class="p-4">
+        <div class="flex items-center justify-between gap-2 mb-2"><span class="text-[9px] uppercase font-black tracking-widest px-2 py-1 rounded-full bg-primary/15 text-primary">${escV4(category)}</span><span class="text-[10px] text-gray-500">${escV4(cpV4Date(article.createdAt))}</span></div>
+        <h3 class="font-black text-base mb-2">${escV4(article.title || 'CODM Update')}</h3><p class="text-sm text-gray-300 whitespace-pre-wrap break-words">${escV4(article.summary || article.body || '')}</p>
+        ${weapons.length ? `<div class="flex flex-wrap gap-1.5 mt-3">${weapons.slice(0,8).map(w => `<span class="text-[10px] bg-cardAlt border border-border rounded-full px-2 py-1">${escV4(w)}</span>`).join('')}</div>` : ''}
+        <div class="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-border"><span class="text-[10px] text-gray-500">${article.authorIgn ? 'By ' + escV4(article.authorIgn) : 'CODMPanda Intel'}</span>
+        <div class="flex items-center gap-3">${source ? `<a href="${source}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-primary">Open source ↗</a>` : ''}<button class="cp-v4-save-intel text-xs font-bold ${isSaved ? 'text-gold' : 'text-gray-400'}" data-id="${escV4(article.id)}">${isSaved ? '★ Saved' : '☆ Save'}</button></div></div>
+      </div></article>`;
+    }).join('');
+    if (!officialHtml && !curatedHtml) {
+      host.innerHTML = `<div class="bg-card border border-border rounded-2xl p-5"><div class="font-bold mb-1">Briefings are temporarily unavailable</div><p class="text-xs text-gray-400">Use the three official source links above. Tap Refresh to try again.</p><button id="cp-v4-retry-briefings" class="mt-3 text-xs font-bold text-primary">Try again</button></div>`;
+      document.getElementById('cp-v4-retry-briefings')?.addEventListener('click', cpV4LoadIntelArticles);
+      return;
     }
+    host.innerHTML = (officialHtml ? '<div class="text-[10px] uppercase tracking-widest text-gray-500 font-black mt-1">Official source briefings</div>' + officialHtml : '') +
+      (curatedHtml ? '<div class="text-[10px] uppercase tracking-widest text-gray-500 font-black mt-4">Community briefings</div>' + curatedHtml : '');
+    host.querySelectorAll('.cp-v4-save-intel').forEach(button => button.onclick = async () => {
+      if (!State.user) { if (typeof showAuthGate === 'function') showAuthGate(); return; }
+      const id = button.dataset.id, currentlySaved = (State.profile?.savedIntelIds || []).includes(id);
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), { savedIntelIds: currentlySaved ? arrayRemove(id) : arrayUnion(id) });
+        const current = new Set(State.profile?.savedIntelIds || []);
+        currentlySaved ? current.delete(id) : current.add(id);
+        State.profile = { ...(State.profile || {}), savedIntelIds: Array.from(current) };
+        button.textContent = currentlySaved ? '☆ Save' : '★ Saved';
+        button.classList.toggle('text-gold', !currentlySaved); button.classList.toggle('text-gray-400', currentlySaved);
+      } catch (e) { console.warn('[CODMPanda] intel bookmark failed', e); toast('Could not save this briefing', 'error'); }
+    });
+    if (window.lucide) window.lucide.createIcons();
   }
   function cpV4OpenPublishIntel() {
     if (State.user?.uid !== ADMIN_UID) { toast('Only the CODMPanda admin can publish Intel updates.', 'error'); return; }
@@ -26403,8 +26598,8 @@ window.performGlobalSearch = performGlobalSearch;
   async function cpV4RenderPopularBuilds() {
     const host = document.getElementById('cp-v4-meta-builds'); if (!host) return;
     try {
-      const snap = await getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(60)));
-      const builds = []; snap.forEach(d => { const v = { id:d.id, ...d.data() }; if (!v.type || v.type === 'gunsmith') builds.push(v); });
+      const snap = await getDocs(collection(db, 'vaults'));
+      const builds = []; snap.forEach(d => { const v = { id:d.id, ...d.data() }; const normalized = cpNormalizeVaultRecord(v.id, v); if (normalized.type === 'gunsmith') builds.push(normalized); });
       builds.sort((a,b) => (Number(b.likes)||0)-(Number(a.likes)||0));
       if (!builds.length) { host.innerHTML = '<div class="bg-card border border-border rounded-xl p-4 text-xs text-gray-500">No community gunsmith builds yet. Create one in Loadout Lab to start the collection.</div>'; return; }
       host.innerHTML = builds.slice(0,6).map(v => `<button class="cp-v4-meta-build bg-card border border-border rounded-xl p-3 w-full text-left flex items-center gap-3" data-gun="${escV4(v.gunName || '')}"><span class="w-9 h-9 rounded-xl bg-primary/15 text-primary flex items-center justify-center">🔧</span><span class="min-w-0 flex-1"><strong class="block text-xs truncate">${escV4(v.gunName || 'Unknown weapon')}</strong><small class="block text-[10px] text-gray-500">${escV4(v.ign || 'Community')} · ♥ ${Number(v.likes)||0}</small></span><span class="text-[10px] text-primary font-bold">View</span></button>`).join('');
@@ -26493,7 +26688,7 @@ window.performGlobalSearch = performGlobalSearch;
       const note = document.getElementById('pl-note').value.trim();
       const btn = document.getElementById('pl-submit'); btn.disabled = true; btn.innerHTML = '<div class="spinner mx-auto"></div>';
       try {
-        const expiryHours = typeof LOBBY_EXPIRY_HOURS === 'number' ? LOBBY_EXPIRY_HOURS : 24;
+        const expiryHours = 2;
         const expiresAt = Timestamp.fromMillis(Date.now() + expiryHours * 60 * 60 * 1000);
         const jitsiLink = `https://meet.jit.si/CODMPanda-${State.user.uid.slice(0,8)}-${Date.now()}`;
         const isPro = !!State.profile?.isPro;
@@ -26796,7 +26991,7 @@ window.performGlobalSearch = performGlobalSearch;
     const _cpV4RenderProUpsell = renderProUpsell;
     renderProUpsell = function() {
       let html = _cpV4RenderProUpsell.apply(this, arguments);
-      html = html.replace('<li>✦ Gold crown badge 👑</li>', '<li>✦ Gold crown badge 👑</li><li>✦ All 20 War Artifact frames</li><li>✦ Meta Tracker watchlist (up to 100 weapons)</li><li>✦ Full profile achievement showcase</li>');
+      html = html.replace('<li>✦ Obsidian Spike Pro badge</li>', '<li>✦ Obsidian Spike Pro badge</li><li>✦ All 20 War Artifact frames</li><li>✦ Meta Tracker watchlist (up to 100 weapons)</li><li>✦ Full profile achievement showcase</li>');
       return html;
     };
     window.renderProUpsell = renderProUpsell;
@@ -26827,4 +27022,846 @@ window.performGlobalSearch = performGlobalSearch;
   // Preserve the consolidated window-level clip renderer from the existing app. The local
   // Clips-tab renderer is enhanced above; do not replace the merged renderer with an older one.
   console.log('[CODMPanda] Companion Upgrade Pack v4 loaded: Intel, Meta Tracker, map-aware LFG, upgraded loadouts/clips, achievements, notification preferences, profile contributions and Pro watchlist.');
+})();
+
+
+// ============================================
+// CODMPanda maintenance patch — 2026-10-21
+// ============================================
+(function cpMaintenancePatch() {
+  // Opening any vault card now uses the detail view. Map visible cards to the filtered records
+  // after the existing renderer runs, avoiding a duplicate renderer or changes to card controls.
+  const cpPreviousRenderVaults = renderVaults;
+  renderVaults = function() {
+    cpPreviousRenderVaults.apply(this, arguments);
+    const feed = document.getElementById('vault-feed');
+    if (!feed) return;
+    let visible = (State.cache.vaults || []).slice();
+    const search = String(State.filters?.vaults?.search || '').toLowerCase();
+    if (search) visible = visible.filter(v =>
+      String(v.gunName || '').toLowerCase().includes(search) ||
+      String(v.gunsmithCode || '').toLowerCase().includes(search)
+    );
+    const cards = Array.from(feed.children);
+    cards.forEach((card, index) => {
+      const vault = visible[index];
+      if (!vault) return;
+      card.dataset.vaultId = vault.id;
+      card.style.cursor = 'pointer';
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      const open = () => openVaultDetail(vault.id);
+      card.addEventListener('click', event => {
+        if (event.target.closest('button,a,input,select,textarea')) return;
+        open();
+      });
+      card.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          if (event.target === card) { event.preventDefault(); open(); }
+        }
+      });
+    });
+  };
+  window.renderVaults = renderVaults;
+
+  // Direct-fetch fallback makes shared/deep-linked builds open even when the current cache is filtered.
+  const cpPreviousOpenVaultDetail = openVaultDetail;
+  openVaultDetail = async function(vaultId) {
+    let found = (State.cache.vaults || []).find(v => v.id === vaultId);
+    if (!found) {
+      try {
+        const snap = await getDoc(doc(db, 'vaults', vaultId));
+        if (snap.exists()) {
+          found = cpNormalizeVaultRecord(snap.id, snap.data());
+          State.cache.vaults = [...(State.cache.vaults || []).filter(v => v.id !== found.id), found];
+        }
+      } catch (error) {
+        console.warn('[CODMPanda] Direct vault fetch failed', error);
+      }
+    }
+    if (!found) { toast('Build could not be loaded. Check your connection or access.', 'error'); return; }
+    return cpPreviousOpenVaultDetail.call(this, vaultId);
+  };
+  window.openVaultDetail = openVaultDetail;
+
+  // Mention navigation is handled by the single document capture-phase resolver above.
+
+  async function cpCoachReply(question, history, playerName) {
+    const response = await fetch(NOTIFY_WORKER_URL + '/coach', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: question, history: history.slice(-10), playerName: String(playerName || '').slice(0, 40) })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'AI Coach request failed');
+    if (!data.reply) throw new Error('AI Coach returned an empty reply');
+    return data.reply;
+  }
+  function cpOpenCoach() {
+    let overlay = document.getElementById('cp-ai-coach');
+    if (overlay) { overlay.style.display = 'flex'; return; }
+    overlay = document.createElement('div');
+    overlay.id = 'cp-ai-coach';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;padding:12px';
+    overlay.innerHTML = '<section style="width:min(100%,520px);max-height:82vh;background:#101116;border:1px solid #343640;border-radius:20px;display:flex;flex-direction:column;overflow:hidden;color:#fff"><header style="padding:14px 16px;border-bottom:1px solid #343640;display:flex;justify-content:space-between;align-items:center"><div><b>🎯 CODMPanda Coach</b><div style="font-size:11px;color:#a1a1aa;margin-top:3px">AI-powered CODM practice & loadout coach</div></div><button id="cp-coach-close" aria-label="Close coach" style="font-size:24px;padding:0 6px">×</button></header><div id="cp-coach-chat" style="padding:14px;overflow:auto;min-height:180px;display:flex;flex-direction:column;gap:10px"><div style="background:#20212a;border-radius:12px;padding:11px;font-size:13px">Yo operator 👋 What are we tuning today—sensitivity, HUD, gunsmith, aim, or movement?</div></div><form id="cp-coach-form" style="display:flex;gap:8px;padding:12px;border-top:1px solid #343640"><input id="cp-coach-input" maxlength="500" placeholder="Ask your CODM coach…" style="flex:1;min-width:0;background:#20212a;border:1px solid #3a3b45;border-radius:10px;padding:11px;color:white"><button style="background:#ff6b00;border-radius:10px;padding:0 15px;font-weight:800">Send</button></form></section>';
+    document.body.appendChild(overlay);
+    overlay.querySelector('#cp-coach-close').onclick = () => overlay.remove();
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    const coachUid = State.user?.uid || 'guest';
+    const coachHistoryKey = 'cp_coach_history_v1_' + coachUid;
+    const coachMaxAge = 48 * 60 * 60 * 1000;
+    // Remove expired caches for every local account, not just the account currently signed in.
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith('cp_coach_history_v1_')) continue;
+        try {
+          const cached = JSON.parse(localStorage.getItem(key) || 'null');
+          if (!cached || !Number.isFinite(cached.updatedAt) || Date.now() - cached.updatedAt >= coachMaxAge) localStorage.removeItem(key);
+        } catch (_) { localStorage.removeItem(key); }
+      }
+    } catch (_) {}
+    let history = [];
+    try {
+      const saved = JSON.parse(localStorage.getItem(coachHistoryKey) || 'null');
+      if (saved && Number.isFinite(saved.updatedAt) && Date.now() - saved.updatedAt < coachMaxAge && Array.isArray(saved.messages)) {
+        history = saved.messages.filter(m => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string').slice(-20);
+        history.forEach(m => {
+          const line = document.createElement('div');
+          line.style.cssText = m.role === 'user' ? 'align-self:flex-end;max-width:90%;background:#71320d;border-radius:12px;padding:10px;font-size:13px;white-space:pre-wrap' : 'align-self:flex-start;max-width:95%;background:#20212a;border-radius:12px;padding:11px;font-size:13px;line-height:1.5;white-space:pre-wrap';
+          line.textContent = m.text; overlay.querySelector('#cp-coach-chat').appendChild(line);
+        });
+      } else if (saved) localStorage.removeItem(coachHistoryKey);
+    } catch (_) { try { localStorage.removeItem(coachHistoryKey); } catch (_) {} }
+    const coachName = State.profile?.ign || State.profile?.displayName || State.user?.displayName || '';
+    const welcome = overlay.querySelector('#cp-coach-chat')?.firstElementChild;
+    if (welcome && coachName) welcome.textContent = `Yo ${coachName} 👋 Good to see you. What are we tuning today—aim, sensitivity, HUD, loadout, or movement?`;
+    overlay.querySelector('#cp-coach-form').onsubmit = async e => {
+      e.preventDefault();
+      const input = overlay.querySelector('#cp-coach-input');
+      const form = overlay.querySelector('#cp-coach-form');
+      const sendButton = form.querySelector('button');
+      const value = input.value.trim();
+      if (!value || sendButton.disabled) return;
+      const chat = overlay.querySelector('#cp-coach-chat');
+      const userLine = document.createElement('div');
+      userLine.style.cssText='align-self:flex-end;max-width:90%;background:#71320d;border-radius:12px;padding:10px;font-size:13px;white-space:pre-wrap';
+      userLine.textContent=value;
+      chat.appendChild(userLine);
+      const reply = document.createElement('div');
+      reply.style.cssText='align-self:flex-start;max-width:95%;background:#20212a;border-radius:12px;padding:11px;font-size:13px;line-height:1.5;white-space:pre-wrap';
+      reply.textContent='Thinking…';
+      chat.appendChild(reply);
+      input.value='';
+      input.disabled=true;
+      sendButton.disabled=true;
+      sendButton.textContent='…';
+      chat.scrollTop=chat.scrollHeight;
+      try {
+        const currentCoachName = State.profile?.ign || State.profile?.displayName || State.user?.displayName || '';
+        const answer = await cpCoachReply(value, history, currentCoachName);
+        history.push({ role:'user', text:value }, { role:'model', text:answer });
+        history = history.slice(-20);
+        try { localStorage.setItem(coachHistoryKey, JSON.stringify({ updatedAt:Date.now(), messages:history })); } catch (_) { /* local storage may be full or disabled */ }
+        reply.textContent=answer;
+      } catch (error) {
+        console.warn('[CODMPanda Coach] Request failed:', error);
+        reply.textContent=error.message || 'I could not reach the AI Coach. Please try again.';
+      } finally {
+        input.disabled=false;
+        sendButton.disabled=false;
+        sendButton.textContent='Send';
+        chat.scrollTop=chat.scrollHeight;
+        input.focus();
+      }
+    };
+    overlay.querySelector('#cp-coach-input').focus();
+  }
+  function cpInstallCoachButton() {
+    if (!document.body || document.getElementById('cp-ai-coach-launch')) return;
+    const button = document.createElement('button');
+    button.id = 'cp-ai-coach-launch'; button.type='button'; button.textContent='🎯 Coach';
+    button.setAttribute('aria-label','Open CODMPanda Coach');
+    button.style.cssText='position:fixed;right:14px;bottom:calc(78px + env(safe-area-inset-bottom));z-index:9990;background:#ff6b00;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:11px 15px;font-weight:900;font-size:12px;box-shadow:0 5px 18px rgba(0,0,0,.35)';
+    window.openCODMPandaCoach = cpOpenCoach; // Opened from the pinned Inbox row.
+  }
+  window.openCODMPandaCoach = cpOpenCoach;
+
+  console.log('[CODMPanda] Vault recovery, card opening, clickable mentions and Coach patch loaded.');
+})();
+
+
+// ============================================
+// CODMPanda lobby profile hydration patch
+// ============================================
+(function cpLobbyProfileHydration() {
+  const profileCache = new Map();
+  const pending = new Map();
+  window.addEventListener('codmpanda:avatar-frame-updated',event=>{const uid=event.detail?.uid;if(uid)profileCache.delete(uid);});
+  async function enrichLobby(lobby) {
+    if (!lobby?.uid) return false;
+    if (profileCache.has(lobby.uid)) {
+      const cached = profileCache.get(lobby.uid);
+      const keys = ['avatarFrame','equippedFrame','frame','profileFrame','avatar','ign','isPro','verified'];
+      const before = keys.map(key => lobby[key]);
+      Object.assign(lobby, cached);
+      return keys.some((key, index) => before[index] !== lobby[key]);
+    }
+    if (!pending.has(lobby.uid)) {
+      pending.set(lobby.uid, getDoc(doc(db, 'users', lobby.uid)).then(snap => {
+        const data = snap.exists() ? snap.data() : {};
+        const profile = {
+          verified: data.verified === true,
+          avatarFrame: data.avatarFrame || data.equippedFrame || data.frame || data.profileFrame || 'none',
+          isPro: data.isPro === true || data.pro === true || data.subscription === 'pro' || data.proStatus === 'active',
+          avatar: lobby.avatar || data.avatar || data.photoURL || data.photoUrl || '',
+          ign: lobby.ign || data.ign || data.displayName || 'Operator'
+        };
+        profileCache.set(lobby.uid, profile);
+        pending.delete(lobby.uid);
+        Object.assign(lobby, profile);
+        return true;
+      }).catch(error => { pending.delete(lobby.uid); console.warn('[CODMPanda] Lobby profile hydrate failed', error); return false; }));
+    }
+    return pending.get(lobby.uid);
+  }
+  const previousRenderLobbies = renderLobbies;
+  renderLobbies = function() {
+    const result = previousRenderLobbies.apply(this, arguments);
+    const items = (State.cache.lobbies || []).slice();
+    const jobs = items.filter(l => l?.uid).map(enrichLobby);
+    if (jobs.length) Promise.all(jobs).then(changed => {
+      if (changed.some(Boolean) && document.getElementById('lobbies-feed')) renderLobbies.call(this);
+    });
+    return result;
+  };
+  window.renderLobbies = renderLobbies;
+  console.log('[CODMPanda] Lobby verified status and avatar-frame profile hydration enabled.');
+})();
+
+
+// ============================================
+// CODMPanda regression fixes: pinned Coach + circular avatar safety
+// ============================================
+(function cpPinnedCoachAndAvatarSafety() {
+  const styleId = 'cp-avatar-rounding-regression-fix';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .w-16.h-16>img,.w-12.h-12>img,.w-11.h-11>img,.w-10.h-10>img,.w-9.h-9>img,.w-8.h-8>img { border-radius:50%!important; clip-path:circle(50% at 50% 50%); object-fit:cover!important; }
+      #cp-ai-coach-launch { display:none!important; }
+    `;
+    document.head.appendChild(style);
+  }
+  if (typeof renderMessagesTabFast === 'function') {
+    const previousMessagesRenderer = renderMessagesTabFast;
+    renderMessagesTabFast = async function() {
+      await previousMessagesRenderer.apply(this, arguments);
+      const body = document.getElementById('inbox-full-body');
+      if (!body || document.getElementById('cp-coach-pinned-row')) return;
+      const row = document.createElement('button');
+      row.id = 'cp-coach-pinned-row'; row.type = 'button';
+      row.style.cssText = 'width:100%;display:flex;align-items:center;gap:12px;text-align:left;padding:13px;margin:0 0 10px;background:linear-gradient(120deg,rgba(255,107,0,.17),rgba(255,215,0,.05));border:1px solid rgba(255,107,0,.42);border-radius:14px;color:#fff;cursor:pointer;';
+      row.innerHTML = '<span style="width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#ff6b00;font-size:23px">🎯</span><span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:900">CODMPanda Coach <span style="font-size:9px;background:#ff6b00;color:white;border-radius:5px;padding:2px 5px;margin-left:4px">PINNED</span></span><span style="display:block;font-size:11px;color:#aaa;margin-top:3px">Your CODM practice assistant · Tap to chat</span></span><span style="color:#ff6b00;font-size:18px">›</span>';
+      row.addEventListener('click', () => {
+        if (typeof window.openCODMPandaCoach === 'function') window.openCODMPandaCoach();
+        else if (typeof toast === 'function') toast('Coach is still loading. Please try again.', 'info');
+      });
+      body.prepend(row);
+    };
+  }
+})();
+
+
+/* CODMPanda reliability patch: avatar sizing, profile-field normalization and robust mention resolution. */
+(function cpReliabilityPatch(){
+  const style=document.createElement('style');
+  style.id='cp-avatar-frame-fit-final';
+  style.textContent=`
+    .mention-text{position:relative!important;z-index:20!important;display:inline!important;pointer-events:auto!important;cursor:pointer!important;touch-action:manipulation!important}
+  `;
+  (document.head||document.documentElement).appendChild(style);
+})();
+
+  // Convert rendered @handles into actual anchors across feed cards, comments, inbox and lobby posts.
+  // highlightMentions() was defined but never called by the renderers, leaving plain, non-clickable text.
+  function cpHydrateMentionText(root=document){
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{
+      acceptNode(node){
+        const p=node.parentElement;
+        if(!p||!/@[A-Za-z0-9_]{2,24}/.test(node.nodeValue||''))return NodeFilter.FILTER_REJECT;
+        if(p.closest('a,button,input,textarea,select,script,style,code,pre,[contenteditable="true"],.mention-dropdown,.mention-text'))return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+    for(const node of nodes){
+      const value=node.nodeValue||'';const re=/(^|[^A-Za-z0-9._%+-])@([A-Za-z0-9_]{2,24})/g;let match,last=0,found=false;
+      const frag=document.createDocumentFragment();
+      while((match=re.exec(value))){
+        const mentionStart=match.index+match[1].length;
+        if(mentionStart<last)continue;
+        found=true;if(mentionStart>last)frag.appendChild(document.createTextNode(value.slice(last,mentionStart)));
+        const a=document.createElement('a');a.href='#';a.setAttribute('role','link');a.setAttribute('tabindex','0');a.setAttribute('aria-label','Open @'+match[2]+' profile');a.dataset.mentionName=match[2];const resolvedMentionUid=window.__cpMentionUidByName?.[String(match[2]).toLowerCase()];if(resolvedMentionUid)a.dataset.mentionUid=resolvedMentionUid;a.className='mention-text';a.textContent='@'+match[2];
+        a.style.cssText='color:#38bdf8;font-weight:800;cursor:pointer;text-decoration:none;pointer-events:auto;touch-action:manipulation;';
+        frag.appendChild(a);last=mentionStart+match[0].length-match[1].length;
+      }
+      if(found){if(last<value.length)frag.appendChild(document.createTextNode(value.slice(last)));node.parentNode?.replaceChild(frag,node);}
+    }
+  }
+  let cpMentionHydrateTimer=0;
+  const cpMentionObserver=new MutationObserver(records=>{
+    let added=false;for(const rec of records)if(rec.addedNodes&&rec.addedNodes.length){added=true;break;}
+    if(added){clearTimeout(cpMentionHydrateTimer);cpMentionHydrateTimer=setTimeout(()=>cpHydrateMentionText(document),90);}
+  });
+  cpMentionObserver.observe(document.documentElement,{childList:true,subtree:true});
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>cpHydrateMentionText(document),{once:true});
+  else setTimeout(()=>cpHydrateMentionText(document),0);
+
+
+
+/* Home-feed lobby hydration: preserve the active renderer chain and enrich every lobby author before repainting. */
+(function cpHomeFeedLobbyHydration(){
+  const cache=new Map(), pending=new Map();
+  window.addEventListener('codmpanda:avatar-frame-updated',event=>{const uid=event.detail?.uid;if(uid)cache.delete(uid);});
+  const previousRender=window.renderHomeFeed || renderHomeFeed;
+  async function enrich(item){
+    if(!item || item.type!=='lobby') return false;
+    const uid=String(item.uid || item.userId || item.ownerUid || item.createdBy || item.authorUid || '').trim();
+    if(!uid) return false;
+    item.uid=uid;
+    if(cache.has(uid)){ const cached=cache.get(uid); if(Date.now()-cached.at<15000){ const keys=['avatarFrame','equippedAvatarFrame','equippedFrame','selectedFrame','frameId','frame','profileFrame','avatar','ign','isPro','pro','verified']; const before=keys.map(key=>item[key]); Object.assign(item,cached.profile); return keys.some((key,index)=>before[index]!==item[key]); } cache.delete(uid); }
+    if(pending.has(uid)) return pending.get(uid);
+    const job=getDoc(doc(db,'users',uid)).then(snap=>{
+      const u=snap.exists()?snap.data():{};
+      const frameKey=[u.avatarFrame,u.equippedAvatarFrame,u.equippedFrame,u.selectedFrame,u.frameId,u.frame,u.profileFrame,item.avatarFrame,item.equippedAvatarFrame,item.equippedFrame,item.selectedFrame,item.frameId,item.frame,item.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&window.CODM_WAR_ARTIFACT_FRAMES?.[key])||'none';
+      const profile={
+        avatarFrame:frameKey,
+        equippedAvatarFrame:frameKey,
+        equippedFrame:frameKey,
+        selectedFrame:frameKey,
+        frameId:frameKey,
+        frame:frameKey,
+        profileFrame:frameKey,
+        isPro:u.isPro===true || u.pro===true || u.subscription==='pro' || u.proStatus==='active',
+        pro:u.pro===true || u.isPro===true || u.subscription==='pro' || u.proStatus==='active',
+        avatar:item.avatar || u.avatar || u.photoURL || u.photoUrl || '',
+        ign:u.ign || u.displayName || u.username || item.ign || 'Operator',
+        verified:u.verified===true
+      };
+      cache.set(uid,{profile,at:Date.now()});
+      Object.assign(item,profile);
+      return true;
+    }).catch(error=>{
+      console.warn('[CODMPanda] Home lobby profile hydration failed',error);
+      return false;
+    }).finally(()=>pending.delete(uid));
+    pending.set(uid,job);
+    return job;
+  }
+  const wrappedRender=function(){
+    const result=previousRender.apply(this,arguments);
+    const feed=Array.isArray(homeCache?.feed)?homeCache.feed:[];
+    const jobs=feed.filter(item=>item?.type==='lobby').map(enrich);
+    if(jobs.length) Promise.all(jobs).then(results=>{
+      if(results.some(Boolean) && document.getElementById('home-feed')){
+        // Re-enter the latest renderer so ad/reaction and other feed hooks remain active.
+        if(typeof window.renderHomeFeed==='function') window.renderHomeFeed();
+        if(typeof window.__codmpandaRefreshNamesAndAvatars==='function') window.__codmpandaRefreshNamesAndAvatars();
+      }
+    });
+    return result;
+  };
+  renderHomeFeed=wrappedRender;
+  window.renderHomeFeed=wrappedRender;
+})();
+
+
+/* Repaint every visible avatar immediately after a frame is equipped, not just the profile picker. */
+(function cpGlobalAvatarFrameRefresh(){
+  if(window.__cpGlobalAvatarFrameRefreshInstalled)return;
+  window.__cpGlobalAvatarFrameRefreshInstalled=true;
+  window.addEventListener('codmpanda:avatar-frame-updated',event=>{
+    const uid=String(event.detail?.uid||'');
+    if(!uid)return;
+    const source=uid===State.user?.uid?(State.profile||{}):null;
+    const rawFrame=event.detail?.avatarFrame||source?.avatarFrame||source?.equippedAvatarFrame||source?.equippedFrame||source?.selectedFrame||source?.frameId||source?.frame||source?.profileFrame||'none';
+    const frameKey=window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(rawFrame):String(rawFrame||'none');
+    const frameFields={avatarFrame:frameKey,equippedAvatarFrame:frameKey,equippedFrame:frameKey,selectedFrame:frameKey,frameId:frameKey,frame:frameKey,profileFrame:frameKey};
+    const updateItems=items=>{if(!Array.isArray(items))return;for(const item of items){const owner=String(item?.uid||item?.userId||item?.ownerUid||item?.createdBy||item?.authorUid||'');if(owner===uid)Object.assign(item,frameFields);}};
+    updateItems(State.cache?.lobbies);
+    if(typeof homeCache!=='undefined')updateItems(homeCache?.feed);
+    if(source)Object.assign(source,frameFields);
+    setTimeout(()=>{
+      if(!source||!window.CODMRenderFramedAvatar)return;
+      const hosts=Array.from(document.querySelectorAll('[data-uid]')).filter(el=>{
+        if(String(el.dataset.uid||'')!==uid||el.matches('button,a,input,textarea,select')||el.classList.contains('user-name-link'))return false;
+        const rect=el.getBoundingClientRect?.();
+        if(!rect||rect.width<24||rect.width>180||rect.height<24||rect.height>180)return false;
+        return el.classList.contains('rounded-full')||el.classList.contains('cp-avatar-framed-host')||!!el.querySelector('img');
+      });
+      for(const el of hosts){
+        const rect=el.getBoundingClientRect();
+        const size=Math.max(26,Math.min(132,Math.round(Math.min(rect.width,rect.height))));
+        const shell=document.createElement('div');
+        shell.innerHTML=window.CODMRenderFramedAvatar({...source,...frameFields},size);
+        const rendered=shell.firstElementChild;
+        if(!rendered)continue;
+        el.replaceChildren(rendered);
+        el.dataset.cpFrameDone=frameKey;
+        el.dataset.cpFrameApplied=frameKey;
+        el.classList.add('cp-avatar-framed-host');
+        el.style.overflow='visible';
+        el.style.borderRadius='50%';
+        el.style.clipPath='none';
+      }
+      if(typeof window.__codmpandaRefreshNamesAndAvatars==='function')window.__codmpandaRefreshNamesAndAvatars();
+    },0);
+  });
+})();
+
+/* Canonical avatar-frame geometry: all screens use the same centered photo aperture and transparent frame layer. */
+(function cpAvatarFrameGeometryV2(){
+  const id='cp-avatar-frame-geometry-v2';
+  let style=document.getElementById(id);
+  if(!style){style=document.createElement('style');style.id=id;}
+  style.textContent=`
+    .cp-avatar-framed-host{
+      position:relative!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;
+      overflow:visible!important;vertical-align:middle!important;line-height:0!important;padding:0!important;border:0!important;
+      outline:0!important;box-shadow:none!important;background:transparent!important;isolation:isolate!important;flex:0 0 auto!important;
+    }
+    .cp-avatar-framed-host>.cp-avatar-shell{
+      position:relative!important;display:flex!important;align-items:center!important;justify-content:center!important;
+      overflow:visible!important;margin:0!important;flex:0 0 auto!important;isolation:isolate!important;
+    }
+    .cp-avatar-shell{
+      position:relative!important;display:flex!important;justify-content:center!important;align-items:center!important;
+      flex:0 0 auto!important;overflow:visible!important;isolation:isolate!important;vertical-align:middle!important;
+    }
+    .cp-avatar-shell.cp-avatar-no-frame{overflow:hidden!important;border-radius:50%!important}
+    .cp-avatar-shell>.cp-avatar-core{
+      position:absolute!important;inset:auto!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;
+      transform:translate(-50%, -50%)!important;width:74%!important;height:74%!important;margin:0!important;box-sizing:border-box!important;
+      border:0!important;outline:0!important;border-radius:50%!important;overflow:hidden!important;background:#111!important;
+      box-shadow:inset 0 0 10px rgba(0,0,0,.45)!important;clip-path:circle(50% at 50% 50%)!important;z-index:1!important;
+    }
+    .cp-avatar-shell>.cp-avatar-core img{
+      position:absolute!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;
+      transform:translate(-50%, -50%)!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;
+      margin:0!important;display:block!important;object-fit:cover!important;object-position:center center!important;border:0!important;
+      outline:0!important;border-radius:50%!important;clip-path:circle(50% at 50% 50%)!important;
+      box-shadow:inset 0 0 12px rgba(0,0,0,.9)!important;z-index:1!important;
+    }
+    .cp-avatar-shell>.cp-war-artifact-frame,.cp-avatar-shell>.cp-frame-art{
+      position:absolute!important;inset:auto!important;top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;
+      transform:translate(-50%, -50%)!important;width:128%!important;height:128%!important;max-width:none!important;max-height:none!important;
+      margin:0!important;display:block!important;object-fit:contain!important;object-position:center center!important;
+      border:0!important;outline:0!important;box-shadow:none!important;z-index:2!important;overflow:visible!important;pointer-events:none!important;
+    }
+    .cp-avatar-shell>.cp-frame-art{width:108%!important;height:108%!important}
+    .cp-avatar-no-frame img{
+      width:100%!important;height:100%!important;display:block!important;object-fit:cover!important;object-position:center center!important;
+      border-radius:50%!important;clip-path:circle(50% at 50% 50%)!important;
+    }
+    .cp-avatar-framed-host{overflow:visible!important;clip-path:none!important;border-radius:50%!important}
+    .cp-avatar-framed-host>.cp-avatar-shell{margin:0 auto!important}
+  `;
+  (document.head||document.documentElement).appendChild(style);
+})();
+
+
+// Remove lobbies at the two-hour boundary even when Firestore has no new snapshot.
+if (!window.__cpLobbyExpirationSweep) {
+  window.__cpLobbyExpirationSweep = setInterval(() => {
+    const cached = Array.isArray(State.cache?.lobbies) ? State.cache.lobbies : [];
+    const active = cached.filter(lobby => !cpLobbyIsExpired(lobby));
+    if (active.length !== cached.length) {
+      State.cache.lobbies = active;
+      if (document.getElementById('lobbies-feed')) renderLobbies();
+    }
+    // Also sweep Home feed cards, even when Find Squad has not been opened this session.
+    document.querySelectorAll('#content .home-card[data-type="lobby"]').forEach(card => {
+      const lobby = (homeCache?.feed || []).find(item => item.id === card.dataset.id && item.type === 'lobby');
+      if (lobby && cpLobbyIsExpired(lobby)) card.remove();
+    });
+  }, 15000);
+}
+
+
+/* CODMPanda targeted UI/UX repair — blue verification, compact post detail, strict lobby expiry. */
+(function cpFinalRequestedUiFixes(){
+  if (window.__cpFinalRequestedUiFixes) return;
+  window.__cpFinalRequestedUiFixes = true;
+
+  // Keep one blue verification mark; Founder/Pro labels remain separate labels.
+  const badgeStyleId = 'cp-final-verified-badge-layout';
+  if (!document.getElementById(badgeStyleId)) {
+    const style = document.createElement('style');
+    style.id = badgeStyleId;
+    style.textContent = `
+      #sheet-container .cp-post-detail-header { min-height:calc(44px + env(safe-area-inset-top,0px))!important;height:calc(44px + env(safe-area-inset-top,0px))!important;padding:env(safe-area-inset-top,0px) 12px 0!important;gap:10px!important; }
+      #sheet-container .cp-post-detail-header .cp-post-back { width:36px!important;height:36px!important;min-width:36px!important;min-height:36px!important;padding:0!important;display:grid!important;place-items:center!important;font-size:0!important; }
+      #sheet-container .cp-post-detail-header .cp-post-back svg { width:22px!important;height:22px!important;max-width:22px!important;max-height:22px!important; }
+      #sheet-container .cp-post-detail-sheet .cp-post-detail-image { display:block!important;width:100%!important;max-width:100%!important;height:auto!important;max-height:none!important;object-fit:contain!important;object-position:center!important;border-radius:10px!important; }
+      #sheet-container .cp-post-detail-sheet p.text-base { font-size:18px!important;line-height:1.6!important;overflow-wrap:anywhere!important; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function dedupeLobbyBadges(){
+    const feed = document.getElementById('lobbies-feed');
+    if (!feed) return;
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      const name = card.querySelector('.font-bold.text-sm');
+      if (!name) return;
+      const badges = Array.from(name.querySelectorAll('.verified-badge'));
+      badges.slice(1).forEach(node => node.remove());
+      // Remove legacy blue check icons only from the name line; do not affect Founder/Pro labels.
+      name.querySelectorAll('[data-lucide="badge-check"],[data-lucide="check-circle"],[data-lucide="check-circle-2"]').forEach(node => node.remove());
+      name.querySelectorAll('.verification-badge,.verified-check,.blue-verified-badge').forEach(node => node.remove());
+    });
+  }
+  if (typeof renderLobbies === 'function' && !renderLobbies.__cpFinalBadgeWrapped) {
+    const prior = renderLobbies;
+    const wrapped = function(){
+      const result = prior.apply(this, arguments);
+      dedupeLobbyBadges();
+      setTimeout(dedupeLobbyBadges, 30);
+      return result;
+    };
+    wrapped.__cpFinalBadgeWrapped = true;
+    renderLobbies = wrapped;
+    window.renderLobbies = wrapped;
+  }
+
+  // Keep the existing post-opening and comments flow intact; adjust presentation only.
+  // Delegate in capture phase so tapping the post image always opens the existing full-screen viewer.
+  document.addEventListener('click', function(event){
+    const img = event.target && event.target.closest && event.target.closest('#sheet-container .cp-post-detail-sheet .cp-post-detail-image[data-zoomable]');
+    if (!img || typeof window.openImageViewer !== 'function') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+    window.openImageViewer(img.currentSrc || img.src);
+  }, true);
+
+  // Expire against the immutable creation time (not updatedAt/expiresAt), and refresh without waiting
+  // for another Firestore snapshot. Invalid/missing timestamps fail closed.
+  function sweepExpiredLobbies(){
+    const cached = Array.isArray(State.cache?.lobbies) ? State.cache.lobbies : [];
+    const active = cached.filter(lobby => !cpLobbyIsExpired(lobby));
+    if (active.length !== cached.length) {
+      State.cache.lobbies = active;
+      if (document.getElementById('lobbies-feed') && typeof renderLobbies === 'function') renderLobbies();
+    }
+    // Also remove already-rendered lobby cards immediately, even if a later renderer reuses stale DOM.
+    const liveIds = new Set(active.map(lobby => String(lobby.id)));
+    const feed = document.getElementById('lobbies-feed');
+    if (feed) feed.querySelectorAll('.bg-card').forEach(card => {
+      const action = card.querySelector('[data-id]');
+      if (action && !liveIds.has(String(action.dataset.id))) card.remove();
+    });
+    // Sweep matching Home-feed lobby cards too, without relying on the Find Squad tab being open.
+    const homeItems = typeof homeCache !== 'undefined' && Array.isArray(homeCache?.feed) ? homeCache.feed : [];
+    document.querySelectorAll('#content .home-card[data-type="lobby"]').forEach(card => {
+      const item = homeItems.find(entry => String(entry.id) === String(card.dataset.id) && entry.type === 'lobby');
+      if (item && cpLobbyIsExpired(item)) card.remove();
+    });
+  }
+  if (window.__cpFinalLobbySweep) clearInterval(window.__cpFinalLobbySweep);
+  window.__cpFinalLobbySweep = setInterval(sweepExpiredLobbies, 5000);
+  sweepExpiredLobbies();
+})();
+
+
+/* Targeted UI hotfix: one blue verification mark, compact post header, clean full-screen image viewer. */
+(function cpTargetedUiHotfix(){
+  renderVerifiedBadge = function(user) {
+    if (!user || user.verified !== true) return '';
+    return '<span class="verified-badge cp-verified-blue" title="Verified Creator" aria-label="Verified Creator" role="img"><svg class="cp-verified-emblem" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 1.2 14.6 2.6 17.5 2.4 18.7 5 21.3 6.5 21 9.4 22.5 12 21 14.6 21.3 17.5 18.7 19 17.5 21.6 14.6 21.4 12 22.8 9.4 21.4 6.5 21.6 5.3 19 2.7 17.5 3 14.6 1.5 12 3 9.4 2.7 6.5 5.3 5 6.5 2.4 9.4 2.6Z" fill="#1877F2"/><path d="M7.2 12.1 10.2 15.1 16.9 8.7" fill="none" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+  };
+  const styleId='cp-targeted-ui-hotfix-v1';
+  if(!document.getElementById(styleId)){
+    const style=document.createElement('style');style.id=styleId;
+    style.textContent=`
+      #sheet-container .cp-post-detail-header{min-height:calc(36px + env(safe-area-inset-top,0px))!important;height:calc(36px + env(safe-area-inset-top,0px))!important;padding:env(safe-area-inset-top,0px) 10px 0!important;gap:7px!important}
+      #sheet-container .cp-post-detail-header .cp-post-back{width:30px!important;height:30px!important;flex:0 0 30px!important;border-radius:8px!important}
+      #sheet-container .cp-post-detail-header .cp-post-back svg{width:19px!important;height:19px!important}
+      #sheet-container .cp-post-detail-header .cp-post-header-spacer{width:30px!important;flex:0 0 30px!important}
+      #sheet-container .cp-post-detail-sheet p.text-base.leading-relaxed{font-size:18px!important;line-height:1.65!important;overflow-wrap:anywhere!important}
+      #sheet-container .cp-post-detail-sheet .cp-post-detail-image{display:block!important;width:100%!important;height:auto!important;max-width:100%!important;max-height:none!important;object-fit:contain!important;object-position:center!important}
+      #image-viewer{padding:0!important;background:#050505!important;cursor:zoom-out!important}
+      #image-viewer>img{width:100%!important;height:100%!important;max-width:100vw!important;max-height:100dvh!important;object-fit:contain!important;border-radius:0!important;box-shadow:none!important}
+    `;
+    document.head.appendChild(style);
+  }
+  function normalizeLobbyBadges(root=document){
+    root.querySelectorAll('#lobbies-feed .bg-card').forEach(card=>{
+      const line=card.querySelector('.flex.items-center.gap-1\\.5.flex-wrap,.flex.items-center.gap-2.flex-wrap');
+      if(!line)return;
+      // Some legacy blue checks are siblings of the username, so clean only this lobby name row.
+      line.querySelectorAll('[data-lucide="badge-check"],[data-lucide="check-circle"],[data-lucide="check-circle-2"],.lucide-badge-check,.lucide-check-circle,.lucide-check-circle-2,.verification-badge,.verified-check,.blue-verified-badge,[title*="verif" i]:not(.verified-badge),[aria-label*="verif" i]:not(.verified-badge)').forEach(mark=>mark.remove());
+      const name=line.querySelector('.user-name-link, .font-bold.text-sm');
+      if(!name)return;
+      const marks=Array.from(line.querySelectorAll('.verified-badge'));
+      const keep=name.querySelector('.verified-badge')||marks[0];
+      marks.forEach(mark=>{if(mark!==keep)mark.remove();});
+      if(keep){keep.classList.remove('cp-gold-verified');keep.classList.add('cp-verified-blue');keep.setAttribute('title','Verified Creator');keep.setAttribute('aria-label','Verified Creator');}
+    });
+  }
+  if(typeof renderLobbies==='function'&&!renderLobbies.__cpGoldBadgeDedupe){
+    const original=renderLobbies;
+    const wrapped=function(){const result=original.apply(this,arguments);normalizeLobbyBadges();setTimeout(normalizeLobbyBadges,250);setTimeout(normalizeLobbyBadges,900);return result;};
+    wrapped.__cpGoldBadgeDedupe=true;renderLobbies=wrapped;window.renderLobbies=wrapped;
+  }
+  // Enforce a hard two-hour lifetime from the original creation timestamp, not expiresAt or updatedAt.
+  cpLobbyIsExpired = function(lobby, now = Date.now()) {
+    if (!lobby) return true;
+    const createdAt = cpLobbyTimestampMillis(lobby.createdAt ?? lobby.created_at);
+    if (!Number.isFinite(createdAt) || createdAt <= 0 || createdAt > now + 30000) return true;
+    return (now - createdAt) >= 2 * 60 * 60 * 1000;
+  };
+
+  // Replace viewer so tapped post media uses the whole viewport without losing aspect ratio.
+  window.openImageViewer=function(src){
+    if(!src)return;
+    document.getElementById('image-viewer')?.remove();
+    const overlay=document.createElement('div');overlay.id='image-viewer';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-label','Full-screen image viewer');overlay.setAttribute('aria-modal','true');
+    overlay.style.cssText='position:fixed;inset:0;width:100vw;height:100dvh;z-index:2147483600;background:#050505;display:flex;align-items:center;justify-content:center;padding:0;cursor:zoom-out;';
+    const img=document.createElement('img');img.src=src;img.alt='Expanded post image';img.style.cssText='display:block;width:100%;height:100%;max-width:100vw;max-height:100dvh;object-fit:contain;object-position:center;border-radius:0;';overlay.appendChild(img);
+    function onKey(event){if(event.key==='Escape')closeViewer();}
+    const closeViewer=()=>{overlay.remove();document.removeEventListener('keydown',onKey);};
+    const close=document.createElement('button');close.type='button';close.setAttribute('aria-label','Close image viewer');close.textContent='✕';close.style.cssText='position:absolute;top:calc(env(safe-area-inset-top,0px) + 14px);right:14px;width:40px;height:40px;border:1px solid rgba(255,255,255,.22);border-radius:50%;background:rgba(25,25,25,.82);color:#fff;font-size:20px;display:grid;place-items:center;';
+    close.onclick=event=>{event.stopPropagation();closeViewer();};overlay.appendChild(close);overlay.onclick=closeViewer;img.onclick=event=>event.stopPropagation();
+    document.addEventListener('keydown',onKey);
+    document.body.appendChild(overlay);
+  };
+})();
+
+
+/* CODMPanda identity badges: one Firestore-backed source for every rendered username. */
+(function cpGlobalProIdentityBadgesV3(){
+  if (window.__cpGlobalProIdentityBadgesV3) return;
+  window.__cpGlobalProIdentityBadgesV3 = true;
+  const userCache = new Map();
+  const userWatches = new Map();
+  let svgSerial = 0, sweepQueued = false, sweepRunning = false, sweepAgain = false;
+  const VERIFIED_SVG = '<svg class="cp-verified-emblem" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 1.2 14.6 2.6 17.5 2.4 18.7 5 21.3 6.5 21 9.4 22.5 12 21 14.6 21.3 17.5 18.7 19 17.5 21.6 14.6 21.4 12 22.8 9.4 21.4 6.5 21.6 5.3 19 2.7 17.5 3 14.6 1.5 12 3 9.4 2.7 6.5 5.3 5 6.5 2.4 9.4 2.6Z" fill="#1877F2"/><path d="M7.2 12.1 10.2 15.1 16.9 8.7" fill="none" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  // isPro is the main account entitlement; proStatus is the protected active-state field.
+  // Do not trust legacy 'pro' or 'subscription' aliases for membership badges.
+  function hasPro(user) { return !!(user && (user.isPro === true || user.proStatus === 'active')); }
+
+  function renderPro(user) {
+    if (!hasPro(user)) return '';
+    const id = 'cp-pro-metal-v3-' + (++svgSerial);
+    return '<span class="cp-pro-spike-badge" data-pro-badge="true" title="CODMPanda Pro" aria-label="CODMPanda Pro" role="img">' +
+      '<svg class="cp-pro-spike-svg" width="18" height="18" viewBox="0 0 64 64" aria-hidden="true" focusable="false">' +
+        '<defs>' +
+          '<linearGradient id="' + id + '-titanium" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#F4F0E8"/><stop offset="18%" stop-color="#777B80"/><stop offset="42%" stop-color="#24272B"/><stop offset="68%" stop-color="#090A0C"/><stop offset="100%" stop-color="#A9ADB0"/></linearGradient>' +
+          '<linearGradient id="' + id + '-ember" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#8E310D"/><stop offset="48%" stop-color="#FF702B"/><stop offset="100%" stop-color="#FFD0A0"/></linearGradient>' +
+          '<linearGradient id="' + id + '-letter" x1="0" y1="0" x2="0.9" y2="1"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="45%" stop-color="#C8CBD0"/><stop offset="100%" stop-color="#737980"/></linearGradient>' +
+        '</defs>' +
+        '<path d="M32 2 38 13 53 7 49 21 62 27 51 34 56 51 41 47 32 62 25 49 8 55 13 39 2 31 15 24 11 10 26 15Z" fill="url(#' + id + '-titanium)" stroke="#08090B" stroke-width="1.5" stroke-linejoin="bevel"/>' +
+        '<path d="M32 8 37 18 49 13 45 25 55 29 45 36 49 46 38 43 32 54 26 43 14 48 18 37 9 31 20 25 17 16 28 20Z" fill="#101215" stroke="#4A4D50" stroke-width="0.7" stroke-linejoin="bevel"/>' +
+        '<path d="M15 39 29 25 34 25 20 42Z" fill="url(#' + id + '-ember)"/>' +
+        '<path d="M27 19H37C43 19 46 23 46 29 46 35 42 38 36 38H32V45H25V25H32V32H36C38 32 39 31 39 29 39 27 38 26 36 26H27Z" fill="url(#' + id + '-letter)" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.5" stroke-linejoin="bevel"/>' +
+        '<path d="M32 3 36 11" fill="none" stroke="#FF8A49" stroke-width="1" stroke-linecap="square"/>' +
+      '</svg></span>';
+  }
+  window.CODMRenderProBadge = renderPro;
+
+  function isUsernameNode(el) {
+    if (!el || !el.classList || !el.dataset || el.classList.contains('cp-pro-spike-badge')) return false;
+    if (el.matches('button,input,textarea,select') || el.classList.contains('rounded-full') ||
+        el.classList.contains('cp-avatar-framed-host') || el.classList.contains('cp-avatar-shell') ||
+        el.classList.contains('cp-v4-clip-avatar')) return false;
+    const tag = el.tagName;
+    if (el.classList.contains('user-name-link')) return true;
+    const boldClass = /font-bold|font-black|font-semibold/.test(String(el.className || ''));
+    const inlineWeight = Number.parseInt(el.style?.fontWeight || '', 10) >= 600;
+    return (tag === 'SPAN' || tag === 'DIV' || tag === 'A') && (boldClass || inlineWeight) &&
+      !el.querySelector('img,button,input,textarea,select') && !!(el.textContent || '').trim();
+  }
+  function isLegacyProMarker(mark) {
+    if (!mark || mark.matches('button,input,textarea,select') || mark.classList?.contains('cp-pro-spike-badge')) return false;
+    const label = String(mark.textContent || '').trim().toUpperCase();
+    const classes = String(mark.className || '');
+    const inlineStyles = String(mark.getAttribute?.('style') || '');
+    // Only migrate identifiable legacy "PRO" pills; unrelated icons are never Pro badges.
+    return label === 'PRO' && (/badge|rounded|bg-|gradient|px-|text-/i.test(classes) || /background|padding|font-size/i.test(inlineStyles));
+  }
+  function canonicalizeVerified(mark) {
+    if (!mark) return;
+    mark.classList.remove('cp-gold-verified');
+    mark.classList.add('cp-verified-blue');
+    if (!mark.querySelector('.cp-verified-emblem')) mark.innerHTML = VERIFIED_SVG;
+    mark.removeAttribute('style');
+    mark.setAttribute('title', 'Verified Creator');
+    mark.setAttribute('aria-label', 'Verified Creator');
+    mark.setAttribute('role', 'img');
+  }
+
+  function normalizeNameBadges(el, user) {
+    if (!el || !el.isConnected || !user) return;
+    const parent = el.parentElement;
+    const siblings = parent ? Array.from(parent.children).filter(node => node !== el) : [];
+    Array.from(el.querySelectorAll('span,[data-pro-badge],[data-badge="pro"]')).filter(isLegacyProMarker).forEach(mark => mark.remove());
+    siblings.filter(isLegacyProMarker).forEach(mark => mark.remove());
+
+    const verifiedInside = Array.from(el.querySelectorAll('.verified-badge'));
+    const verifiedSiblings = siblings.filter(node => node.classList?.contains('verified-badge'));
+    let verified = null;
+    if (user.verified === true) {
+      verified = verifiedInside[0] || verifiedSiblings[0] || null;
+      verifiedInside.forEach(mark => { if (mark !== verified) mark.remove(); });
+      verifiedSiblings.forEach(mark => { if (mark !== verified) mark.remove(); });
+      if (!verified) {
+        el.insertAdjacentHTML('beforeend', renderVerifiedBadge(user));
+        verified = el.querySelector('.verified-badge');
+      } else if (verified.parentNode !== el) el.appendChild(verified);
+      canonicalizeVerified(verified);
+    } else {
+      verifiedInside.forEach(mark => mark.remove());
+      verifiedSiblings.forEach(mark => mark.remove());
+    }
+
+    const existingPro = Array.from(el.querySelectorAll('.cp-pro-spike-badge,[data-pro-badge="true"]'));
+    const siblingPro = siblings.filter(node => node.classList?.contains('cp-pro-spike-badge'));
+    if (hasPro(user)) {
+      let pro = existingPro[0] || siblingPro[0] || null;
+      existingPro.forEach(mark => { if (mark !== pro) mark.remove(); });
+      siblingPro.forEach(mark => { if (mark !== pro) mark.remove(); });
+      if (!pro) {
+        el.insertAdjacentHTML('beforeend', renderPro(user));
+        pro = el.querySelector('.cp-pro-spike-badge');
+      } else if (pro.parentNode !== el) el.appendChild(pro);
+      if (pro) {
+        pro.setAttribute('title', 'CODMPanda Pro');
+        pro.setAttribute('aria-label', 'CODMPanda Pro');
+        pro.setAttribute('role', 'img');
+      }
+      if (verified && pro && (pro.compareDocumentPosition(verified) & Node.DOCUMENT_POSITION_FOLLOWING)) verified.insertAdjacentElement('afterend', pro);
+    } else {
+      existingPro.forEach(mark => mark.remove());
+      siblingPro.forEach(mark => mark.remove());
+    }
+  }
+
+  function applyToUid(uid, user) {
+    document.querySelectorAll('[data-uid]').forEach(el => {
+      if (String(el.dataset.uid || '') === uid && isUsernameNode(el)) normalizeNameBadges(el, user || {});
+    });
+  }
+
+  function watchUser(uid) {
+    uid = String(uid || '').trim();
+    if (!uid) return Promise.resolve(undefined);
+    const existing = userWatches.get(uid);
+    if (existing) {
+      const cached = userCache.get(uid);
+      return cached ? Promise.resolve(cached.value) : existing.ready;
+    }
+    let resolveReady;
+    const ready = new Promise(resolve => { resolveReady = resolve; });
+    let firstResolved = false;
+    const unsubscribe = onSnapshot(doc(db, 'users', uid), snap => {
+      const value = snap.exists() ? { id: uid, ...snap.data() } : null;
+      userCache.set(uid, { value, at: Date.now() });
+      if (uid === State.user?.uid && State.profile && value) {
+        const patch = {};
+        ['isPro','proStatus','verified'].forEach(key => { if (Object.prototype.hasOwnProperty.call(value, key)) patch[key] = value[key]; });
+        State.profile = { ...State.profile, ...patch };
+      }
+      applyToUid(uid, value);
+      if (!firstResolved) { firstResolved = true; resolveReady(value); }
+    }, error => {
+      console.warn('[CODMPanda] User identity listener failed', uid, error?.code || error?.message || error);
+      if (!firstResolved) {
+        firstResolved = true;
+        const cached = userCache.get(uid);
+        resolveReady(cached ? cached.value : undefined);
+      }
+    });
+    userWatches.set(uid, { unsubscribe, ready });
+    const cached = userCache.get(uid);
+    return cached ? Promise.resolve(cached.value) : ready;
+  }
+
+  function readUser(uid) {
+    uid = String(uid || '').trim();
+    if (!uid) return Promise.resolve(undefined);
+    if (uid === State.user?.uid && State.profile) return Promise.resolve(State.profile);
+    return watchUser(uid);
+  }
+
+  function syncWatches(names) {
+    const wanted = new Set(names.map(el => String(el.dataset.uid || '').trim()).filter(Boolean));
+    wanted.forEach(uid => { if (!userWatches.has(uid)) watchUser(uid); });
+    userWatches.forEach((watch, uid) => {
+      if (!wanted.has(uid)) {
+        watch.unsubscribe();
+        userWatches.delete(uid);
+        userCache.delete(uid);
+      }
+    });
+  }
+
+  async function sweep() {
+    if (sweepRunning) { sweepAgain = true; return; }
+    if (!State.user) return;
+    sweepRunning = true;
+    try {
+      const names = Array.from(document.querySelectorAll('[data-uid]')).filter(isUsernameNode);
+      syncWatches(names);
+      await Promise.all(names.map(async el => {
+        const uid = String(el.dataset.uid || '').trim();
+        if (!uid) return;
+        const user = await readUser(uid);
+        if (user !== undefined && el.isConnected) normalizeNameBadges(el, user || {});
+      }));
+    } catch (error) {
+      console.warn('[CODMPanda] Identity badge refresh failed', error);
+    } finally {
+      sweepRunning = false;
+      if (sweepAgain) { sweepAgain = false; queueSweep(); }
+    }
+  }
+
+  function queueSweep() {
+    if (sweepQueued) return;
+    sweepQueued = true;
+    setTimeout(function(){ sweepQueued = false; sweep(); }, 90);
+  }
+  const observer = new MutationObserver(records => {
+    if (records.some(record => record.type === 'childList' && (record.addedNodes.length || record.removedNodes.length))) queueSweep();
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  ['renderHomeFeed','renderLobbies','renderYouTab','renderComments','renderVaults','renderClips','renderLeaks'].forEach(name => {
+    const original = window[name];
+    if (typeof original !== 'function' || original.__cpIdentityBadgesWrapped) return;
+    const wrapped = function() {
+      const result = original.apply(this, arguments);
+      queueSweep();
+      setTimeout(queueSweep, 180);
+      return result;
+    };
+    wrapped.__cpIdentityBadgesWrapped = true;
+    window[name] = wrapped;
+  });
+  window.addEventListener('codmpanda:profile-loaded', queueSweep);
+  window.addEventListener('codmpanda:avatar-frame-updated', queueSweep);
+  window.addEventListener('codmpanda:pro-entitlement-updated', queueSweep);
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) queueSweep(); });
+  window.addEventListener('beforeunload', function(){
+    userWatches.forEach(watch => watch.unsubscribe());
+    userWatches.clear();
+  }, { once: true });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', queueSweep, { once: true });
+  else queueSweep();
+  setTimeout(queueSweep, 250);
+  setTimeout(queueSweep, 1200);
 })();

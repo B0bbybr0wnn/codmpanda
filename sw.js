@@ -1,15 +1,39 @@
 /* CODMPanda Service Worker v2.0.0
    Cache-first for app shell, network-first for Firebase calls */
 
-const CACHE_NAME = 'codmpanda-v22.0.0';
+const CACHE_NAME = 'codmpanda-v37.0.0';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/app.js',
+  '/app.js?v=20261024-auth-pro-obsidian-v7',
+  '/badges.js?v=20261024-obsidian-spike-v4',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
   '/hero-panda.jpg'
+];
+const FRAME_ASSETS = [
+  '/frames/01_ghost_ops.png',
+  '/frames/02_mythic_crystal.png',
+  '/frames/03_inferno.png',
+  '/frames/04_frost_division.png',
+  '/frames/05_legendary_rank.png',
+  '/frames/06_zombie_hunter.png',
+  '/frames/07_dragon_blade.png',
+  '/frames/08_shadow_legion.png',
+  '/frames/09_war_trophy.png',
+  '/frames/10_cosmic_vanguard.png',
+  '/frames/11_ranked_champion.png',
+  '/frames/12_weapon_master.png',
+  '/frames/13_ice_crystal.png',
+  '/frames/14_battle_hardened.png',
+  '/frames/15_sharpshooter.png',
+  '/frames/16_task_force.png',
+  '/frames/17_urban_warrior.png',
+  '/frames/18_chemical_warfare.png',
+  '/frames/19_war_trophy_skulls.png',
+  '/frames/20_war_machine.png'
 ];
 
 // CDN assets we want cached for offline use
@@ -19,13 +43,20 @@ const CDN_ASSETS = [
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap'
 ];
 
-// Install — pre-cache app shell
+// Install — pre-cache the app shell and every transparent avatar-frame asset.
+// Frame images are independent cache writes, so one unavailable image cannot block the other frames.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(APP_SHELL).catch(() => {
-        // Don't fail install if a file is missing
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await cache.addAll(APP_SHELL).catch(() => {
+        // Don't fail install if an optional app-shell file is missing.
       });
+      await Promise.all(FRAME_ASSETS.map((path) =>
+        cache.add(path).catch((error) => {
+          console.warn('[CODMPanda] Could not precache avatar frame:', path, error);
+          return null;
+        })
+      ));
     }).then(() => self.skipWaiting())
   );
 });
