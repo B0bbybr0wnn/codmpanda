@@ -7,10 +7,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getAuth,
   GoogleAuthProvider,
+  EmailAuthProvider,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
   signInWithCredential,
+  linkWithCredential,
   signOut,
   onAuthStateChanged,
   deleteUser
@@ -479,6 +481,7 @@ function readEmailAuthFields() {
 
 const GOOGLE_CLIENT_ID = "604146891375-ae5bhcm2nd2f59f0npp3en6setthjg1s.apps.googleusercontent.com";
 let gisInitialized = false;
+let pendingGoogleLink = false;
 let gisPromptRequested = false;
 let gisButtonRenderRetried = false;
 
@@ -591,6 +594,34 @@ async function requestGISPrompt() {
 }
 
 async function handleGISResponse(response) {
+  // The same official Google Identity Services callback supports sign-in and
+  // linking. A link is accepted only while the account-linking sheet is open.
+  if (pendingGoogleLink) {
+    if (!document.getElementById('signin-methods-sheet')) {
+      pendingGoogleLink = false;
+      console.info('[CODMPanda] Ignored Google response because account linking was closed.');
+      return;
+    }
+    try {
+      if (!response?.credential) throw new Error('Google did not return a sign-in credential.');
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('Sign in again before linking Google.');
+      const credential = GoogleAuthProvider.credential(response.credential);
+      const result = await linkWithCredential(currentUser, credential);
+      pendingGoogleLink = false;
+      State.user = result.user;
+      toast('Google linked to this CODMPanda account.', 'success');
+      openSignInMethodsSheet();
+    } catch (error) {
+      pendingGoogleLink = false;
+      const message = providerLinkErrorMessage(error, 'google');
+      setSignInMethodsStatus(message, true);
+      console.error('[CODMPanda] Google provider linking failed:', error?.code || error);
+      toast(message, 'error', 6000);
+    }
+    return;
+  }
+
   try {
     if (!response?.credential) throw new Error('Google did not return a sign-in credential.');
     const credential = GoogleAuthProvider.credential(response.credential);
@@ -661,6 +692,152 @@ async function handlePasswordReset() {
     const message = authErrorMessage(error, 'reset');
     setEmailAuthStatus(message, true);
     console.error('[CODMPanda] Password reset failed:', error?.code || error);
+  }
+}
+
+function providerLinkErrorMessage(error, flow) {
+  const code = String(error?.code || '');
+  if (['auth/credential-already-in-use', 'auth/email-already-in-use'].includes(code)) {
+    return 'That sign-in method already belongs to a different Firebase account. Nothing was merged or moved. Sign in to the account that already owns it; combining existing profiles requires a separate verified data migration.';
+  }
+  if (code === 'auth/provider-already-linked') {
+    return 'This sign-in method is already linked to this CODMPanda account.';
+  }
+  if (code === 'auth/requires-recent-login') {
+    return 'For security, sign out and sign back in, then try linking again.';
+  }
+  return authErrorMessage(error, flow);
+}
+
+function setSignInMethodsStatus(message, isError = false) {
+  const status = document.getElementById('signin-methods-status');
+  if (!status) return;
+  status.textContent = message || '';
+  status.style.color = isError ? '#ff8a80' : '#a3e635';
+}
+
+async function linkEmailPasswordToCurrentAccount() {
+  const user = auth.currentUser;
+  const email = String(document.getElementById('link-email-address')?.value || '').trim();
+  const password = String(document.getElementById('link-email-password')?.value || '');
+  const button = document.getElementById('link-email-submit');
+
+  if (!user) {
+    setSignInMethodsStatus('Your session ended. Sign in again before linking a method.', true);
+    return;
+  }
+  if (!email || !password) {
+    setSignInMethodsStatus('Enter the email address and password you want to link.', true);
+    return;
+  }
+  if (password.length < 6) {
+    setSignInMethodsStatus('The password must be at least 6 characters.', true);
+    return;
+  }
+
+  if (button) { button.disabled = true; button.textContent = 'Linking…'; }
+  setSignInMethodsStatus('Verifying the email/password credential…');
+  try {
+    const credential = EmailAuthProvider.credential(email, password);
+    const result = await linkWithCredential(user, credential);
+    State.user = result.user;
+    toast('Email/password linked to this CODMPanda account.', 'success');
+    openSignInMethodsSheet();
+  } catch (error) {
+    const message = providerLinkErrorMessage(error, 'email');
+    setSignInMethodsStatus(message, true);
+    console.error('[CODMPanda] Email provider linking failed:', error?.code || error);
+    toast(message, 'error', 6000);
+    if (button) { button.disabled = false; button.textContent = 'Link email + password'; }
+  }
+}
+
+function openSignInMethodsSheet() {
+  const user = auth.currentUser;
+  if (!user) {
+    toast('Sign in before managing sign-in methods.', 'error');
+    return;
+  }
+
+  const linkedProviderIds = new Set((user.providerData || []).map(provider => provider.providerId));
+  const hasEmail = linkedProviderIds.has('password');
+  const hasGoogle = linkedProviderIds.has('google.com');
+  pendingGoogleLink = !hasGoogle;
+
+  openSheet(`
+    <div id="signin-methods-sheet" class="space-y-4">
+      <p class="text-xs text-gray-400 leading-relaxed">
+        Manage sign-in methods for <span class="text-white font-semibold">${esc(user.email || 'this account')}</span>.
+        Linked methods use this account's existing CODMPanda UID and progress. If a credential already belongs to another Firebase account, linking stops; accounts and data are never merged automatically.
+      </p>
+      <div class="rounded-xl border border-border divide-y divide-border">
+        <div class="flex items-center justify-between gap-3 px-3 py-3">
+          <span class="text-sm font-semibold">Email + password</span>
+          <span class="text-[10px] font-bold ${hasEmail ? 'text-green-400' : 'text-gray-500'}">${hasEmail ? 'LINKED' : 'NOT LINKED'}</span>
+        </div>
+        <div class="flex items-center justify-between gap-3 px-3 py-3">
+          <span class="text-sm font-semibold">Google</span>
+          <span class="text-[10px] font-bold ${hasGoogle ? 'text-green-400' : 'text-gray-500'}">${hasGoogle ? 'LINKED' : 'NOT LINKED'}</span>
+        </div>
+      </div>
+      ${!hasEmail ? `
+        <form id="link-email-form" class="space-y-3">
+          <div class="text-xs font-bold text-gray-300">Link email + password</div>
+          <div>
+            <label for="link-email-address" class="block mb-1 text-[11px] text-gray-500">Email address</label>
+            <input id="link-email-address" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required />
+          </div>
+          <div>
+            <label for="link-email-password" class="block mb-1 text-[11px] text-gray-500">Password (at least 6 characters)</label>
+            <input id="link-email-password" type="password" autocomplete="current-password" minlength="6" required />
+          </div>
+          <button id="link-email-submit" type="submit" class="btn-press w-full py-3 rounded-xl bg-primary text-sm font-bold">Link email + password</button>
+        </form>
+      ` : '<p class="text-xs text-green-400">Email/password is already linked to this account.</p>'}
+      ${!hasGoogle ? `
+        <div class="space-y-2">
+          <div class="text-xs font-bold text-gray-300">Link Google</div>
+          <div id="google-link-btn" class="flex items-center justify-center min-h-[44px] w-full"></div>
+          <p class="text-[10px] text-gray-500">Choose the Google account you want to use for this same CODMPanda profile.</p>
+        </div>
+      ` : '<p class="text-xs text-green-400">Google is already linked to this account.</p>'}
+      <div id="signin-methods-status" role="status" aria-live="polite" class="text-xs leading-relaxed" style="min-height:16px;color:#a3e635;"></div>
+      <button type="button" onclick="closeSheet()" class="btn-press w-full py-3 rounded-xl border border-border bg-cardAlt text-sm font-semibold">Done</button>
+    </div>
+  `, 'Sign-in Methods');
+
+  const emailForm = document.getElementById('link-email-form');
+  if (emailForm) {
+    emailForm.addEventListener('submit', event => {
+      event.preventDefault();
+      linkEmailPasswordToCurrentAccount();
+    });
+  }
+
+  if (!hasGoogle) {
+    const renderGoogleLinkButton = async () => {
+      try {
+        await waitForGIS();
+        const target = document.getElementById('google-link-btn');
+        if (!target?.isConnected) return;
+        if (!initGIS()) throw new Error('Google Identity Services could not be initialized.');
+        const gis = window.google?.accounts?.id;
+        if (!gis?.renderButton) throw new Error('Google sign-in button is unavailable.');
+        gis.renderButton(target, {
+          theme: 'outline',
+          size: 'large',
+          text: 'signin_with',
+          shape: 'pill',
+          logo_alignment: 'left',
+          width: Math.min(340, Math.max(240, Math.floor(target.getBoundingClientRect().width || 340)))
+        });
+      } catch (error) {
+        pendingGoogleLink = false;
+        setSignInMethodsStatus('Google linking is unavailable right now. Check your connection and try again.', true);
+        console.error('[CODMPanda] Google link button initialization failed:', error);
+      }
+    };
+    renderGoogleLinkButton();
   }
 }
 
@@ -2947,6 +3124,7 @@ function renderYouTab() {
           ${settingsRow('my-referral', 'gift', 'My Referral', 'Share & earn invites')}
           ${settingsRow('notifications', 'bell', 'Notifications', 'LFG, leaks, etc.')}
           ${settingsRow('defaults', 'sliders', 'Default Preferences', 'Region, mode, mic')}
+          ${settingsRow('signin-methods', 'shield-check', 'Sign-in Methods', 'Link email/password and Google')}
           ${settingsRow('clear-cache', 'trash-2', 'Clear Cache', 'Free up space')}
           ${settingsRow('clear-camos', 'refresh-cw', 'Reset Camo Data', 'Delete your progress', true)}
           ${settingsRow('export-data', 'download', 'Export My Data', 'Download JSON')}
@@ -3135,6 +3313,7 @@ function handleSettingAction(action) {
     case 'my-referral': showReferral(); break;
     case 'notifications': showNotifications(); break;
     case 'defaults': showDefaults(); break;
+    case 'signin-methods': openSignInMethodsSheet(); break;
     case 'clear-cache': clearCache(); break;
     case 'clear-camos': confirmDialog('Reset Camo Data', 'This will delete all your camo progress permanently.', async () => {
       try {
