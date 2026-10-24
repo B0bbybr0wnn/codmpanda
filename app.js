@@ -499,8 +499,7 @@ function initGIS() {
     client_id: GOOGLE_CLIENT_ID,
     callback: handleGISResponse,
     auto_select: false,
-    cancel_on_tap_outside: true,
-    use_fedcm_for_prompt: true
+    cancel_on_tap_outside: true
   });
   gisInitialized = true;
   console.log('[CODMPanda] Google Identity Services initialized.');
