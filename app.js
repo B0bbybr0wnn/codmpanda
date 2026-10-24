@@ -502,29 +502,25 @@ function initGIS() {
     cancel_on_tap_outside: true
   });
   gisInitialized = true;
+  renderOfficialGISButton();
   console.log('[CODMPanda] Google Identity Services initialized.');
   return true;
 }
 
 function fallbackRenderGISButton() {
-  if (!window.google?.accounts?.id || document.getElementById('gis-btn-container')) return;
-  openSheet(
-    '<div class="text-center space-y-4">' +
-      '<div class="text-2xl">🎮</div>' +
-      '<div class="text-sm font-bold">Sign in with Google</div>' +
-      '<div id="gis-btn-container" class="flex justify-center"></div>' +
-      '<button onclick="closeSheet()" class="text-xs text-gray-500">Cancel</button>' +
-    '</div>',
-    'Sign In'
-  );
-  setTimeout(function() {
-    const target = document.getElementById('gis-btn-container');
-    if (target && window.google?.accounts?.id) {
-      window.google.accounts.id.renderButton(target, {
-        theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'pill', width: 280
-      });
-    }
-  }, 100);
+  // Never replace Google's native prompt with a custom sheet. The official GIS button
+  // is rendered directly inside the auth gate and remains available if One Tap is blocked.
+  renderOfficialGISButton();
+}
+
+function renderOfficialGISButton() {
+  const target = document.getElementById('google-signin-btn');
+  if (!target || !window.google?.accounts?.id || target.dataset.gisRendered === '1') return;
+  target.replaceChildren();
+  window.google.accounts.id.renderButton(target, {
+    theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'pill', width: 280
+  });
+  target.dataset.gisRendered = '1';
 }
 
 async function requestGISPrompt(manual = false) {
@@ -561,7 +557,6 @@ async function handleSignIn() {
 async function handleGISResponse(response) {
   try {
     if (!response?.credential) throw new Error('Google did not return a sign-in credential.');
-    closeSheet();
     const credential = GoogleAuthProvider.credential(response.credential);
     const result = await signInWithCredential(auth, credential);
     console.log('[CODMPanda] GIS Firebase sign-in succeeded:', result.user.email);
@@ -3603,8 +3598,8 @@ async function boot() {
 
   await checkRedirect();
 
-  const signBtn = document.getElementById('google-signin-btn');
-  if (signBtn) signBtn.onclick = handleSignIn;
+  // Google sign-in is rendered by GIS itself; do not attach a custom click handler.
+  renderOfficialGISButton();
 
   const emailAuthForm = document.getElementById('email-auth-form');
   if (emailAuthForm && !emailAuthForm.dataset.cpBound) {
