@@ -1,99 +1,167 @@
 /* CODMPanda: full-screen player profile presentation.
-   Preserves the existing profile data and actions; adds a clear close control. */
+   Keeps the existing profile data/actions, with reliable close and cleanup behavior. */
 (() => {
   'use strict';
+
   const STYLE_ID = 'cp-player-profile-fullscreen-style';
+  const CONTAINER_ID = 'sheet-container';
+  const LOCK_CLASS = 'cp-player-profile-lock';
+  const OPEN_CLASS = 'cp-player-profile-open';
+  const SHEET_CLASS = 'cp-player-profile-fullscreen';
+
+  function getContainer() {
+    return document.getElementById(CONTAINER_ID);
+  }
 
   function clearProfileMode() {
-    document.body.classList.remove('cp-player-profile-lock');
-    const container = document.getElementById('sheet-container');
-    if (container) container.classList.remove('cp-player-profile-open');
+    document.body.classList.remove(LOCK_CLASS);
+    const container = getContainer();
+    if (container) {
+      container.classList.remove(OPEN_CLASS);
+      container.querySelectorAll('.' + SHEET_CLASS).forEach(node => node.classList.remove(SHEET_CLASS));
+      container.querySelectorAll('.cp-player-profile-close').forEach(node => node.remove());
+    }
+  }
+
+  function closeProfile() {
+    const container = getContainer();
+    if (container && !container.classList.contains('hidden')) {
+      if (typeof window.closeSheet === 'function') window.closeSheet();
+      else {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+      }
+    }
+    clearProfileMode();
+  }
+
+  function addStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      #sheet-container.cp-player-profile-open { z-index: 9500 !important; }
+      #sheet-container .cp-player-profile-fullscreen {
+        position: fixed !important; inset: 0 !important;
+        width: 100vw !important; max-width: 100vw !important;
+        height: 100vh !important; height: 100dvh !important;
+        max-height: 100vh !important; max-height: 100dvh !important;
+        min-height: 100vh !important; min-height: 100dvh !important;
+        margin: 0 !important; border-radius: 0 !important; border: 0 !important;
+        padding-top: env(safe-area-inset-top, 0px) !important;
+        padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+        overflow-y: auto !important; overflow-x: hidden !important;
+        overscroll-behavior: contain !important;
+        -webkit-overflow-scrolling: touch !important;
+        box-sizing: border-box !important;
+      }
+      #sheet-container.cp-player-profile-open .sticky {
+        top: 0 !important; z-index: 12 !important;
+      }
+      body.cp-player-profile-lock { overflow: hidden !important; }
+      #sheet-container.cp-player-profile-open .cp-player-profile-close {
+        position: absolute; top: calc(env(safe-area-inset-top, 0px) + 8px);
+        right: 12px; z-index: 30; width: 42px; height: 42px;
+        min-width: 42px; min-height: 42px; display: flex;
+        align-items: center; justify-content: center; border-radius: 9999px;
+        border: 1px solid #343434; background: #171717; color: #fff;
+        font-size: 30px; font-weight: 400; line-height: 1;
+        cursor: pointer; -webkit-tap-highlight-color: transparent;
+      }
+      #sheet-container.cp-player-profile-open .cp-player-profile-close:focus-visible {
+        outline: 2px solid #ff6b00; outline-offset: 2px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function makeCloseButton(sheet, header) {
+    let button = sheet.querySelector('.cp-player-profile-close');
+    if (button) return button;
+
+    button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cp-player-profile-close';
+    button.setAttribute('aria-label', 'Close player profile');
+    button.title = 'Close profile';
+    button.textContent = '×';
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeProfile();
+    });
+
+    const host = header || sheet;
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    host.appendChild(button);
+    return button;
+  }
+
+  function isProfileSheet(container, uid) {
+    if (!container || container.classList.contains('hidden')) return false;
+    const sheet = container.querySelector('.sheet');
+    if (!sheet) return false;
+    const text = (sheet.innerText || '').slice(0, 900);
+    const profileSignals = /Add Friend|Remove Friend|Invite to Lobby|Friend Request/i.test(text);
+    const hasProfileTitle = /Profile/i.test(text);
+    return !!uid && profileSignals && hasProfileTitle;
+  }
+
+  function promoteToFullscreen(uid) {
+    const container = getContainer();
+    const currentUid = window.State?.user?.uid || window.__state?.user?.uid;
+    if (!uid || uid === currentUid || !isProfileSheet(container, uid)) return;
+
+    const sheet = container.querySelector('.sheet');
+    if (!sheet) return;
+    sheet.classList.add(SHEET_CLASS);
+    container.classList.add(OPEN_CLASS);
+    document.body.classList.add(LOCK_CLASS);
+
+    const header = sheet.querySelector('.sticky');
+    if (header) {
+      header.style.position = 'sticky';
+      header.style.paddingRight = '58px';
+    }
+    makeCloseButton(sheet, header);
   }
 
   function install() {
     const original = window.openUserProfile;
     if (typeof original !== 'function' || original.__cpFullscreenWrapped) return false;
+    addStyles();
 
     const wrapped = async function(uid) {
+      // A new navigation may replace the current sheet; remove stale fullscreen
+      // classes first so a missing user or another sheet cannot get stuck fullscreen.
+      clearProfileMode();
       const result = await original.apply(this, arguments);
-      if (!uid || uid === window.__state?.user?.uid) return result;
-
-      const container = document.getElementById('sheet-container');
-      if (!container || container.classList.contains('hidden')) return result;
-      const sheet = container.querySelector('.sheet');
-      if (!sheet) return result;
-      const content = (container.innerText || '').slice(0, 700);
-      if (!/Profile|Add Friend|Remove Friend|Invite to Lobby/i.test(content)) return result;
-
-      sheet.classList.add('cp-player-profile-fullscreen');
-      container.classList.add('cp-player-profile-open');
-      document.body.classList.add('cp-player-profile-lock');
-
-      // A full-screen sheet covers its backdrop, so provide an explicit close
-      // button instead of relying on tapping outside the sheet.
-      const header = sheet.querySelector('.sticky');
-      if (header && !header.querySelector('.cp-player-profile-close')) {
-        header.style.position = 'sticky';
-        header.style.paddingRight = '56px';
-        const close = document.createElement('button');
-        close.type = 'button';
-        close.className = 'cp-player-profile-close';
-        close.setAttribute('aria-label', 'Close player profile');
-        close.title = 'Close profile';
-        close.textContent = '×';
-        close.addEventListener('click', () => {
-          if (typeof window.closeSheet === 'function') window.closeSheet();
-          else {
-            container.classList.add('hidden');
-            container.innerHTML = '';
-          }
-          clearProfileMode();
-        });
-        header.appendChild(close);
-      }
+      promoteToFullscreen(uid);
       return result;
     };
     wrapped.__cpFullscreenWrapped = true;
     window.openUserProfile = wrapped;
 
-    if (!document.getElementById(STYLE_ID)) {
-      const style = document.createElement('style');
-      style.id = STYLE_ID;
-      style.textContent = `
-        #sheet-container.cp-player-profile-open { z-index: 9500 !important; }
-        #sheet-container .cp-player-profile-fullscreen {
-          position: fixed !important; inset: 0 !important;
-          width: 100vw !important; max-width: 100vw !important;
-          height: 100vh !important; height: 100dvh !important;
-          max-height: 100vh !important; max-height: 100dvh !important;
-          min-height: 100vh !important; min-height: 100dvh !important;
-          margin: 0 !important; border-radius: 0 !important; border: 0 !important;
-          padding-top: env(safe-area-inset-top, 0px) !important;
-          padding-bottom: env(safe-area-inset-bottom, 0px) !important;
-          overflow-y: auto !important; overflow-x: hidden !important;
-          overscroll-behavior: contain !important;
-          -webkit-overflow-scrolling: touch !important;
-        }
-        body.cp-player-profile-lock { overflow: hidden !important; }
-        #sheet-container.cp-player-profile-open .cp-player-profile-close {
-          position: absolute; top: 10px; right: 14px; z-index: 20;
-          width: 40px; height: 40px; display: flex; align-items: center;
-          justify-content: center; border-radius: 9999px;
-          border: 1px solid #343434; background: #171717; color: #fff;
-          font-size: 30px; line-height: 1; cursor: pointer;
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
-    // Clean up lock state whenever the sheet is closed or replaced.
-    const container = document.getElementById('sheet-container');
+    const container = getContainer();
     if (container && !container.__cpProfileObserver) {
       const observer = new MutationObserver(() => {
-        if (container.classList.contains('hidden')) clearProfileMode();
+        const hasFullscreenProfile = !!container.querySelector('.' + SHEET_CLASS);
+        if (container.classList.contains('hidden') || (!hasFullscreenProfile && container.classList.contains(OPEN_CLASS))) {
+          clearProfileMode();
+        }
       });
-      observer.observe(container, { attributes: true, attributeFilter: ['class'] });
+      observer.observe(container, { attributes: true, attributeFilter: ['class'], childList: true, subtree: true });
       container.__cpProfileObserver = observer;
+    }
+
+    if (!window.__cpProfileEscapeBound) {
+      window.__cpProfileEscapeBound = true;
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && getContainer()?.classList.contains(OPEN_CLASS)) {
+          event.preventDefault();
+          closeProfile();
+        }
+      });
     }
     return true;
   }
