@@ -27761,7 +27761,7 @@ if (!window.__cpLobbyExpirationSweep) {
         el.insertAdjacentHTML('beforeend', renderPro(user));
         pro = el.querySelector('.cp-pro-spike-badge');
       }
-      if (pro && verified && (pro.compareDocumentPosition(verified) & Node.DOCUMENT_POSITION_PRECEDING)) {
+      if (pro && verified && (pro.compareDocumentPosition(verified) & Node.DOCUMENT_POSITION_FOLLOWING)) {
         verified.insertAdjacentElement('afterend', pro);
       }
       if (pro) pro.setAttribute('title','CODMPanda Pro');
@@ -27772,7 +27772,7 @@ if (!window.__cpLobbyExpirationSweep) {
     // Keep the order blue verification first, Pro second, both directly beside the username.
     if (hasPro(user) && verified) {
       const pro = el.querySelector('.cp-pro-spike-badge');
-      if (pro && (pro.compareDocumentPosition(verified) & Node.DOCUMENT_POSITION_PRECEDING)) {
+      if (pro && (pro.compareDocumentPosition(verified) & Node.DOCUMENT_POSITION_FOLLOWING)) {
         verified.insertAdjacentElement('afterend', pro);
       }
     }
