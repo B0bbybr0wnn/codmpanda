@@ -3529,6 +3529,19 @@ async function boot() {
   const signBtn = document.getElementById('google-signin-btn');
   if (signBtn) signBtn.onclick = handleSignIn;
 
+  const emailAuthForm = document.getElementById('email-auth-form');
+  if (emailAuthForm && !emailAuthForm.dataset.cpBound) {
+    emailAuthForm.dataset.cpBound = '1';
+    emailAuthForm.addEventListener('submit', event => {
+      event.preventDefault();
+      handleEmailSignIn();
+    });
+  }
+  const emailCreateBtn = document.getElementById('email-create-btn');
+  if (emailCreateBtn) emailCreateBtn.onclick = handleEmailSignUp;
+  const emailResetBtn = document.getElementById('email-reset-btn');
+  if (emailResetBtn) emailResetBtn.onclick = handlePasswordReset;
+
   setTimeout(handleDeepLinks, 1500);
 
   if (window.lucide) window.lucide.createIcons();
