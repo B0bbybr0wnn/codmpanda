@@ -1,12 +1,13 @@
 /* CODMPanda Service Worker v2.0.0
    Cache-first for app shell, network-first for Firebase calls */
 
-const CACHE_NAME = 'codmpanda-v35.6.0';
+const CACHE_NAME = 'codmpanda-v35.7.0';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/app.js',
-  '/badges.js?v=20261024-pro-spike-v2',
+  '/app.js?v=20261024-pro-identity-badges-v2',
+  '/badges.js?v=20261024-pro-spike-v3',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',

@@ -602,6 +602,7 @@ onAuthStateChanged(auth, async (user) => {
     try {
       const profile = await ensureUserProfile(user);
       State.profile = profile;
+      window.dispatchEvent(new CustomEvent('codmpanda:profile-loaded', { detail: { uid: user.uid } }));
       if (!profile.ign || !profile.onboardingDone) {
         showOnboarding();
       } else {
@@ -3315,6 +3316,7 @@ async function goPro() {
         proExpiry: Timestamp.fromMillis(Date.now() + 365 * 24 * 60 * 60 * 1000)
       });
       State.profile.isPro = true;
+      window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid: State.user.uid } }));
       toast('👑 Pro unlocked!', 'success');
       hideAd();
       renderYouTab();
@@ -4286,6 +4288,7 @@ async function grantProToContributor(uid) {
       proExpiry: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
       proFromContribution: true
     });
+    window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid } }));
     toast('👑 7-day Pro granted!', 'success');
   } catch (e) {
     toast('Failed: ' + e.message, 'error');
@@ -4464,6 +4467,7 @@ function showGrantProDialog(uid, ign) {
           proExpiry: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
           proFromContribution: true
         });
+        window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid } }));
         toast(`👑 Pro granted to ${ign}!`, 'success');
       } catch (e) {
         toast('Failed: ' + e.message, 'error');
@@ -4934,7 +4938,7 @@ function renderLeaderboard() {
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
-                <span class="text-sm font-bold truncate">${esc(u.ign)}</span>
+                <span data-uid="${esc(u.uid || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</span>
                 ${isMe ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-primary text-white font-black">YOU</span>' : ''}
               </div>
               <div class="text-[10px] text-gray-500 truncate">${esc(u.rank)} · ${esc(u.region)}</div>
@@ -5193,6 +5197,7 @@ async function checkProStatus() {
       const data = snap.data();
       if (data.isPro) {
         State.profile = { ...State.profile, ...data };
+        window.dispatchEvent(new CustomEvent('codmpanda:pro-entitlement-updated', { detail: { uid: State.user.uid } }));
         toast('👑 Pro activated! Welcome to the club.', 'success', 4000);
         closeSheet();
         hideAd();
@@ -6816,7 +6821,7 @@ async function renderRequestsList(body, incomingReqs, outgoingReqs) {
           ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+          <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</div>
           <div class="text-[10px] text-gray-500">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
         </div>
         <button class="accept-friend-btn w-9 h-9 rounded-lg bg-green-500 flex items-center justify-center" data-uid="${u.id}" data-ign="${esc(u.ign)}">
@@ -9186,7 +9191,7 @@ async function openTournamentDetail(tournamentId) {
                   <div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden">
                     ${tm.avatar ? `<img src="${esc(tm.avatar)}" class="w-full h-full object-cover" />` : getInitials(tm.ign)}
                   </div>
-                  <div class="flex-1 text-xs font-bold truncate">${esc(tm.ign)}</div>
+                  <div data-uid="${esc(tm.uid || '')}" class="flex-1 text-xs font-bold truncate">${esc(tm.ign)}</div>
                   ${tm.uid === t.creatorUid ? '<span class="text-[8px] px-1.5 py-0.5 rounded bg-gold text-black font-black">HOST</span>' : ''}
                 </div>
               `).join('')}
@@ -9518,7 +9523,7 @@ function renderRoundMatches(tournament, round, rounds, canManage) {
             <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden flex-shrink-0">
               ${team1.avatar ? `<img src="${esc(team1.avatar)}" class="w-full h-full object-cover" />` : getInitials(team1.ign)}
             </div>
-            <div class="text-xs font-bold truncate">${esc(team1.ign)}</div>
+            <div data-uid="${esc(team1.uid || '')}" class="text-xs font-bold truncate">${esc(team1.ign)}</div>
             ${m.winner?.uid === team1.uid ? '<span class="text-[8px] text-green-400 font-black">✓ WIN</span>' : ''}
           </div>
           <div class="text-sm font-black ${m.score1 !== null && m.score1 !== undefined ? 'text-primary' : 'text-gray-600'}">
@@ -9534,7 +9539,7 @@ function renderRoundMatches(tournament, round, rounds, canManage) {
             <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden flex-shrink-0">
               ${team2.avatar ? `<img src="${esc(team2.avatar)}" class="w-full h-full object-cover" />` : getInitials(team2.ign)}
             </div>
-            <div class="text-xs font-bold truncate">${esc(team2.ign)}</div>
+            <div data-uid="${esc(team2.uid || '')}" class="text-xs font-bold truncate">${esc(team2.ign)}</div>
             ${m.winner?.uid === team2.uid ? '<span class="text-[8px] text-green-400 font-black">✓ WIN</span>' : ''}
           </div>
           <div class="text-sm font-black ${m.score2 !== null && m.score2 !== undefined ? 'text-primary' : 'text-gray-600'}">
@@ -10022,7 +10027,7 @@ renderTournamentCard = function(t) {
             <div class="w-8 h-8 rounded-full bg-gold/20 flex items-center justify-center text-[10px] font-bold overflow-hidden">
               ${t.winner.avatar ? `<img src="${esc(t.winner.avatar)}" class="w-full h-full object-cover" />` : getInitials(t.winner.ign)}
             </div>
-            <div class="text-sm font-black text-gold glow-text-gold truncate">${esc(t.winner.ign || 'Unknown')}</div>
+            <div data-uid="${esc(t.winner.uid || '')}" class="text-sm font-black text-gold glow-text-gold truncate">${esc(t.winner.ign || 'Unknown')}</div>
           </div>
         </div>
 
@@ -11843,7 +11848,7 @@ async function openTeamRegisterSheet(tournamentId, tournament) {
           ${State.profile.avatar ? `<img src="${esc(State.profile.avatar)}" class="w-full h-full object-cover" />` : getInitials(State.profile.ign)}
         </div>
         <div class="flex-1">
-          <div class="text-xs font-bold">${esc(State.profile.ign)} (You · Captain)</div>
+          <div data-uid="${esc(State.user?.uid || '')}" class="text-xs font-bold">${esc(State.profile.ign)} (You · Captain)</div>
         </div>
       </label>
       ${friendData.map(f => `
@@ -11853,7 +11858,7 @@ async function openTeamRegisterSheet(tournamentId, tournament) {
             ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
           </div>
           <div class="flex-1">
-            <div class="text-xs font-bold">${esc(f.ign)}</div>
+            <div data-uid="${esc(f.id || f.uid || '')}" class="text-xs font-bold">${esc(f.ign)}</div>
             <div class="text-[10px] text-gray-500">${esc(f.rank || '—')} · ${esc(f.region || '—')}</div>
           </div>
         </label>
@@ -12164,7 +12169,7 @@ function renderPartyPanel(party) {
                 ${m.avatar ? `<img src="${esc(m.avatar)}" class="w-full h-full object-cover" />` : getInitials(m.ign)}
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-bold truncate flex items-center gap-1.5">
+                <div data-uid="${esc(m.uid || '')}" class="text-sm font-bold truncate flex items-center gap-1.5">
                   ${esc(m.ign)}
                   ${m.uid === party.leaderUid ? '<span class="text-[8px] px-1 py-0.5 rounded bg-gold text-black font-black">LEADER</span>' : ''}
                 </div>
@@ -12272,7 +12277,7 @@ async function openInviteFriendsSheet(party) {
           ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-bold truncate">${esc(f.ign)}</div>
+          <div data-uid="${esc(f.id || f.uid || '')}" class="text-sm font-bold truncate">${esc(f.ign)}</div>
           <div class="text-[10px] text-gray-500">${esc(f.rank || '—')}</div>
         </div>
         <button class="invite-friend-btn btn-press px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold" data-uid="${f.id}" data-ign="${esc(f.ign)}">
@@ -15492,7 +15497,7 @@ async function openCommentsSheet(contentType, contentId, contentTitle) {
             </div>
             <div class="flex-1 min-w-0 ${isMine ? 'text-right' : ''}">
               <div class="inline-block max-w-full ${isMine ? 'bg-primary text-white' : 'bg-card border border-border'} rounded-2xl px-3 py-2 text-left">
-                <div class="text-[10px] font-bold ${isMine ? 'text-white/90' : 'text-primary'} mb-0.5">${esc(c.ign)}</div>
+                <div data-uid="${esc(c.uid || '')}" class="text-[10px] font-bold ${isMine ? 'text-white/90' : 'text-primary'} mb-0.5">${esc(c.ign)}</div>
                 <div class="text-xs break-words">${esc(c.text)}</div>
               </div>
               <div class="flex items-center gap-2 mt-1 ${isMine ? 'justify-end' : ''}">
@@ -16089,7 +16094,7 @@ function showMentionDropdown(inputEl, filter = '') {
       <div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
         ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
       </div>
-      <span class="text-xs font-bold text-white flex-1">@${esc(f.ign)}</span>
+      <span data-uid="${esc(f.id || f.uid || '')}" class="text-xs font-bold text-white flex-1">@${esc(f.ign)}</span>
     </button>
   `).join('');
 
@@ -21649,22 +21654,8 @@ async function checkVerifiedStatus() {
 // ============================================
 
 function renderVerifiedBadge(user) {
-  if (!user || !user.verified) return '';
-  return `<span class="verified-badge" title="Verified Creator" aria-label="Verified Creator" style="
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #FFE9A8 0%, #F6C453 45%, #B87908 100%);
-    color: #241600;
-    font-size: 10px;
-    font-weight: 900;
-    flex-shrink: 0;
-    box-shadow: 0 0 8px rgba(246, 196, 83, 0.42);
-    vertical-align: middle;
-  ">✓</span>`;
+  if (!user || user.verified !== true) return '';
+  return '<span class="verified-badge cp-verified-blue" title="Verified Creator" aria-label="Verified Creator" role="img"><svg class="cp-verified-emblem" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 1.2 14.6 2.6 17.5 2.4 18.7 5 21.3 6.5 21 9.4 22.5 12 21 14.6 21.3 17.5 18.7 19 17.5 21.6 14.6 21.4 12 22.8 9.4 21.4 6.5 21.6 5.3 19 2.7 17.5 3 14.6 1.5 12 3 9.4 2.7 6.5 5.3 5 6.5 2.4 9.4 2.6Z" fill="#1877F2"/><path d="M7.2 12.1 10.2 15.1 16.9 8.7" fill="none" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 }
 
 function renderProCrown(user) {
@@ -25011,7 +25002,7 @@ window.performGlobalSearch = performGlobalSearch;
             ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
           </div>
           <div class="flex-1 min-w-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
-            <div class="text-sm font-bold truncate">${esc(post.ign || 'Unknown')}</div>
+            <div data-uid="${esc(post.uid || post.userId || '')}" class="text-sm font-bold truncate">${esc(post.ign || 'Unknown')}</div>
             <div class="text-[10px] text-gray-500">${timeAgo(post.createdAt)}</div>
           </div>
           ${isMine ? `
@@ -25785,7 +25776,7 @@ window.performGlobalSearch = performGlobalSearch;
       // propagate to old posts/comments without changing their content.
       if(!el.dataset.cpNameDone && (el.classList?.contains('user-name-link') || (el.tagName==='SPAN' && el.classList.contains('font-bold') && !el.querySelector('img')))){
         el.dataset.cpNameDone='1'; const nameUser=await getPublicProfile(el.dataset.uid);
-        if(nameUser?.ign){const badge=el.querySelector('.verified-badge');el.textContent=nameUser.ign;if(badge)el.appendChild(badge);}
+        if(nameUser?.ign){const marks=Array.from(el.querySelectorAll('.verified-badge,.cp-pro-spike-badge,[data-pro-badge="true"]'));el.textContent=nameUser.ign;marks.forEach(mark=>el.appendChild(mark));}
       }
       if(el.closest('#sheet-container')?.dataset.cpSkipFrame==='1')continue;
       if(!el.querySelector('img') && !/^w-(?:[0-9]+|\d+\.\d+)$/.test(el.className||'') && !/rounded-(?:full|2xl)/.test(el.className||''))continue;
@@ -26150,11 +26141,11 @@ window.performGlobalSearch = performGlobalSearch;
   }
   function setNameText(el,name){
     if(!el||!name)return;
-    const badge=el.querySelector('.verified-badge');
+    const marks=Array.from(el.querySelectorAll('.verified-badge,.cp-pro-spike-badge,[data-pro-badge="true"]'));
     const textNodes=Array.from(el.childNodes).filter(n=>n.nodeType===Node.TEXT_NODE);
-    if(textNodes.length){textNodes[0].nodeValue=' '+name+' ';for(let i=1;i<textNodes.length;i++)if(textNodes[i].nodeValue.trim())textNodes[i].nodeValue='';}
-    else if(!el.querySelector('img,svg,button'))el.insertBefore(document.createTextNode(name+' '),badge||null);
-    if(badge && (badge.parentNode!==el || el.lastElementChild!==badge))el.appendChild(badge);
+    if(textNodes.length){textNodes[0].nodeValue=' '+name+' ';for(let i=1;i<textNodes.length;i++)if(i>=marks.length&&textNodes[i].nodeValue.trim())textNodes[i].nodeValue='';}
+    else if(!el.querySelector('img,svg,button'))el.insertBefore(document.createTextNode(name+' '),marks[0]||null);
+    marks.forEach(mark=>{if(mark.parentNode!==el||el.lastElementChild!==mark)el.appendChild(mark);});
   }
   async function refreshPublicNamesAndAvatars(){
     if(!State.user)return;
@@ -27494,15 +27485,6 @@ if (!window.__cpLobbyExpirationSweep) {
     const style = document.createElement('style');
     style.id = badgeStyleId;
     style.textContent = `
-      .verified-badge {
-        display:inline-flex!important;align-items:center!important;justify-content:center!important;
-        width:15px!important;height:15px!important;min-width:15px!important;flex:0 0 15px!important;
-        border-radius:50%!important;background:linear-gradient(135deg,#FFE9A8 0%,#F6C453 45%,#B87908 100%)!important;
-        color:#241600!important;font-size:10px!important;font-weight:900!important;line-height:1!important;
-        box-shadow:0 0 8px rgba(246,196,83,.42)!important;vertical-align:middle!important;
-      }
-      #lobbies-feed .cp-lobby-name .verified-badge,
-      #lobbies-feed .font-bold.text-sm .verified-badge { background:linear-gradient(135deg,#FFE9A8 0%,#F6C453 45%,#B87908 100%)!important;color:#241600!important; }
       #sheet-container .cp-post-detail-header { min-height:calc(44px + env(safe-area-inset-top,0px))!important;height:calc(44px + env(safe-area-inset-top,0px))!important;padding:env(safe-area-inset-top,0px) 12px 0!important;gap:10px!important; }
       #sheet-container .cp-post-detail-header .cp-post-back { width:36px!important;height:36px!important;min-width:36px!important;min-height:36px!important;padding:0!important;display:grid!important;place-items:center!important;font-size:0!important; }
       #sheet-container .cp-post-detail-header .cp-post-back svg { width:22px!important;height:22px!important;max-width:22px!important;max-height:22px!important; }
@@ -27523,10 +27505,6 @@ if (!window.__cpLobbyExpirationSweep) {
       // Remove legacy blue check icons only from the name line; do not affect Founder/Pro labels.
       name.querySelectorAll('[data-lucide="badge-check"],[data-lucide="check-circle"],[data-lucide="check-circle-2"]').forEach(node => node.remove());
       name.querySelectorAll('.verification-badge,.verified-check,.blue-verified-badge').forEach(node => node.remove());
-      badges.slice(0,1).forEach(node => {
-        node.style.setProperty('background','linear-gradient(135deg,#FFE9A8 0%,#F6C453 45%,#B87908 100%)','important');
-        node.style.setProperty('color','#241600','important');
-      });
     });
   }
   if (typeof renderLobbies === 'function' && !renderLobbies.__cpFinalBadgeWrapped) {
@@ -27586,13 +27564,12 @@ if (!window.__cpLobbyExpirationSweep) {
 (function cpTargetedUiHotfix(){
   renderVerifiedBadge = function(user) {
     if (!user || user.verified !== true) return '';
-    return '<span class="verified-badge cp-gold-verified" title="Verified Creator" aria-label="Verified Creator" role="img">✓</span>';
+    return '<span class="verified-badge cp-verified-blue" title="Verified Creator" aria-label="Verified Creator" role="img"><svg class="cp-verified-emblem" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 1.2 14.6 2.6 17.5 2.4 18.7 5 21.3 6.5 21 9.4 22.5 12 21 14.6 21.3 17.5 18.7 19 17.5 21.6 14.6 21.4 12 22.8 9.4 21.4 6.5 21.6 5.3 19 2.7 17.5 3 14.6 1.5 12 3 9.4 2.7 6.5 5.3 5 6.5 2.4 9.4 2.6Z" fill="#1877F2"/><path d="M7.2 12.1 10.2 15.1 16.9 8.7" fill="none" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
   };
   const styleId='cp-targeted-ui-hotfix-v1';
   if(!document.getElementById(styleId)){
     const style=document.createElement('style');style.id=styleId;
     style.textContent=`
-      .verified-badge.cp-gold-verified,.verified-badge{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:15px!important;height:15px!important;min-width:15px!important;box-sizing:border-box!important;border-radius:50%!important;background:linear-gradient(145deg,#fff0b0 0%,#f6c453 48%,#a96a00 100%)!important;color:#2b1a00!important;border:1px solid #ffe49a!important;font-size:10px!important;line-height:1!important;font-weight:1000!important;flex:0 0 15px!important;box-shadow:0 0 7px rgba(246,196,83,.38),inset 0 1px 1px rgba(255,255,255,.65)!important;vertical-align:middle!important}
       #sheet-container .cp-post-detail-header{min-height:calc(36px + env(safe-area-inset-top,0px))!important;height:calc(36px + env(safe-area-inset-top,0px))!important;padding:env(safe-area-inset-top,0px) 10px 0!important;gap:7px!important}
       #sheet-container .cp-post-detail-header .cp-post-back{width:30px!important;height:30px!important;flex:0 0 30px!important;border-radius:8px!important}
       #sheet-container .cp-post-detail-header .cp-post-back svg{width:19px!important;height:19px!important}
@@ -27615,7 +27592,7 @@ if (!window.__cpLobbyExpirationSweep) {
       const marks=Array.from(line.querySelectorAll('.verified-badge'));
       const keep=name.querySelector('.verified-badge')||marks[0];
       marks.forEach(mark=>{if(mark!==keep)mark.remove();});
-      if(keep){keep.classList.add('cp-gold-verified');keep.setAttribute('title','Verified Creator');keep.setAttribute('aria-label','Verified Creator');}
+      if(keep){keep.classList.remove('cp-gold-verified');keep.classList.add('cp-verified-blue');keep.setAttribute('title','Verified Creator');keep.setAttribute('aria-label','Verified Creator');}
     });
   }
   if(typeof renderLobbies==='function'&&!renderLobbies.__cpGoldBadgeDedupe){
@@ -27648,72 +27625,43 @@ if (!window.__cpLobbyExpirationSweep) {
 })();
 
 
-/* CODMPanda global Pro identity repair: resolve account entitlements, then decorate real username nodes. */
-(function cpGlobalProIdentityBadgesV2(){
-  if (window.__cpGlobalProIdentityBadgesV2) return;
-  window.__cpGlobalProIdentityBadgesV2 = true;
-
+/* CODMPanda identity badges: one Firestore-backed source for every rendered username. */
+(function cpGlobalProIdentityBadgesV3(){
+  if (window.__cpGlobalProIdentityBadgesV3) return;
+  window.__cpGlobalProIdentityBadgesV3 = true;
   const userCache = new Map();
-  const pending = new Map();
-  let svgSerial = 0;
-  let sweepQueued = false;
-  let sweepRunning = false;
-  let sweepAgain = false;
+  const userWatches = new Map();
+  let svgSerial = 0, sweepQueued = false, sweepRunning = false, sweepAgain = false;
+  const VERIFIED_SVG = '<svg class="cp-verified-emblem" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 1.2 14.6 2.6 17.5 2.4 18.7 5 21.3 6.5 21 9.4 22.5 12 21 14.6 21.3 17.5 18.7 19 17.5 21.6 14.6 21.4 12 22.8 9.4 21.4 6.5 21.6 5.3 19 2.7 17.5 3 14.6 1.5 12 3 9.4 2.7 6.5 5.3 5 6.5 2.4 9.4 2.6Z" fill="#1877F2"/><path d="M7.2 12.1 10.2 15.1 16.9 8.7" fill="none" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-  function hasPro(user){
-    return !!(user && (user.isPro === true || user.pro === true ||
-      user.subscription === 'pro' || user.proStatus === 'active'));
-  }
+  // isPro is the main account entitlement; proStatus is the protected active-state field.
+  // Do not trust legacy 'pro' or 'subscription' aliases for membership badges.
+  function hasPro(user) { return !!(user && (user.isPro === true || user.proStatus === 'active')); }
 
-  function renderPro(user){
+  function renderPro(user) {
     if (!hasPro(user)) return '';
-    const id = 'cp-pro-metal-v2-' + (++svgSerial);
+    const id = 'cp-pro-metal-v3-' + (++svgSerial);
     return '<span class="cp-pro-spike-badge" data-pro-badge="true" title="CODMPanda Pro" aria-label="CODMPanda Pro" role="img">' +
       '<svg class="cp-pro-spike-svg" width="18" height="18" viewBox="0 0 64 64" aria-hidden="true" focusable="false">' +
         '<defs>' +
-          '<linearGradient id="' + id + '-titanium" x1="0" y1="0" x2="1" y2="1">' +
-            '<stop offset="0%" stop-color="#F4F0E8"/><stop offset="18%" stop-color="#777B80"/><stop offset="42%" stop-color="#24272B"/><stop offset="68%" stop-color="#090A0C"/><stop offset="100%" stop-color="#A9ADB0"/>' +
-          '</linearGradient>' +
-          '<linearGradient id="' + id + '-ember" x1="0" y1="1" x2="1" y2="0">' +
-            '<stop offset="0%" stop-color="#8E310D"/><stop offset="48%" stop-color="#FF702B"/><stop offset="100%" stop-color="#FFD0A0"/>' +
-          '</linearGradient>' +
-          '<linearGradient id="' + id + '-letter" x1="0" y1="0" x2="0.9" y2="1">' +
-            '<stop offset="0%" stop-color="#FFFFFF"/><stop offset="45%" stop-color="#C8CBD0"/><stop offset="100%" stop-color="#737980"/>' +
-          '</linearGradient>' +
+          '<linearGradient id="' + id + '-titanium" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#F4F0E8"/><stop offset="18%" stop-color="#777B80"/><stop offset="42%" stop-color="#24272B"/><stop offset="68%" stop-color="#090A0C"/><stop offset="100%" stop-color="#A9ADB0"/></linearGradient>' +
+          '<linearGradient id="' + id + '-ember" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#8E310D"/><stop offset="48%" stop-color="#FF702B"/><stop offset="100%" stop-color="#FFD0A0"/></linearGradient>' +
+          '<linearGradient id="' + id + '-letter" x1="0" y1="0" x2="0.9" y2="1"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="45%" stop-color="#C8CBD0"/><stop offset="100%" stop-color="#737980"/></linearGradient>' +
         '</defs>' +
         '<path d="M32 2 38 13 53 7 49 21 62 27 51 34 56 51 41 47 32 62 25 49 8 55 13 39 2 31 15 24 11 10 26 15Z" fill="url(#' + id + '-titanium)" stroke="#08090B" stroke-width="1.5" stroke-linejoin="bevel"/>' +
         '<path d="M32 8 37 18 49 13 45 25 55 29 45 36 49 46 38 43 32 54 26 43 14 48 18 37 9 31 20 25 17 16 28 20Z" fill="#101215" stroke="#4A4D50" stroke-width="0.7" stroke-linejoin="bevel"/>' +
         '<path d="M15 39 29 25 34 25 20 42Z" fill="url(#' + id + '-ember)"/>' +
         '<path d="M27 19H37C43 19 46 23 46 29 46 35 42 38 36 38H32V45H25V25H32V32H36C38 32 39 31 39 29 39 27 38 26 36 26H27Z" fill="url(#' + id + '-letter)" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.5" stroke-linejoin="bevel"/>' +
         '<path d="M32 3 36 11" fill="none" stroke="#FF8A49" stroke-width="1" stroke-linecap="square"/>' +
-      '</svg>' +
-    '</span>';
+      '</svg></span>';
   }
-
   window.CODMRenderProBadge = renderPro;
 
-  async function readUser(uid){
-    uid = String(uid || '').trim();
-    if (!uid) return null;
-    // Use live local state for the signed-in user's own paid status.
-    if (uid === State.user?.uid && State.profile) return State.profile;
-    const cached = userCache.get(uid);
-    if (cached && Date.now() - cached.at < 15000) return cached.value;
-    if (pending.has(uid)) return pending.get(uid);
-    const request = getDoc(doc(db, 'users', uid)).then(function(snap){
-      const value = snap.exists() ? {id: uid, ...snap.data()} : null;
-      userCache.set(uid, {value:value, at:Date.now()});
-      return value;
-    }).catch(function(){
-      return cached?.value || null;
-    }).finally(function(){ pending.delete(uid); });
-    pending.set(uid, request);
-    return request;
-  }
-
-  function isUsernameNode(el){
-    if (!el || !el.classList || !el.dataset) return false;
-    if (el.classList.contains('cp-pro-spike-badge')) return false;
+  function isUsernameNode(el) {
+    if (!el || !el.classList || !el.dataset || el.classList.contains('cp-pro-spike-badge')) return false;
+    if (el.matches('button,input,textarea,select') || el.classList.contains('rounded-full') ||
+        el.classList.contains('cp-avatar-framed-host') || el.classList.contains('cp-avatar-shell') ||
+        el.classList.contains('cp-v4-clip-avatar')) return false;
     const tag = el.tagName;
     if (el.classList.contains('user-name-link')) return true;
     return (tag === 'SPAN' || tag === 'DIV' || tag === 'A') &&
@@ -27722,116 +27670,181 @@ if (!window.__cpLobbyExpirationSweep) {
       !!(el.textContent || '').trim();
   }
 
-  function legacyProSibling(el){
-    const parent = el?.parentElement;
-    if (!parent) return [];
-    return Array.from(parent.children).filter(function(sibling){
-      if (sibling === el) return false;
-      if (sibling.classList?.contains('cp-pro-spike-badge')) return true;
-      const label = (sibling.textContent || '').trim();
-      const classes = String(sibling.className || '');
-      if (/^(?:👑\\s*)?PRO$/i.test(label) && /(?:badge|rounded|bg-|gradient|text-\\[9px\\]|px-)/i.test(classes)) return true;
-      if (/^(?:👑\\s*)?FOUNDER$/i.test(label)) return true;
-      if (label === '👑' && /text-\\[9px\\]/.test(classes) && /(?:bg-gradient-to-r|bg-gold)/.test(classes)) return true;
-      return false;
-    });
+  function isLegacyProMarker(mark) {
+    if (!mark || mark.matches('button,input,textarea,select') || mark.classList?.contains('cp-pro-spike-badge')) return false;
+    if (mark.hasAttribute?.('data-pro-badge') || (mark.getAttribute?.('data-badge') || '').toLowerCase() === 'pro') return true;
+    const label = String(mark.textContent || '').trim().replace(/^👑\s*/, '').trim().toUpperCase();
+    return label === 'PRO' && /badge|rounded|bg-|gradient|px-|text-\[9px\]/i.test(String(mark.className || ''));
   }
 
-  function normalizeNameBadges(el, user){
-    if (!el || !el.isConnected) return;
-    const parent = el.parentElement;
-    // Legacy labels beside the name are removed so the account-backed mark is never duplicated.
-    legacyProSibling(el).forEach(function(old){ old.remove(); });
+  function canonicalizeVerified(mark) {
+    if (!mark) return;
+    mark.classList.remove('cp-gold-verified');
+    mark.classList.add('cp-verified-blue');
+    if (!mark.querySelector('.cp-verified-emblem')) mark.innerHTML = VERIFIED_SVG;
+    mark.removeAttribute('style');
+    mark.setAttribute('title', 'Verified Creator');
+    mark.setAttribute('aria-label', 'Verified Creator');
+    mark.setAttribute('role', 'img');
+  }
 
-    let verified = el.querySelector('.verified-badge');
-    const proMarks = Array.from(el.querySelectorAll('.cp-pro-spike-badge,[data-pro-badge="true"]'));
-    if (user?.verified === true) {
-      if (!verified && typeof renderVerifiedBadge === 'function') {
+  function normalizeNameBadges(el, user) {
+    if (!el || !el.isConnected || !user) return;
+    const parent = el.parentElement;
+    const siblings = parent ? Array.from(parent.children).filter(node => node !== el) : [];
+    Array.from(el.querySelectorAll('span,[data-pro-badge],[data-badge="pro"]')).filter(isLegacyProMarker).forEach(mark => mark.remove());
+    siblings.filter(isLegacyProMarker).forEach(mark => mark.remove());
+
+    const verifiedInside = Array.from(el.querySelectorAll('.verified-badge'));
+    const verifiedSiblings = siblings.filter(node => node.classList?.contains('verified-badge'));
+    let verified = null;
+    if (user.verified === true) {
+      verified = verifiedInside[0] || verifiedSiblings[0] || null;
+      verifiedInside.forEach(mark => { if (mark !== verified) mark.remove(); });
+      verifiedSiblings.forEach(mark => { if (mark !== verified) mark.remove(); });
+      if (!verified) {
         el.insertAdjacentHTML('beforeend', renderVerifiedBadge(user));
         verified = el.querySelector('.verified-badge');
-      }
+      } else if (verified.parentNode !== el) el.appendChild(verified);
+      canonicalizeVerified(verified);
     } else {
-      el.querySelectorAll('.verified-badge').forEach(function(mark){ mark.remove(); });
-      verified = null;
+      verifiedInside.forEach(mark => mark.remove());
+      verifiedSiblings.forEach(mark => mark.remove());
     }
 
+    const existingPro = Array.from(el.querySelectorAll('.cp-pro-spike-badge,[data-pro-badge="true"]'));
+    const siblingPro = siblings.filter(node => node.classList?.contains('cp-pro-spike-badge'));
     if (hasPro(user)) {
-      let pro = el.querySelector('.cp-pro-spike-badge,[data-pro-badge="true"]');
+      let pro = existingPro[0] || siblingPro[0] || null;
+      existingPro.forEach(mark => { if (mark !== pro) mark.remove(); });
+      siblingPro.forEach(mark => { if (mark !== pro) mark.remove(); });
       if (!pro) {
         el.insertAdjacentHTML('beforeend', renderPro(user));
         pro = el.querySelector('.cp-pro-spike-badge');
+      } else if (pro.parentNode !== el) el.appendChild(pro);
+      if (pro) {
+        pro.setAttribute('title', 'CODMPanda Pro');
+        pro.setAttribute('aria-label', 'CODMPanda Pro');
+        pro.setAttribute('role', 'img');
       }
-      if (pro && verified && (pro.compareDocumentPosition(verified) & Node.DOCUMENT_POSITION_FOLLOWING)) {
-        verified.insertAdjacentElement('afterend', pro);
-      }
-      if (pro) pro.setAttribute('title','CODMPanda Pro');
+      if (verified && pro && (pro.compareDocumentPosition(verified) & Node.DOCUMENT_POSITION_FOLLOWING)) verified.insertAdjacentElement('afterend', pro);
     } else {
-      proMarks.forEach(function(mark){ mark.remove(); });
-    }
-
-    // Keep the order blue verification first, Pro second, both directly beside the username.
-    if (hasPro(user) && verified) {
-      const pro = el.querySelector('.cp-pro-spike-badge');
-      if (pro && (pro.compareDocumentPosition(verified) & Node.DOCUMENT_POSITION_FOLLOWING)) {
-        verified.insertAdjacentElement('afterend', pro);
-      }
+      existingPro.forEach(mark => mark.remove());
+      siblingPro.forEach(mark => mark.remove());
     }
   }
 
-  async function sweep(){
+  function applyToUid(uid, user) {
+    document.querySelectorAll('[data-uid]').forEach(el => {
+      if (String(el.dataset.uid || '') === uid && isUsernameNode(el)) normalizeNameBadges(el, user || {});
+    });
+  }
+
+  function watchUser(uid) {
+    uid = String(uid || '').trim();
+    if (!uid) return Promise.resolve(undefined);
+    const existing = userWatches.get(uid);
+    if (existing) {
+      const cached = userCache.get(uid);
+      return cached ? Promise.resolve(cached.value) : existing.ready;
+    }
+    let resolveReady;
+    const ready = new Promise(resolve => { resolveReady = resolve; });
+    let firstResolved = false;
+    const unsubscribe = onSnapshot(doc(db, 'users', uid), snap => {
+      const value = snap.exists() ? { id: uid, ...snap.data() } : null;
+      userCache.set(uid, { value, at: Date.now() });
+      if (uid === State.user?.uid && State.profile && value) {
+        const patch = {};
+        ['isPro','proStatus','verified'].forEach(key => { if (Object.prototype.hasOwnProperty.call(value, key)) patch[key] = value[key]; });
+        State.profile = { ...State.profile, ...patch };
+      }
+      applyToUid(uid, value);
+      if (!firstResolved) { firstResolved = true; resolveReady(value); }
+    }, error => {
+      console.warn('[CODMPanda] User identity listener failed', uid, error?.code || error?.message || error);
+      if (!firstResolved) {
+        firstResolved = true;
+        const cached = userCache.get(uid);
+        resolveReady(cached ? cached.value : undefined);
+      }
+    });
+    userWatches.set(uid, { unsubscribe, ready });
+    const cached = userCache.get(uid);
+    return cached ? Promise.resolve(cached.value) : ready;
+  }
+
+  function readUser(uid) {
+    uid = String(uid || '').trim();
+    if (!uid) return Promise.resolve(undefined);
+    if (uid === State.user?.uid && State.profile) return Promise.resolve(State.profile);
+    return watchUser(uid);
+  }
+
+  function syncWatches(names) {
+    const wanted = new Set(names.map(el => String(el.dataset.uid || '').trim()).filter(Boolean));
+    wanted.forEach(uid => { if (!userWatches.has(uid)) watchUser(uid); });
+    userWatches.forEach((watch, uid) => {
+      if (!wanted.has(uid)) {
+        watch.unsubscribe();
+        userWatches.delete(uid);
+        userCache.delete(uid);
+      }
+    });
+  }
+
+  async function sweep() {
     if (sweepRunning) { sweepAgain = true; return; }
     if (!State.user) return;
     sweepRunning = true;
     try {
       const names = Array.from(document.querySelectorAll('[data-uid]')).filter(isUsernameNode);
-      await Promise.all(names.map(async function(el){
-        const uid = el.dataset.uid || '';
+      syncWatches(names);
+      await Promise.all(names.map(async el => {
+        const uid = String(el.dataset.uid || '').trim();
         if (!uid) return;
         const user = await readUser(uid);
-        if (user) normalizeNameBadges(el, user);
+        if (user !== undefined && el.isConnected) normalizeNameBadges(el, user || {});
       }));
     } catch (error) {
-      console.warn('[CODMPanda] Pro identity badge refresh failed', error);
+      console.warn('[CODMPanda] Identity badge refresh failed', error);
     } finally {
       sweepRunning = false;
-      if (sweepAgain) {
-        sweepAgain = false;
-        queueSweep();
-      }
+      if (sweepAgain) { sweepAgain = false; queueSweep(); }
     }
   }
 
-  function queueSweep(){
+  function queueSweep() {
     if (sweepQueued) return;
     sweepQueued = true;
     setTimeout(function(){ sweepQueued = false; sweep(); }, 90);
   }
-
-  // Repaint after every feed/lobby/profile render and after dynamically inserted content.
-  const observer = new MutationObserver(function(records){
-    if (records.some(function(record){
-      return record.type === 'childList' && (record.addedNodes.length || record.removedNodes.length);
-    })) queueSweep();
+  const observer = new MutationObserver(records => {
+    if (records.some(record => record.type === 'childList' && (record.addedNodes.length || record.removedNodes.length))) queueSweep();
   });
-  observer.observe(document.documentElement, {childList:true, subtree:true});
+  observer.observe(document.documentElement, { childList: true, subtree: true });
 
-  ['renderHomeFeed','renderLobbies','renderYouTab'].forEach(function(name){
+  ['renderHomeFeed','renderLobbies','renderYouTab','renderComments','renderVaults','renderClips','renderLeaks'].forEach(name => {
     const original = window[name];
-    if (typeof original !== 'function' || original.__cpProIdentityWrapped) return;
-    const wrapped = function(){
+    if (typeof original !== 'function' || original.__cpIdentityBadgesWrapped) return;
+    const wrapped = function() {
       const result = original.apply(this, arguments);
       queueSweep();
       setTimeout(queueSweep, 180);
       return result;
     };
-    wrapped.__cpProIdentityWrapped = true;
+    wrapped.__cpIdentityBadgesWrapped = true;
     window[name] = wrapped;
   });
-
-  window.addEventListener('codmpanda:avatar-frame-updated', function(){ userCache.clear(); queueSweep(); });
-  window.addEventListener('codmpanda:pro-entitlement-updated', function(){ userCache.clear(); queueSweep(); });
-  document.addEventListener('visibilitychange', function(){ if (!document.hidden) { userCache.clear(); queueSweep(); } });
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', queueSweep, {once:true});
+  window.addEventListener('codmpanda:profile-loaded', queueSweep);
+  window.addEventListener('codmpanda:avatar-frame-updated', queueSweep);
+  window.addEventListener('codmpanda:pro-entitlement-updated', queueSweep);
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) queueSweep(); });
+  window.addEventListener('beforeunload', function(){
+    userWatches.forEach(watch => watch.unsubscribe());
+    userWatches.clear();
+  }, { once: true });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', queueSweep, { once: true });
   else queueSweep();
   setTimeout(queueSweep, 250);
   setTimeout(queueSweep, 1200);
