@@ -9,18 +9,63 @@ service cloud.firestore {
     }
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
 
+    function isProUserData(data) {
+      return data.get('isPro', false) == true || data.get('proStatus', '') == 'active';
+    }
+
+    function isFreeAvatarFrame(frame) {
+      return frame is string && frame in [
+        'none', 'shadow_legion', 'cosmic_vanguard', 'weapon_master', 'ice_crystal',
+        'battle_hardened', 'sharpshooter', 'urban_warrior', 'chemical_warfare',
+        'war_trophy_skulls', 'war_machine'
+      ];
+    }
+
+    function isProAvatarFrame(frame) {
+      return frame is string && frame in [
+        'ghost_ops', 'mythic_crystal', 'inferno', 'frost_division', 'legendary_rank',
+        'zombie_hunter', 'dragon_blade', 'war_trophy', 'ranked_champion', 'task_force'
+      ];
+    }
+
+    function isAllowedAvatarFrame(frame, allowPro) {
+      return isFreeAvatarFrame(frame) || (allowPro && isProAvatarFrame(frame));
+    }
+
+    // New profiles are Free by default, so every frame alias supplied at creation
+    // must be one of the canonical Free IDs (or "none").
+    function createdProfileFramesAllowed() {
+      return (!('avatarFrame' in request.resource.data) || isFreeAvatarFrame(request.resource.data.avatarFrame))
+        && (!('equippedAvatarFrame' in request.resource.data) || isFreeAvatarFrame(request.resource.data.equippedAvatarFrame))
+        && (!('equippedFrame' in request.resource.data) || isFreeAvatarFrame(request.resource.data.equippedFrame))
+        && (!('selectedFrame' in request.resource.data) || isFreeAvatarFrame(request.resource.data.selectedFrame))
+        && (!('frameId' in request.resource.data) || isFreeAvatarFrame(request.resource.data.frameId))
+        && (!('frame' in request.resource.data) || isFreeAvatarFrame(request.resource.data.frame))
+        && (!('profileFrame' in request.resource.data) || isFreeAvatarFrame(request.resource.data.profileFrame));
+    }
+
+    // The current picker writes the same canonical ID to all aliases. Validate each
+    // changed alias so authenticated users cannot grant themselves a Pro-only frame.
+    function changedProfileFramesAllowed() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let allowPro = isProUserData(resource.data);
+      return (!changed.hasAny(['avatarFrame']) || isAllowedAvatarFrame(request.resource.data.get('avatarFrame', 'none'), allowPro))
+        && (!changed.hasAny(['equippedAvatarFrame']) || isAllowedAvatarFrame(request.resource.data.get('equippedAvatarFrame', 'none'), allowPro))
+        && (!changed.hasAny(['equippedFrame']) || isAllowedAvatarFrame(request.resource.data.get('equippedFrame', 'none'), allowPro))
+        && (!changed.hasAny(['selectedFrame']) || isAllowedAvatarFrame(request.resource.data.get('selectedFrame', 'none'), allowPro))
+        && (!changed.hasAny(['frameId']) || isAllowedAvatarFrame(request.resource.data.get('frameId', 'none'), allowPro))
+        && (!changed.hasAny(['frame']) || isAllowedAvatarFrame(request.resource.data.get('frame', 'none'), allowPro))
+        && (!changed.hasAny(['profileFrame']) || isAllowedAvatarFrame(request.resource.data.get('profileFrame', 'none'), allowPro));
+    }
+
     // ---------- USERS ----------
     match /users/{userId} {
       allow get, list: if isSignedIn();
       allow create: if isOwner(userId)
         && (!('isPro' in request.resource.data) || request.resource.data.isPro == false)
         && (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false)
-        // New Free profiles cannot initialise with a Pro-only frame or oversized watchlist.
-        && (!('avatarFrame' in request.resource.data) || request.resource.data.avatarFrame in [
-          'none', 'shadow_legion', 'cosmic_vanguard', 'weapon_master', 'ice_crystal',
-          'battle_hardened', 'sharpshooter', 'urban_warrior', 'chemical_warfare',
-          'war_trophy_skulls', 'war_machine', 'fire', 'ice', 'gold', 'neon', 'diamond'
-        ])
+        // New Free profiles cannot initialise with a Pro-only frame.
+        && createdProfileFramesAllowed()
         && (!('metaWatchlist' in request.resource.data)
             || (request.resource.data.get('metaWatchlist', []) is list
                 && request.resource.data.get('metaWatchlist', []).size() <= 3));
@@ -28,22 +73,7 @@ service cloud.firestore {
         || (isOwner(userId)
             && !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['banned','banReason','bannedAt','bannedBy','isPro','isAdmin','role','proExpiresAt','proStatus','verified','verifiedAt'])
-            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['avatarFrame'])
-                || request.resource.data.avatarFrame in [
-                  'none', 'shadow_legion', 'cosmic_vanguard', 'weapon_master', 'ice_crystal',
-                  'battle_hardened', 'sharpshooter', 'urban_warrior', 'chemical_warfare',
-                  'war_trophy_skulls', 'war_machine',
-                  // Retain legacy stored IDs for compatibility; unknown IDs render as no frame.
-                  'fire', 'ice', 'gold', 'neon', 'diamond'
-                ]
-                || (((resource.data.get('isPro', false) == true) || (resource.data.get('proStatus', '') == 'active'))
-                    && request.resource.data.avatarFrame in [
-                      'ghost_ops', 'mythic_crystal', 'inferno', 'frost_division', 'legendary_rank',
-                      'zombie_hunter', 'dragon_blade', 'war_trophy', 'ranked_champion', 'task_force',
-                      'shadow_legion', 'cosmic_vanguard', 'weapon_master', 'ice_crystal',
-                      'battle_hardened', 'sharpshooter', 'urban_warrior', 'chemical_warfare',
-                      'war_trophy_skulls', 'war_machine'
-                    ]))
+            && changedProfileFramesAllowed()
             && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['metaWatchlist'])
                 || (request.resource.data.get('metaWatchlist', []) is list
                     && (
