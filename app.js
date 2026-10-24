@@ -7007,7 +7007,7 @@ async function performFriendSearch(query) {
             ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+            <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</div>
             <div class="text-[10px] text-gray-500">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
           </div>
           ${actionHTML}
@@ -13128,7 +13128,7 @@ async function performGlobalSearch(searchTerm) {
               ${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover" />` : getInitials(u.ign)}
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-sm font-bold truncate">${esc(u.ign)}</div>
+              <div data-uid="${esc(u.id || u.uid || '')}" class="text-sm font-bold truncate">${esc(u.ign)}</div>
               <div class="text-[10px] text-gray-500 truncate">${esc(u.rank || '—')} · ${esc(u.region || '—')}</div>
             </div>
             ${u.isPro ? '<span class="text-[8px] px-1.5 py-0.5 rounded bg-gold text-black font-black">PRO</span>' : ''}
