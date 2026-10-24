@@ -10,8 +10,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
-  signInWithPopup,
-  signInWithRedirect,
+  signInWithCredential,
   getRedirectResult,
   signOut,
   onAuthStateChanged,
@@ -480,26 +479,100 @@ function readEmailAuthFields() {
   };
 }
 
+const GOOGLE_CLIENT_ID = "604146891375-ae5bhcm2nd2f59f0npp3en6setthjg1s.apps.googleusercontent.com";
+let gisInitialized = false;
+let gisPromptAttemptAt = 0;
+
+async function waitForGIS() {
+  if (window.google?.accounts?.id) return;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    if (window.google?.accounts?.id) return;
+  }
+  throw new Error('Google Identity Services did not load.');
+}
+
+function initGIS() {
+  if (gisInitialized) return true;
+  if (!window.google?.accounts?.id) return false;
+  window.google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleGISResponse,
+    auto_select: false,
+    cancel_on_tap_outside: true,
+    use_fedcm_for_prompt: true
+  });
+  gisInitialized = true;
+  console.log('[CODMPanda] Google Identity Services initialized.');
+  return true;
+}
+
+function fallbackRenderGISButton() {
+  if (!window.google?.accounts?.id || document.getElementById('gis-btn-container')) return;
+  openSheet(
+    '<div class="text-center space-y-4">' +
+      '<div class="text-2xl">🎮</div>' +
+      '<div class="text-sm font-bold">Sign in with Google</div>' +
+      '<div id="gis-btn-container" class="flex justify-center"></div>' +
+      '<button onclick="closeSheet()" class="text-xs text-gray-500">Cancel</button>' +
+    '</div>',
+    'Sign In'
+  );
+  setTimeout(function() {
+    const target = document.getElementById('gis-btn-container');
+    if (target && window.google?.accounts?.id) {
+      window.google.accounts.id.renderButton(target, {
+        theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'pill', width: 280
+      });
+    }
+  }, 100);
+}
+
+async function requestGISPrompt(manual = false) {
+  const now = Date.now();
+  if (now - gisPromptAttemptAt < 1800) return;
+  gisPromptAttemptAt = now;
+  try {
+    await waitForGIS();
+    if (!initGIS()) throw new Error('Google Identity Services could not be initialized.');
+    window.google.accounts.id.prompt(function(notification) {
+      if (notification.isNotDisplayed && notification.isNotDisplayed()) {
+        console.warn('[CODMPanda] GIS One Tap is not currently displayable.');
+        if (manual) fallbackRenderGISButton();
+      }
+      if (notification.isSkippedMoment && notification.isSkippedMoment()) {
+        console.info('[CODMPanda] GIS One Tap was skipped by the browser or user.');
+      }
+    });
+  } catch (error) {
+    console.error('[CODMPanda] GIS prompt failed:', error);
+    if (manual) {
+      const message = authErrorMessage(error, 'google');
+      setEmailAuthStatus(message, true);
+      toast(message, 'error', 5000);
+    }
+  }
+}
+
 async function handleSignIn() {
   setEmailAuthStatus('');
+  await requestGISPrompt(true);
+}
+
+async function handleGISResponse(response) {
   try {
-    await signInWithPopup(auth, provider);
-    toast('Signed in with Google!', 'success');
+    if (!response?.credential) throw new Error('Google did not return a sign-in credential.');
+    closeSheet();
+    const credential = GoogleAuthProvider.credential(response.credential);
+    const result = await signInWithCredential(auth, credential);
+    console.log('[CODMPanda] GIS Firebase sign-in succeeded:', result.user.email);
+    setEmailAuthStatus('');
+    toast('Signed in!', 'success');
   } catch (error) {
-    const code = String(error?.code || '');
-    if (['auth/popup-blocked', 'auth/popup-closed-by-user', 'auth/cancelled-popup-request', 'auth/popup-unsupported', 'auth/operation-not-supported-in-this-environment'].includes(code)) {
-      try {
-        // Keep OAuth available in browsers that cannot open a popup.
-        await signInWithRedirect(auth, provider);
-        return;
-      } catch (redirectError) {
-        error = redirectError;
-      }
-    }
+    console.error('[CODMPanda] GIS Firebase credential sign-in failed:', error?.code || error);
     const message = authErrorMessage(error, 'google');
     setEmailAuthStatus(message, true);
-    if (error?.code !== 'auth/popup-closed-by-user') toast(message, 'error', 5000);
-    console.error('[CODMPanda] Google sign-in failed:', error?.code || error);
+    toast(message, 'error', 5000);
   }
 }
 
@@ -562,6 +635,9 @@ async function handlePasswordReset() {
 }
 
 window.handleSignIn = handleSignIn;
+window.initGIS = initGIS;
+window.handleGISResponse = handleGISResponse;
+window.requestGISPrompt = requestGISPrompt;
 window.handleEmailSignIn = handleEmailSignIn;
 window.handleEmailSignUp = handleEmailSignUp;
 window.handlePasswordReset = handlePasswordReset;
@@ -654,6 +730,8 @@ onAuthStateChanged(auth, async (user) => {
     State.user = null;
     State.profile = null;
     showAuthGate();
+    // Ask GIS for its native One Tap prompt after Firebase confirms signed-out state.
+    requestGISPrompt(false);
   }
 });
 
@@ -25513,7 +25591,8 @@ window.performGlobalSearch = performGlobalSearch;
     { key: 'heart', emoji: '❤️', label: 'Like', pro: false },
     { key: 'fire', emoji: '🔥', label: 'Fire', pro: false },
     { key: 'skull', emoji: '💀', label: 'Dead', pro: false },
-    { key: 'goat', emoji: '🐐', label: 'GOAT', pro: true }
+    { key: 'goat', emoji: '🐐', label: 'GOAT', pro: true },
+    { key: 'crown', emoji: '👑', label: 'Crown', pro: true }
   ];
 
   function reactionEmoji(key) {
@@ -25630,7 +25709,7 @@ window.performGlobalSearch = performGlobalSearch;
   // ============================================
 
   console.log('✅ [57] Reactions + premium frames loaded');
-  console.log('   - 4 reactions: ❤️ 🔥 💀 🐐');
+  console.log('   - 5 reactions: ❤️ 🔥 💀 🐐 👑');
   console.log('   - Free: first 3 · Pro: all 5');
   console.log('   - Hold any reaction button for 1 second to open picker');
   console.log('   - 11 premium frames including Molten, Tesla, Crystal, Void Walker');
@@ -25931,7 +26010,8 @@ window.performGlobalSearch = performGlobalSearch;
 
   const REACTION_META = {
     heart:{emoji:'❤️',label:'Like'}, fire:{emoji:'🔥',label:'Fire'},
-    skull:{emoji:'💀',label:'Dead'}, goat:{emoji:'🐐',label:'GOAT'}
+    skull:{emoji:'💀',label:'Dead'}, goat:{emoji:'🐐',label:'GOAT'},
+    crown:{emoji:'👑',label:'Crown'}
   };
   const CLASS_TYPES = {
     'post-like-btn':'post','post-detail-like':'post','detail-like':'vault','detail-like-btn':'vault',
@@ -25994,7 +26074,7 @@ window.performGlobalSearch = performGlobalSearch;
     const selectors=Object.keys(CLASS_TYPES).map(c=>'.'+c).concat('.home-like-btn');
     return Array.from(document.querySelectorAll(selectors.join(','))).filter(b=>itemType(b)===type&&itemId(b)===id);
   }
-  const reactionSummaryLabels={heart:'❤️',fire:'🔥',skull:'💀',goat:'🐐'};
+  const reactionSummaryLabels={heart:'❤️',fire:'🔥',skull:'💀',goat:'🐐',crown:'👑'};
   function paintPostReactionSummary(type,id,reactions){
     if(type!=='post')return;
     const entries=Object.entries(reactions||{}).filter(([key,n])=>reactionSummaryLabels[key] && Number(n)>0)
@@ -26019,10 +26099,10 @@ window.performGlobalSearch = performGlobalSearch;
     if(pickerOpen)return; pickerOpen=true;
     const pro=!!State.profile?.isPro;
     const choices=Object.entries(REACTION_META).map(([key,r])=>{
-      const locked=key==='goat'&&!pro;
+      const locked=(key==='goat'||key==='crown')&&!pro;
       return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" style="border:1px solid ${btn.dataset.cpReaction===key?'#ff6b00':'#34343a'};border-radius:14px;background:${btn.dataset.cpReaction===key?'#2a180f':'#17171b'};padding:11px 4px;color:#eee;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0"><span style="font-size:25px">${r.emoji}</span><span style="font-size:10px;font-weight:800">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">PRO 🔒</small>':''}</button>`;
     }).join('');
-    const html=`<div class="cp-reaction-sheet" style="padding:12px 0 4px"><div style="font-size:11px;color:#aaa;text-align:center;margin-bottom:13px">${pro?'PRO OPERATOR · ALL REACTIONS':'Choose your reaction · GOAT is a Pro reaction'}</div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px">${choices}</div><button type="button" id="cp-reaction-cancel" style="width:100%;margin-top:12px;padding:10px;color:#999;font-size:12px">Cancel</button></div>`;
+    const html=`<div class="cp-reaction-sheet" style="padding:12px 0 4px"><div style="font-size:11px;color:#aaa;text-align:center;margin-bottom:13px">${pro?'PRO OPERATOR · ALL REACTIONS':'Choose your reaction · GOAT is a Pro reaction'}</div><div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px">${choices}</div><button type="button" id="cp-reaction-cancel" style="width:100%;margin-top:12px;padding:10px;color:#999;font-size:12px">Cancel</button></div>`;
     try{
       // Comment picker must be a separate overlay: opening a nested sheet destroys the comments sheet.
       if(type==='comment'){
@@ -26035,7 +26115,7 @@ window.performGlobalSearch = performGlobalSearch;
       const root=type==='comment'?(document.getElementById('cp-reaction-overlay')||document):(document.querySelector('#sheet-container')||document.getElementById('cp-reaction-overlay')||document);
       root.querySelectorAll('.cp-reaction-choice').forEach(b=>b.addEventListener('click',async()=>{
         const key=b.dataset.reaction;
-        if(b.dataset.locked==='1'){if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();if(typeof showProPaywall==='function')setTimeout(()=>showProPaywall('Unlock the GOAT reaction with Pro.'),180);pickerOpen=false;return;}
+        if(b.dataset.locked==='1'){if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();if(typeof showProPaywall==='function')setTimeout(()=>showProPaywall('Unlock the '+(key==='crown'?'Crown':'GOAT')+' reaction with Pro.'),180);pickerOpen=false;return;}
         if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;await commitReaction(btn,type,id,key);
       }));
       const cancel=root.querySelector('#cp-reaction-cancel');if(cancel)cancel.addEventListener('click',()=>{if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;});
@@ -26044,7 +26124,7 @@ window.performGlobalSearch = performGlobalSearch;
   async function commitReaction(btn,type,id,key){
     if(!State.user){if(typeof showAuthGate==='function')showAuthGate();else if(typeof toast==='function')toast('Sign in to react.','warning');return;}
     if(!COLLECTIONS[type]||!id||!REACTION_META[key])return;
-    if(key==='goat'&&!State.profile?.isPro){if(typeof showProPaywall==='function')showProPaywall('Unlock all reactions with Pro.');else if(typeof toast==='function')toast('That reaction is available with Pro.','warning');return;}
+    if((key==='goat'||key==='crown')&&!State.profile?.isPro){if(typeof showProPaywall==='function')showProPaywall('Unlock all reactions with Pro.');else if(typeof toast==='function')toast('That reaction is available with Pro.','warning');return;}
     if(btn.dataset.cpBusy==='1')return;
     const uid=State.user.uid, cacheKey=`${type}_${id}_${uid}`;
     if(pendingReactionWrites.has(cacheKey))return;
