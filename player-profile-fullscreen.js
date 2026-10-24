@@ -26,8 +26,12 @@
   function closeProfile() {
     const container = getContainer();
     if (container && !container.classList.contains('hidden')) {
-      if (typeof window.closeSheet === 'function') window.closeSheet();
-      else {
+      try {
+        if (typeof window.closeSheet === 'function') window.closeSheet();
+      } catch (_) {}
+      // Do not let a broken closeSheet implementation leave a transparent,
+      // full-screen layer intercepting every tap in the app.
+      if (!container.classList.contains('hidden')) {
         container.classList.add('hidden');
         container.innerHTML = '';
       }
@@ -173,6 +177,7 @@
         }
         throw error;
       } finally {
+        clearTimeout(stuckProfileTimer);
         // Keep polling briefly after completion in case a later profile wrapper
         // finishes injecting the final profile markup.
         setTimeout(() => clearInterval(promoteTimer), 1000);
