@@ -141,11 +141,25 @@
   document.getElementById(style.id)?.remove();
   document.head.appendChild(style);
 
+  function normalizeBadgeOrder(){
+    // Keep order as username, blue verification tick, then Pro.
+    document.querySelectorAll('.cp-pro-spike-badge').forEach(function(pro){
+      const parent = pro.parentElement;
+      if (!parent) return;
+      const verified = Array.from(parent.children).find(function(el){
+        return el !== pro && el.classList && el.classList.contains('verified-badge');
+      });
+      if (verified && (pro.compareDocumentPosition(verified) & 4)) {
+        verified.insertAdjacentElement('afterend', pro);
+      }
+    });
+  }
+
   function clean(){
-    // Convert Pro crown/PRO marks first, so Founder-only crown cleanup cannot remove a Pro mark.
     cleanProMarks();
     removeFounderMarks();
     cleanVerifiedMarks();
+    normalizeBadgeOrder();
   }
 
   clean();
