@@ -3624,8 +3624,13 @@ async function boot() {
     if (splash && !splash.classList.contains('hidden')) splash.classList.add('hidden');
   }, 2000);
 
-  // Google sign-in is rendered by GIS itself; do not attach a custom click handler.
-  renderOfficialGISButton();
+  // Initialize GIS as soon as its official library is ready, independent of Firebase's
+  // auth-state callback. This ensures the official button is present even if One Tap is blocked.
+  waitForGIS()
+    .then(() => {
+      if (!initGIS()) throw new Error('Google Identity Services could not be initialized.');
+    })
+    .catch(error => console.error('[CODMPanda] Google sign-in button initialization failed:', error));
 
   const emailAuthForm = document.getElementById('email-auth-form');
   if (emailAuthForm && !emailAuthForm.dataset.cpBound) {
