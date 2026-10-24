@@ -33,7 +33,7 @@ A mobile-first Progressive Web App for Call of Duty Mobile players. Built with v
 
 ### 👤 YOU — Profile & Pro
 - Custom profile, rank badge, stats, and shareable referral code
-- **CODMPanda Pro:** Unlimited vault, full camo tracker, create clans, no ads, gold crown badge
+- **CODMPanda Pro:** Unlimited vault, full camo tracker, create clans, no ads, Obsidian Spike Pro badge
 - Admin panel (visible only to admin UID)
 
 ---
@@ -64,8 +64,8 @@ A mobile-first Progressive Web App for Call of Duty Mobile players. Built with v
 4. Save and Deploy → live at codmpanda.pages.dev
 
 ### Firebase Auth — Authorized Domains
-After deploy, add your Cloudflare URL to:
-Firebase Console → Authentication → Settings → Authorized domains
+Add both the preview host (`bobby-clone.codmpanda.pages.dev`) and production host (`codmpanda.pages.dev`) to:
+Firebase Console → Authentication → Settings → Authorized domains. Confirm the Google and Email/Password providers are enabled.
 
 ---
 
@@ -76,7 +76,8 @@ Firebase Console → Authentication → Settings → Authorized domains
 - [x] Authentication → Google sign-in enabled
 - [x] Test mode active (expires ~30 days from creation)
 - [ ] Publish production rules from firestore.rules
-- [ ] Add Cloudflare domain to Auth authorized domains
+- [ ] Add `bobby-clone.codmpanda.pages.dev` and `codmpanda.pages.dev` to Auth authorized domains
+- [ ] Enable the Email/Password provider under Authentication → Sign-in method
 - [ ] Fill in ADMIN_UID in index.html
 
 ---
