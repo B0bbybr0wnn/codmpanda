@@ -519,7 +519,7 @@ function renderOfficialGISButton() {
       text: 'signin_with',
       shape: 'pill',
       logo_alignment: 'left',
-      width: 280
+      width: Math.min(340, Math.max(240, Math.floor(target.getBoundingClientRect().width || 340)))
     });
     target.dataset.gisRendered = '1';
 
@@ -536,7 +536,7 @@ function renderOfficialGISButton() {
           text: 'signin_with',
           shape: 'pill',
           logo_alignment: 'left',
-          width: 280
+          width: Math.min(340, Math.max(240, Math.floor(target.getBoundingClientRect().width || 340)))
         });
         target.dataset.gisRendered = '1';
       } catch (error) {
@@ -560,10 +560,9 @@ function initGIS() {
     gis.initialize({
       client_id: GOOGLE_CLIENT_ID,
       callback: handleGISResponse,
-      ux_mode: 'popup',
       auto_select: false,
-      button_auto_select: false,
       cancel_on_tap_outside: true,
+      use_fedcm_for_prompt: true,
       use_fedcm_for_button: true
     });
     gisInitialized = true;
@@ -3642,9 +3641,21 @@ async function boot() {
     });
   }
   const emailCreateBtn = document.getElementById('email-create-btn');
-  if (emailCreateBtn) emailCreateBtn.onclick = handleEmailSignUp;
+  if (emailCreateBtn && !emailCreateBtn.dataset.cpBound) {
+    emailCreateBtn.dataset.cpBound = '1';
+    emailCreateBtn.addEventListener('click', event => {
+      event.preventDefault();
+      handleEmailSignUp();
+    });
+  }
   const emailResetBtn = document.getElementById('email-reset-btn');
-  if (emailResetBtn) emailResetBtn.onclick = handlePasswordReset;
+  if (emailResetBtn && !emailResetBtn.dataset.cpBound) {
+    emailResetBtn.dataset.cpBound = '1';
+    emailResetBtn.addEventListener('click', event => {
+      event.preventDefault();
+      handlePasswordReset();
+    });
+  }
 
   setTimeout(handleDeepLinks, 1500);
 
@@ -19762,7 +19773,7 @@ function showHeroWelcome() {
         font-size: 13px;
         color: #aaa;
         margin-bottom: 28px;
-        max-width: 280px;
+        max-width: Math.min(340, Math.max(240, Math.floor(target.getBoundingClientRect().width || 340)))px;
         margin-left: auto;
         margin-right: auto;
         line-height: 1.5;
