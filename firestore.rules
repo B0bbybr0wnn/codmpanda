@@ -81,7 +81,7 @@ service cloud.firestore {
                       || (((resource.data.get('isPro', false) == true) || (resource.data.get('proStatus', '') == 'active'))
                           && request.resource.data.get('metaWatchlist', []).size() <= 100)
                       || request.resource.data.get('metaWatchlist', []).size() < resource.data.get('metaWatchlist', []).size()
-                    ))))
+                    )))))
         || (isSignedIn()
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(['friendRequests','friendRequestsSent','friends']));
