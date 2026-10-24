@@ -22071,7 +22071,7 @@ renderHomePostCard = function(post) {
   if (post.verified) {
     html = html.replace(
       /(<span class="font-bold text-sm">[^<]+<\/span>)/,
-      `$1 <span class="verified-badge" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(135deg, #FFE9A8 0%, #F6C453 45%, #B87908 100%); color: #241600; font-size: 9px; font-weight: 900; flex-shrink: 0;">✓</span>`
+      `$1 ${renderVerifiedBadge(post)}`
     );
   }
   return html;
@@ -22554,7 +22554,7 @@ renderVaults = function() {
       const nameEl = card.querySelector('.text-xs.font-bold');
       if (nameEl && !nameEl.parentNode.querySelector('.verified-badge')) {
         const badge = document.createElement('span');
-        badge.innerHTML = '<span class="verified-badge" style="display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; border-radius: 50%; background: linear-gradient(135deg, #FFE9A8 0%, #F6C453 45%, #B87908 100%); color: #241600; font-size: 8px; font-weight: 900; flex-shrink: 0;">✓</span>';
+        badge.innerHTML = renderVerifiedBadge(vault);
         nameEl.parentNode.appendChild(badge.firstElementChild);
       }
     });
