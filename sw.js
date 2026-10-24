@@ -1,12 +1,12 @@
-/* CODMPanda Service Worker v2.0.0
+/* CODMPanda Service Worker v2.1.0
    Cache-first for app shell, network-first for Firebase calls */
 
-const CACHE_NAME = 'codmpanda-v39.0.0';
+const CACHE_NAME = 'codmpanda-v40.0.0';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/app.js',
-  '/app.js?v=20261024-gis-onetap-minimal-v13',
+  '/app.js?v=20261024-safe-auth-linking-v1',
   '/badges.js?v=20261024-obsidian-spike-v4',
   '/manifest.json',
   '/icon-192.png',
