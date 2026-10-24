@@ -73,7 +73,7 @@ Firebase Console → Authentication → Settings → Authorized domains. Confirm
 
 - [x] Firebase project created (codmpanda-app)
 - [x] Firestore in africa-south1 (Johannesburg)
-- [x] Authentication → Google sign-in enabled
+- [ ] Confirm Authentication → Google sign-in provider is enabled in Firebase Console
 - [x] Test mode active (expires ~30 days from creation)
 - [ ] Publish production rules from firestore.rules
 - [ ] Add `bobby-clone.codmpanda.pages.dev` and `codmpanda.pages.dev` to Auth authorized domains
