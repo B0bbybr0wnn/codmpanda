@@ -152,9 +152,25 @@
       try {
         const result = await resultPromise;
         promoteToFullscreen(uid);
+        // The legacy profile loader can return early on a missing user or swallow
+        // a Firestore error while leaving its spinner in the sheet. Never leave
+        // that dead-end view open after the loader has settled.
+        setTimeout(() => {
+          const active = getContainer();
+          if (!active || active.classList.contains('hidden')) return;
+          const sheet = active.querySelector('.sheet');
+          if (sheet && sheet.querySelector('.spinner')) {
+            closeProfile();
+            if (typeof window.toast === 'function') window.toast('Could not load that player profile. Please try again.', 'error');
+          }
+        }, 250);
         return result;
       } catch (error) {
-        promoteToFullscreen(uid);
+        const active = getContainer();
+        if (active && !active.classList.contains('hidden')) {
+          closeProfile();
+          if (typeof window.toast === 'function') window.toast('Could not load that player profile. Please try again.', 'error');
+        }
         throw error;
       } finally {
         // Keep polling briefly after completion in case a later profile wrapper
