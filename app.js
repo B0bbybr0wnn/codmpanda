@@ -27671,10 +27671,10 @@ if (!window.__cpLobbyExpirationSweep) {
   }
   function isLegacyProMarker(mark) {
     if (!mark || mark.matches('button,input,textarea,select') || mark.classList?.contains('cp-pro-spike-badge')) return false;
-    if (mark.hasAttribute?.('data-pro-badge') || (mark.getAttribute?.('data-badge') || '').toLowerCase() === 'pro') return true;
     const label = String(mark.textContent || '').trim().replace(/^👑 */, '').trim().toUpperCase();
     const classes = String(mark.className || '');
     const inlineStyles = String(mark.getAttribute?.('style') || '');
+    // Only migrate identifiable legacy "PRO" pills. Do not treat generic data attributes or crown icons as Pro badges.
     return label === 'PRO' && (/badge|rounded|bg-|gradient|px-|text-/i.test(classes) || /background|padding|font-size/i.test(inlineStyles));
   }
   function canonicalizeVerified(mark) {
