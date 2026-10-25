@@ -3,8 +3,8 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
 
 /*
  * CODMPanda YOU-tab navigation cleanup.
- * Keeps the existing activity summary card at the top, followed by Themes/Avatar
- * Frame, then Profile and Settings. Profile navigation stays inside #content:
+ * Keeps the existing profile card at the top, followed by Themes/Avatar Frame,
+ * then a plain Profile / Settings switch. Profile content stays inside #content:
  * no full-screen overlay, body scroll lock, or new profile interception.
  */
 (() => {
@@ -99,19 +99,13 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     return button;
   }
 
-  function makePageHeader(title, subtitle, onBack) {
+  function makePageHeader(title, subtitle) {
     const header = document.createElement("div");
-    header.className = "flex items-center gap-3 pt-3 pb-4";
+    header.className = "pt-4 pb-3";
     header.innerHTML = `
-      <button type="button" class="cp-you-back btn-press w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center" aria-label="Back">
-        <i data-lucide="arrow-left" class="w-5 h-5"></i>
-      </button>
-      <div class="min-w-0">
-        <h1 class="text-xl font-black">${title}</h1>
-        <p class="text-[11px] text-gray-500 mt-0.5">${subtitle}</p>
-      </div>
+      <h1 class="text-xl font-black">${title}</h1>
+      <p class="text-[11px] text-gray-500 mt-0.5">${subtitle}</p>
     `;
-    header.querySelector(".cp-you-back").addEventListener("click", onBack);
     return header;
   }
 
@@ -120,9 +114,20 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const profilePage = document.getElementById("cp-you-profile");
     const settingsPage = document.getElementById("cp-you-settings");
     if (!home || !profilePage || !settingsPage) return;
-    home.classList.toggle("hidden", which !== "home");
+    // Keep the profile card, Themes/Avatar Frame, and main switch visible.
+    // Profile / Settings only swap the content below that shared YOU-tab header.
+    home.classList.remove("hidden");
     profilePage.classList.toggle("hidden", which !== "profile");
     settingsPage.classList.toggle("hidden", which !== "settings");
+    const profileButton = document.getElementById("cp-open-profile");
+    const settingsButton = document.getElementById("cp-open-settings");
+    [[profileButton, which === "profile"], [settingsButton, which === "settings"]].forEach(([button, active]) => {
+      if (!button) return;
+      button.classList.toggle("text-white", active);
+      button.classList.toggle("text-gray-400", !active);
+      button.classList.toggle("border-primary", active);
+      button.classList.toggle("border-transparent", !active);
+    });
     if (which === "home") {
       activeProfileTab = "posts";
       const activity = document.getElementById("cp-you-activity-card");
@@ -277,7 +282,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const profileButton = document.createElement("button");
     profileButton.type = "button";
     profileButton.id = "cp-open-profile";
-    profileButton.className = "text-sm font-bold text-white py-2 border-b-2 border-primary";
+    profileButton.className = "text-sm font-bold text-gray-400 py-2 border-b-2 border-transparent";
     profileButton.textContent = "Profile";
     const settingsButton = document.createElement("button");
     settingsButton.type = "button";
@@ -292,7 +297,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const profilePage = document.createElement("section");
     profilePage.id = "cp-you-profile";
     profilePage.className = "hidden";
-    profilePage.appendChild(makePageHeader("Profile", "Your community page", () => setPage("home")));
+    profilePage.appendChild(makePageHeader("Profile", "Your community page"));
 
     // Profile content is one continuous page: stats, posts, achievements and activity.
     // Only the main Profile / Settings switch lives on the YOU landing page.
@@ -316,7 +321,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const settingsPage = document.createElement("section");
     settingsPage.id = "cp-you-settings";
     settingsPage.className = "hidden";
-    settingsPage.appendChild(makePageHeader("Settings", "Manage your account and app preferences", () => setPage("home")));
+    settingsPage.appendChild(makePageHeader("Settings", "Manage your account and app preferences"));
     const settingsBody = document.createElement("div");
     settingsBody.id = "cp-you-settings-body";
     settingsBody.className = "space-y-3";
