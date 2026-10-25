@@ -412,7 +412,7 @@ input, textarea { touch-action: auto; }
 <script type="module" src="/app.js?v=20261025-you-profile-subtab-v1"></script>
 <script type="module" src="/badges.js?v=20261024-obsidian-spike-v4"></script>
 <script type="module" src="/reliability-fixes.js?v=20261023-reliability-v4"></script>
-<script type="module" src="/you-tab-layout.js?v=20261025-you-navigation-v1"></script>
+<script type="module" src="/you-tab-layout.js?v=20261025-you-layout-restore-v2"></script>
 
 
 <script>
@@ -470,80 +470,7 @@ if ('serviceWorker' in navigator) {
 
 
 <!-- Keep the user's profile summary at the top; place Profile / Settings controls beneath it. -->
-<script id="cp-profile-card-above-subtabs">
-(function () {
-  'use strict';
-  var rootId = 'content';
-  var queued = false;
 
-  function textOf(el) {
-    return (el && (el.innerText || el.textContent) || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-  }
-
-  function findTabButton(root, label) {
-    var all = root.querySelectorAll('button,[role="tab"],a');
-    for (var i = 0; i < all.length; i++) {
-      if (textOf(all[i]) === label) return all[i];
-    }
-    return null;
-  }
-
-  function commonTabRow(a, b, root) {
-    var node = a;
-    while (node && node !== root) {
-      if (node.contains(b)) return node;
-      node = node.parentElement;
-    }
-    return null;
-  }
-
-  function reorder() {
-    var root = document.getElementById(rootId);
-    if (!root || !root.querySelector('#edit-profile-btn')) return;
-
-    var editButton = root.querySelector('#edit-profile-btn');
-    var profileCard = editButton.closest('.bg-card.border.border-border.rounded-2xl, .bg-card.border.border-gold.rounded-2xl');
-    var profileTab = findTabButton(root, 'profile');
-    var settingsTab = findTabButton(root, 'settings');
-    if (!profileCard || !profileTab || !settingsTab) return;
-
-    var tabRow = commonTabRow(profileTab, settingsTab, root);
-    if (!tabRow || tabRow === profileCard || profileCard.contains(tabRow)) return;
-
-    /* Move only the profile summary card, not the entire tab content wrapper. */
-    if (tabRow.parentElement) {
-      tabRow.parentElement.insertBefore(profileCard, tabRow);
-    }
-  }
-
-  function schedule() {
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(function () {
-      queued = false;
-      try { reorder(); } catch (error) {
-        console.warn('[CODMPanda] Profile layout ordering skipped:', error);
-      }
-    });
-  }
-
-  function start() {
-    var root = document.getElementById(rootId);
-    if (!root) {
-      setTimeout(start, 100);
-      return;
-    }
-    new MutationObserver(schedule).observe(root, { childList: true, subtree: true });
-    schedule();
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start, { once: true });
-  } else {
-    start();
-  }
-})();
-</script>
 
 </body>
 </html>
