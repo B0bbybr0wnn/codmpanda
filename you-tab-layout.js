@@ -335,11 +335,26 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const profileDetails = document.createElement("div");
     profileDetails.id = "cp-you-profile-details";
     profileDetails.className = "mb-4";
-    profileDetails.innerHTML = profileHeaderHTML();
-    const profileEditButton = profileDetails.querySelector("#cp-profile-edit-fallback");
-    if (profileEditButton) {
-      profileEditButton.id = "cp-profile-edit-on-profile";
-      profileEditButton.addEventListener("click", () => editButton?.click());
+    if (profileCard) {
+      // Show the real profile card on both the YOU landing screen and Profile,
+      // preserving its avatar frame, badges, and original appearance.
+      const profileCardCopy = profileCard.cloneNode(true);
+      profileCardCopy.querySelectorAll("[id]").forEach(el => el.removeAttribute("id"));
+      profileCardCopy.querySelectorAll("button").forEach(button => {
+        if (/edit profile/i.test(button.textContent || "")) {
+          button.addEventListener("click", () => editButton?.click());
+        }
+      });
+      profileDetails.appendChild(profileCardCopy);
+    } else {
+      profileDetails.innerHTML = profileHeaderHTML();
+      const profileEditButton = profileDetails.querySelector("#cp-profile-edit-fallback");
+      if (profileEditButton) {
+        profileEditButton.id = "cp-profile-edit-on-profile";
+        profileEditButton.addEventListener("click", () => {
+          document.querySelector('#cp-you-settings [data-action="edit-profile"]')?.click();
+        });
+      }
     }
 
     profilePage.append(profileDetails, profileTabs, postsPane, achievementsPane, activityPane);
@@ -388,14 +403,9 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     if (contributor && !settingsNodes.includes(contributor)) settingsNodes.push(contributor);
     settingsNodes.forEach(node => settingsBody.appendChild(node));
 
-    // Preserve every original YOU-tab section that wasn't explicitly relocated above.
-    // These include account actions, support/report-bug links, notification controls,
-    // Go Pro, admin tools, sign-out, and any future settings cards added by the app.
-    // Moving the remaining nodes avoids silently deleting functionality.
-    [...content.childNodes].forEach(node => {
-      if (node.nodeType === Node.ELEMENT_NODE && node.id === "cp-you-app") return;
-      settingsBody.appendChild(node);
-    });
+    // Do not move the old YOU-page wrapper into Settings: it contains its own
+    // legacy Profile/Settings navigation and creates a second nested menu.
+    // Keep only the actual settings sections gathered above.
 
     // Preserve the old theme/frame button's event listeners if it was injected already.
     // Replace the old page only after all unhandled sections have been carried forward.
