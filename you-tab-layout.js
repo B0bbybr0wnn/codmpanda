@@ -361,6 +361,10 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     home.append(profileCardSlot, themeSlot, menu);
     // Keep the Upgrade to Pro promotion at the bottom of the YOU tab,
     // outside the settings content. It is appended after both tab panels.
+    const proSlot = document.createElement("div");
+    proSlot.id = "cp-you-pro-promotion";
+    proSlot.className = "mt-3 mb-3";
+    if (proCard) proSlot.appendChild(proCard);
 
     const profilePage = document.createElement("section");
     profilePage.id = "cp-you-profile";
