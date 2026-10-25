@@ -129,7 +129,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const settingsButton = document.getElementById("cp-open-settings");
     if (profileButton && settingsButton) {
       profileButton.className = "flex-1 text-sm font-bold rounded-lg px-4 py-2.5 transition " +
-        (which === "profile" ? "bg-primary text-white" : "text-gray-400");
+        (which !== "settings" ? "bg-primary text-white" : "text-gray-400");
       settingsButton.className = "flex-1 text-sm font-bold rounded-lg px-4 py-2.5 transition " +
         (which === "settings" ? "bg-primary text-white" : "text-gray-400");
     }
@@ -336,9 +336,11 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     profileDetails.id = "cp-you-profile-details";
     profileDetails.className = "mb-4";
     profileDetails.innerHTML = profileHeaderHTML();
-    profileDetails.querySelector("#cp-profile-edit-fallback")?.addEventListener("click", () => {
-      editButton?.click();
-    });
+    const profileEditButton = profileDetails.querySelector("#cp-profile-edit-fallback");
+    if (profileEditButton) {
+      profileEditButton.id = "cp-profile-edit-on-profile";
+      profileEditButton.addEventListener("click", () => editButton?.click());
+    }
 
     profilePage.append(profileDetails, profileTabs, postsPane, achievementsPane, activityPane);
 
