@@ -3053,7 +3053,7 @@ function renderMapsSub() {
 // ============================================
 // YOU TAB (UI)
 // ============================================
-let youSubTab = 'profile';
+let youSubTab = 'home';
 
 function renderYouTab() {
   const content = document.getElementById('content');
@@ -28185,3 +28185,296 @@ if (!window.__cpLobbyExpirationSweep) {
   setTimeout(queueSweep, 250);
   setTimeout(queueSweep, 1200);
 })();
+
+
+
+// ============================================
+// YOU TAB — canonical layout repair (2026-10-25)
+// Overview order: profile card, theme/avatar frames, Profile/Settings, Pro.
+// Profile detail sections: Posts first, Achievements second, Activity third.
+// ============================================
+
+let __cpYouProfileSectionV2 = 'posts';
+
+function __cpYouMillisV2(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value.seconds === 'number') return value.seconds * 1000;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function __cpYouProfileCardV2(p, uid, detail) {
+  const isPro = !!p.isPro;
+  const themes = window.PROFILE_THEMES || {};
+  const theme = themes[p.themeStyle || 'dark'] || themes.dark;
+  const themeStyle = theme && theme !== themes.dark
+    ? 'style="background:' + theme.gradient + ';border-color:' + theme.border + ';box-shadow:' + theme.glow + '"'
+    : '';
+  const cardId = detail ? 'you-profile-detail-card' : 'you-overview-profile-card';
+  const editId = detail ? 'you-profile-edit-btn' : 'you-overview-edit-btn';
+  const copyId = detail ? 'you-profile-copy-uid-btn' : 'you-overview-copy-uid-btn';
+  return '<section id="' + cardId + '" class="bg-card border ' + (isPro ? 'border-gold glow-gold' : 'border-border') + ' rounded-2xl p-4 mb-4" ' + themeStyle + '>' +
+    '<div class="flex items-center gap-3 mb-3">' +
+      '<div class="relative flex-shrink-0"><div data-uid="' + esc(uid) + '" class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-2xl overflow-hidden">' +
+        (p.avatar ? '<img src="' + esc(p.avatar) + '" alt="" class="w-full h-full object-cover" />' : getInitials(p.ign || '?')) +
+      '</div></div>' +
+      '<div class="flex-1 min-w-0"><div class="flex items-center gap-2 flex-wrap">' +
+        '<span data-uid="' + esc(uid) + '" class="text-base font-black truncate">' + esc(p.ign || 'Set IGN') + '</span>' +
+        (isPro ? '<span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">PRO</span>' : '') +
+        (p.verified ? renderVerifiedBadge(p) : '') +
+      '</div><div class="text-[11px] text-gray-500 mt-0.5">' + esc(p.rank || 'Rookie') + ' · ' + esc(p.region || 'Global') + '</div>' +
+      '<button type="button" id="' + copyId + '" class="text-[10px] text-primary font-bold mt-1 flex items-center gap-1"><i data-lucide="copy" class="w-3 h-3"></i> Copy UID</button></div>' +
+    '</div>' +
+    (p.bio ? '<p class="text-xs text-gray-400 mb-2 break-words">' + esc(p.bio) + '</p>' : '') +
+    (p.favGun ? '<div class="text-[11px] text-gray-500 mb-2">🎯 Favourite: <span class="font-bold text-gray-300">' + esc(p.favGun) + '</span></div>' : '') +
+    (!detail ? '<div class="grid grid-cols-3 gap-2 mt-3 mb-3">' +
+      '<div class="bg-black/10 border border-border/60 rounded-xl p-2.5 text-center"><div id="stat-vaults" class="text-base font-black text-primary">—</div><div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Vaults</div></div>' +
+      '<div class="bg-black/10 border border-border/60 rounded-xl p-2.5 text-center"><div id="stat-camos" class="text-base font-black text-gold">—</div><div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Camos</div></div>' +
+      '<div class="bg-black/10 border border-border/60 rounded-xl p-2.5 text-center"><div id="stat-clan" class="text-base font-black text-green-400">—</div><div class="text-[9px] text-gray-500 font-bold uppercase mt-0.5">Clan</div></div>' +
+    '</div>' : '') +
+    '<button type="button" id="' + editId + '" class="btn-press w-full mt-1 py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold">Edit Profile</button>' +
+  '</section>';
+}
+
+async function __cpYouLoadPostsV2(host) {
+  if (!host || !State.user || !State.user.uid) return;
+  host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="spinner mx-auto"></div><p class="text-xs text-gray-500 mt-2">Loading your posts…</p></div>';
+  try {
+    const snap = await getDocs(query(collection(db, 'posts'), where('uid', '==', State.user.uid), limit(100)));
+    const posts = snap.docs.map(item => Object.assign({}, item.data(), { id: item.id }))
+      .sort((a, b) => __cpYouMillisV2(b.createdAt) - __cpYouMillisV2(a.createdAt));
+    if (!posts.length) {
+      host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-6 text-center"><div class="text-3xl mb-2">📝</div><div class="text-sm font-bold">No posts yet</div><p class="text-xs text-gray-500 mt-1">Your community posts will appear here after you publish them.</p></div>';
+      return;
+    }
+    host.innerHTML = posts.map(post => {
+      try {
+        return renderHomePostCard(post);
+      } catch (err) {
+        console.warn('[CODMPanda] Could not render profile post', err);
+        return '<article class="bg-card border border-border rounded-2xl p-4 mb-3"><p class="text-sm whitespace-pre-wrap break-words">' + esc(post.text || post.caption || 'Community post') + '</p><p class="text-[10px] text-gray-500 mt-2">' + esc(timeAgo(post.createdAt)) + '</p></article>';
+      }
+    }).join('');
+    if (window.lucide) window.lucide.createIcons();
+    if (typeof window.__codmpandaRefreshNamesAndAvatars === 'function') setTimeout(window.__codmpandaRefreshNamesAndAvatars, 80);
+  } catch (error) {
+    console.warn('[CODMPanda] Could not load profile posts', error);
+    host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="text-sm font-bold">Posts are temporarily unavailable</div><p class="text-xs text-gray-500 mt-1">Please check your connection and try again.</p></div>';
+  }
+}
+
+async function __cpYouLoadAchievementsV2(host) {
+  if (!host || !State.user || !State.user.uid) return;
+  host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="spinner mx-auto"></div><p class="text-xs text-gray-500 mt-2">Checking your achievements…</p></div>';
+  const uid = State.user.uid;
+  const safeCount = async name => {
+    try {
+      const snap = await getDocs(query(collection(db, name), where('uid', '==', uid), limit(200)));
+      return snap.size;
+    } catch (_) {
+      return 0;
+    }
+  };
+  const counts = await Promise.all([safeCount('vaults'), safeCount('clips'), safeCount('posts'), safeCount('lobbies')]);
+  const p = State.profile || {};
+  const approved = Number(p.approvedCount) || 0;
+  const wins = Number(p.tournamentWins) || 0;
+  const achievements = [
+    ['🔧', 'Loadout Creator', 'Publish a build', counts[0] > 0, counts[0]],
+    ['🎬', 'Clip Creator', 'Share a CODM clip', counts[1] > 0, counts[1]],
+    ['💬', 'Conversation Starter', 'Publish a community post', counts[2] > 0, counts[2]],
+    ['🎮', 'Squad Organizer', 'Post an LFG lobby', counts[3] > 0, counts[3]],
+    ['✅', 'Approved Contributor', 'Have a submission approved', approved > 0, approved],
+    ['🏆', 'Tournament Winner', 'Record a tournament win', wins > 0, wins]
+  ];
+  host.innerHTML = '<section class="bg-card border border-border rounded-2xl p-4">' +
+    '<div class="flex items-center justify-between mb-3"><div><h2 class="font-black">Achievements</h2><p class="text-[10px] text-gray-500">Milestones from your CODMPanda activity</p></div><span class="text-2xl">🏅</span></div>' +
+    '<div class="grid grid-cols-2 gap-2">' + achievements.map(item =>
+      '<div class="rounded-xl border ' + (item[3] ? 'border-primary/30 bg-primary/5' : 'border-border bg-cardAlt opacity-70') + ' p-3">' +
+        '<div class="flex items-center gap-2 mb-1"><span class="text-lg">' + item[0] + '</span><span class="text-xs font-bold">' + item[1] + '</span></div>' +
+        '<p class="text-[10px] text-gray-500">' + item[2] + '</p>' +
+        '<div class="text-[10px] mt-2 ' + (item[3] ? 'text-green-400' : 'text-gray-600') + '">' + (item[3] ? ('UNLOCKED' + (item[4] > 1 ? ' · ' + item[4] : '')) : 'NOT YET') + '</div>' +
+      '</div>'
+    ).join('') + '</div><p class="text-[10px] text-gray-600 mt-3">These are community milestones, not CODM in-game XP or currency.</p></section>';
+}
+
+async function __cpYouLoadActivityV2(host) {
+  if (!host) return;
+  host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="spinner mx-auto"></div><p class="text-xs text-gray-500 mt-2">Loading your activity…</p></div>';
+  try {
+    const stats = await loadActivityStats();
+    host.innerHTML = renderActivityStats(stats);
+    if (window.lucide) window.lucide.createIcons();
+  } catch (error) {
+    console.warn('[CODMPanda] Could not load profile activity', error);
+    host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="text-sm font-bold">Activity is temporarily unavailable</div><p class="text-xs text-gray-500 mt-1">Your profile and settings are still available.</p></div>';
+  }
+}
+
+function __cpYouWireProfileCardV2(detail) {
+  const edit = document.getElementById(detail ? 'you-profile-edit-btn' : 'you-overview-edit-btn');
+  if (edit) edit.onclick = openEditProfileSheet;
+  const copy = document.getElementById(detail ? 'you-profile-copy-uid-btn' : 'you-overview-copy-uid-btn');
+  if (copy) copy.onclick = () => copyText(State.user.uid, 'UID copied!');
+}
+
+function __cpYouProfileSectionButtonV2(key, label) {
+  const active = __cpYouProfileSectionV2 === key;
+  return '<button type="button" data-you-profile-section="' + key + '" role="tab" aria-selected="' + active + '" class="btn-press flex-1 rounded-xl py-2.5 text-xs font-bold border ' +
+    (active ? 'border-primary bg-primary/15 text-primary' : 'border-border bg-card text-gray-400') + '">' + label + '</button>';
+}
+
+function cpRenderYouTabLayoutV2() {
+  const content = document.getElementById('content');
+  if (!content) return;
+  if (!State.user || !State.user.uid) {
+    content.innerHTML = '<div class="px-4 py-10 text-center text-sm text-gray-500">Sign in to view your profile and settings.</div>';
+    return;
+  }
+
+  const p = State.profile || {};
+  const uid = State.user.uid;
+  const isPro = !!p.isPro;
+  if (['home', 'profile', 'settings'].indexOf(youSubTab) === -1) youSubTab = 'home';
+
+  if (youSubTab === 'home') {
+    content.innerHTML = '<div class="px-4 pt-4 pb-24" id="you-overview">' +
+      __cpYouProfileCardV2(p, uid, false) +
+      '<section id="you-theme-frame-section" class="grid grid-cols-2 gap-2 mb-5" aria-label="Theme and avatar frames">' +
+        '<button type="button" id="you-open-theme-btn" class="btn-press rounded-xl bg-card border border-border p-3 flex flex-col items-center justify-center gap-1.5 text-xs font-bold"><span class="text-xl">🎨</span><span>Theme</span><span class="text-[10px] text-gray-500 font-medium">Personalize your look</span></button>' +
+        '<button type="button" id="you-open-frame-btn" class="btn-press rounded-xl bg-card border border-border p-3 flex flex-col items-center justify-center gap-1.5 text-xs font-bold"><span class="text-xl">✨</span><span>Avatar Frames</span><span class="text-[10px] text-gray-500 font-medium">Choose your frame</span></button>' +
+      '</section>' +
+      '<section class="mb-5" aria-label="Profile and settings"><div class="text-[11px] text-gray-500 font-black tracking-widest uppercase mb-2 px-1">Profile &amp; Settings</div><div class="grid grid-cols-1 gap-2">' +
+        '<button type="button" id="you-open-profile-btn" class="btn-press w-full bg-card border border-border rounded-2xl p-4 text-left flex items-center gap-3"><span class="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-xl">👤</span><span class="flex-1 min-w-0"><span class="block text-sm font-black">Profile</span><span class="block text-[11px] text-gray-500 mt-0.5">Posts, achievements and your activity</span></span><i data-lucide="chevron-right" class="w-4 h-4 text-gray-500"></i></button>' +
+        '<button type="button" id="you-open-settings-btn" class="btn-press w-full bg-card border border-border rounded-2xl p-4 text-left flex items-center gap-3"><span class="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-xl">⚙️</span><span class="flex-1 min-w-0"><span class="block text-sm font-black">Settings</span><span class="block text-[11px] text-gray-500 mt-0.5">Preferences, advanced settings, support and account</span></span><i data-lucide="chevron-right" class="w-4 h-4 text-gray-500"></i></button>' +
+      '</div></section>' +
+      '<section id="you-pro-section" aria-label="CODMPanda Pro">' + (isPro ? renderProActive(p) : renderProUpsell()) + '</section>' +
+    '</div>';
+
+    __cpYouWireProfileCardV2(false);
+    document.getElementById('you-open-theme-btn')?.addEventListener('click', () => {
+      if (typeof window.openThemePicker === 'function') window.openThemePicker();
+      else if (typeof openThemePicker === 'function') openThemePicker();
+    });
+    document.getElementById('you-open-frame-btn')?.addEventListener('click', () => {
+      if (typeof window.openAvatarFramePicker === 'function') window.openAvatarFramePicker();
+      else if (typeof openAvatarFramePicker === 'function') openAvatarFramePicker();
+    });
+    document.getElementById('you-open-profile-btn')?.addEventListener('click', () => {
+      youSubTab = 'profile';
+      __cpYouProfileSectionV2 = 'posts';
+      cpRenderYouTabLayoutV2();
+    });
+    document.getElementById('you-open-settings-btn')?.addEventListener('click', () => {
+      youSubTab = 'settings';
+      cpRenderYouTabLayoutV2();
+    });
+    const unlock = document.getElementById('unlock-pro-btn');
+    if (unlock) unlock.onclick = goPro;
+    const manage = document.getElementById('manage-pro-btn');
+    if (manage) manage.onclick = showManagePro;
+    loadStats();
+    loadClanStat();
+    if (window.lucide) window.lucide.createIcons();
+    if (typeof window.__codmpandaRefreshNamesAndAvatars === 'function') setTimeout(window.__codmpandaRefreshNamesAndAvatars, 80);
+    return;
+  }
+
+  if (youSubTab === 'profile') {
+    content.innerHTML = '<div class="px-4 pt-4 pb-24" id="you-profile-page">' +
+      '<button type="button" id="you-profile-back-btn" class="btn-press mb-4 inline-flex items-center gap-2 text-xs font-bold text-gray-400"><i data-lucide="arrow-left" class="w-4 h-4"></i> Back to YOU</button>' +
+      __cpYouProfileCardV2(p, uid, true) +
+      '<div class="grid grid-cols-3 gap-2 mb-4">' +
+        '<div class="bg-card border border-border rounded-xl p-3 text-center"><div id="stat-vaults" class="text-base font-black text-primary">—</div><div class="text-[9px] text-gray-500 uppercase">Vaults</div></div>' +
+        '<div class="bg-card border border-border rounded-xl p-3 text-center"><div id="stat-camos" class="text-base font-black text-gold">—</div><div class="text-[9px] text-gray-500 uppercase">Camos</div></div>' +
+        '<div class="bg-card border border-border rounded-xl p-3 text-center"><div id="stat-clan" class="text-base font-black text-green-400">—</div><div class="text-[9px] text-gray-500 uppercase">Clan</div></div>' +
+      '</div>' +
+      '<div class="grid grid-cols-2 gap-2 mb-4">' +
+        '<button type="button" id="you-profile-friends-btn" class="btn-press py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold">👥 Friends</button>' +
+        '<button type="button" id="you-profile-share-btn" class="btn-press py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold">📤 Share Profile Card</button>' +
+      '</div>' +
+      '<div class="flex items-center gap-2 mb-4" role="tablist" aria-label="Profile sections">' +
+        __cpYouProfileSectionButtonV2('posts', 'Posts') +
+        __cpYouProfileSectionButtonV2('achievements', 'Achievements') +
+        __cpYouProfileSectionButtonV2('activity', 'Activity') +
+      '</div>' +
+      '<div id="you-profile-section-content" aria-live="polite"></div>' +
+    '</div>';
+
+    __cpYouWireProfileCardV2(true);
+    document.getElementById('you-profile-back-btn')?.addEventListener('click', () => {
+      youSubTab = 'home';
+      cpRenderYouTabLayoutV2();
+    });
+    document.querySelectorAll('[data-you-profile-section]').forEach(button => {
+      button.addEventListener('click', () => {
+        __cpYouProfileSectionV2 = button.dataset.youProfileSection || 'posts';
+        cpRenderYouTabLayoutV2();
+      });
+    });
+    document.getElementById('you-profile-friends-btn')?.addEventListener('click', showFriendsPanel);
+    document.getElementById('you-profile-share-btn')?.addEventListener('click', shareProfileCard);
+    const profileHost = document.getElementById('you-profile-section-content');
+    if (__cpYouProfileSectionV2 === 'posts') __cpYouLoadPostsV2(profileHost);
+    else if (__cpYouProfileSectionV2 === 'achievements') __cpYouLoadAchievementsV2(profileHost);
+    else __cpYouLoadActivityV2(profileHost);
+    loadStats();
+    loadClanStat();
+    if (window.lucide) window.lucide.createIcons();
+    if (typeof window.__codmpandaRefreshNamesAndAvatars === 'function') setTimeout(window.__codmpandaRefreshNamesAndAvatars, 80);
+    return;
+  }
+
+  content.innerHTML = '<div class="px-4 pt-4 pb-24" id="you-settings-page">' +
+    '<button type="button" id="you-settings-back-btn" class="btn-press mb-4 inline-flex items-center gap-2 text-xs font-bold text-gray-400"><i data-lucide="arrow-left" class="w-4 h-4"></i> Back to YOU</button>' +
+    '<div class="text-xl font-black mb-1">Settings</div><p class="text-xs text-gray-500 mb-4">Manage your account, preferences and support options.</p>' +
+    '<section class="bg-card border border-border rounded-2xl overflow-hidden mb-4"><div class="px-4 py-3 border-b border-border"><div class="text-xs font-bold text-gray-400 uppercase">Settings</div></div><div class="divide-y divide-border">' +
+      settingsRow('advanced-settings', 'settings-2', 'Advanced Settings', 'Appearance, privacy and content') +
+      settingsRow('edit-profile', 'user', 'Edit Profile', 'Update IGN, bio, rank') +
+      settingsRow('my-referral', 'gift', 'My Referral', 'Share and earn invites') +
+      settingsRow('notifications', 'bell', 'Notifications', 'LFG, leaks, etc.') +
+      settingsRow('defaults', 'sliders', 'Default Preferences', 'Region, mode, mic') +
+      settingsRow('signin-methods', 'shield-check', 'Sign-in Methods', 'Link email/password and Google') +
+      settingsRow('clear-cache', 'trash-2', 'Clear Cache', 'Free up space') +
+      settingsRow('clear-camos', 'refresh-cw', 'Reset Camo Data', 'Delete your progress', true) +
+      settingsRow('export-data', 'download', 'Export My Data', 'Download JSON') +
+    '</div></section>' +
+    '<section class="bg-card border border-border rounded-2xl overflow-hidden mb-4"><div class="px-4 py-3 border-b border-border"><div class="text-xs font-bold text-gray-400 uppercase">Support</div></div><div class="divide-y divide-border">' +
+      settingsRow('bug-report', 'bug', 'Report a Bug', 'Help us improve') +
+      settingsRow('feature-request', 'lightbulb', 'Request Feature', 'Got an idea?') +
+      settingsRow('share-app', 'share-2', 'Share App', 'Invite your squad') +
+      settingsRow('help-faq', 'help-circle', 'Help / FAQ', 'Common questions') +
+      settingsRow('restart-tour', 'compass', 'Replay App Tour', 'See the walkthrough again') +
+    '</div></section>' +
+    (uid === ADMIN_UID ? '<section class="bg-card border border-gold/40 rounded-2xl overflow-hidden mb-4"><div class="px-4 py-3 border-b border-gold/30 bg-gold/5"><div class="text-xs font-bold text-gold uppercase flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4"></i> Admin Panel</div></div><div class="divide-y divide-border">' +
+      settingsRow('admin-post-leak', 'zap', 'Post Leak', 'Push intel to feed') +
+      settingsRow('admin-reports', 'flag', 'Manage Reports', 'Review user reports') +
+      settingsRow('admin-users', 'users', 'List Users', 'View all users') +
+      settingsRow('admin-submissions', 'inbox', 'Manage Submissions', 'Review community submissions') +
+      settingsRow('admin-analytics', 'bar-chart-3', 'Analytics', 'Users, revenue, activity') +
+    '</div></section>' : '') +
+    '<section class="bg-card border border-red-500/30 rounded-2xl overflow-hidden mb-4"><div class="px-4 py-3 border-b border-red-500/20"><div class="text-xs font-bold text-red-400 uppercase">Danger Zone</div></div><div class="divide-y divide-border">' +
+      settingsRow('delete-account', 'user-x', 'Delete Account', 'Permanently delete your account', true) +
+      settingsRow('logout', 'log-out', 'Sign Out', 'Sign out of CODMPanda') +
+    '</div></section>' +
+    '<div class="text-center py-5 space-y-2"><div id="install-pwa-btn" class="hidden"><button class="btn-press px-4 py-2 rounded-xl bg-primary text-xs font-bold glow-primary">📲 Install CODMPanda</button></div><div class="text-[10px] text-gray-600">Version ' + APP_VERSION + '</div><div class="flex items-center justify-center gap-3 text-[10px] text-gray-500"><button type="button" onclick="showPrivacy()">Privacy</button><span>·</span><button type="button" onclick="showTerms()">Terms</button></div></div>' +
+  '</div>';
+
+  document.getElementById('you-settings-back-btn')?.addEventListener('click', () => {
+    youSubTab = 'home';
+    cpRenderYouTabLayoutV2();
+  });
+  document.querySelectorAll('#you-settings-page .settings-row[data-action]').forEach(row => {
+    row.onclick = event => {
+      event.preventDefault();
+      handleSettingAction(row.dataset.action);
+    };
+  });
+  setupPWAInstall();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// Replace the previous YOU-tab wrapper chain with one source of truth.
+renderYouTab = cpRenderYouTabLayoutV2;
+window.renderYouTab = cpRenderYouTabLayoutV2;
