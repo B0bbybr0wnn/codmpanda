@@ -263,9 +263,9 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const home = document.createElement("section");
     home.id = "cp-you-home";
 
-    const activitySlot = document.createElement("div");
-    activitySlot.id = "cp-you-activity-card";
-    activitySlot.className = "mb-3";
+    const profileCardSlot = document.createElement("div");
+    profileCardSlot.id = "cp-you-profile-card";
+    profileCardSlot.className = "mb-3";
 
     const themeSlot = document.createElement("div");
     themeSlot.id = "cp-you-theme-frame";
@@ -273,37 +273,29 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
 
     const menu = document.createElement("div");
     menu.id = "cp-you-home-menu";
-    menu.className = "space-y-2";
-    const profileButton = makeNavCard("👤", "Profile", "Your posts, achievements and activity", "cp-open-profile");
-    const settingsButton = makeNavCard("⚙️", "Settings", "Preferences, support and account controls", "cp-open-settings");
-    profileButton.addEventListener("click", () => {
-      setPage("profile");
-      setProfileTab("posts");
-    });
+    menu.className = "flex items-center gap-6 py-2";
+    const profileButton = document.createElement("button");
+    profileButton.type = "button";
+    profileButton.id = "cp-open-profile";
+    profileButton.className = "text-sm font-bold text-white py-2 border-b-2 border-primary";
+    profileButton.textContent = "Profile";
+    const settingsButton = document.createElement("button");
+    settingsButton.type = "button";
+    settingsButton.id = "cp-open-settings";
+    settingsButton.className = "text-sm font-bold text-gray-400 py-2 border-b-2 border-transparent";
+    settingsButton.textContent = "Settings";
+    profileButton.addEventListener("click", () => setPage("profile"));
     settingsButton.addEventListener("click", () => setPage("settings"));
     menu.append(profileButton, settingsButton);
-    home.append(activitySlot, themeSlot, menu);
+    home.append(profileCardSlot, themeSlot, menu);
 
     const profilePage = document.createElement("section");
     profilePage.id = "cp-you-profile";
     profilePage.className = "hidden";
     profilePage.appendChild(makePageHeader("Profile", "Your community page", () => setPage("home")));
 
-    const profileIdentitySlot = document.createElement("div");
-    profileIdentitySlot.id = "cp-profile-identity";
-    profilePage.appendChild(profileIdentitySlot);
-
-    const tabs = document.createElement("div");
-    tabs.className = "grid grid-cols-3 gap-2 mb-3";
-    tabs.innerHTML = `
-      <button type="button" data-cp-profile-tab="posts" class="btn-press rounded-xl border border-primary bg-primary text-white text-xs font-bold py-3">Posts</button>
-      <button type="button" data-cp-profile-tab="achievements" class="btn-press rounded-xl border border-border bg-cardAlt text-gray-400 text-xs font-bold py-3">Achievements</button>
-      <button type="button" data-cp-profile-tab="activity" class="btn-press rounded-xl border border-border bg-cardAlt text-gray-400 text-xs font-bold py-3">Activity</button>
-    `;
-    tabs.querySelectorAll("[data-cp-profile-tab]").forEach(button => {
-      button.addEventListener("click", () => setProfileTab(button.dataset.cpProfileTab));
-    });
-    profilePage.appendChild(tabs);
+    // Profile content is one continuous page: stats, posts, achievements and activity.
+    // Only the main Profile / Settings switch lives on the YOU landing page.
 
     const postsPane = document.createElement("div");
     postsPane.id = "cp-profile-pane-posts";
@@ -312,12 +304,12 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const achievementsPane = document.createElement("div");
     achievementsPane.id = "cp-profile-pane-achievements";
     achievementsPane.dataset.cpProfilePane = "achievements";
-    achievementsPane.className = "hidden space-y-3";
+    achievementsPane.className = "space-y-3 mt-4";
 
     const activityPane = document.createElement("div");
     activityPane.id = "cp-profile-pane-activity";
     activityPane.dataset.cpProfilePane = "activity";
-    activityPane.className = "hidden space-y-3";
+    activityPane.className = "space-y-3 mt-4";
 
     profilePage.append(postsPane, achievementsPane, activityPane);
 
@@ -331,9 +323,9 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     settingsPage.appendChild(settingsBody);
 
     // Move, rather than clone, existing controls so their click handlers continue to work.
-    if (activity) activitySlot.appendChild(activity);
+    if (activity) activityPane.appendChild(activity);
     else {
-      activitySlot.innerHTML = '<div class="bg-card border border-border rounded-2xl p-4"><div class="text-sm font-black mb-1">Your Activity</div><p class="text-xs text-gray-500">Your CODMPanda activity summary will appear here.</p></div>';
+      activityPane.innerHTML = '<div class="bg-card border border-border rounded-2xl p-4"><div class="text-sm font-black mb-1">Your Activity</div><p class="text-xs text-gray-500">Your CODMPanda activity summary will appear here.</p></div>';
     }
 
     if (themeFrames) themeSlot.appendChild(themeFrames);
@@ -348,26 +340,21 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
       document.getElementById("open-frame-btn")?.addEventListener("click", () => window.openAvatarFramePicker?.());
     }
 
-    if (profileCard) profileIdentitySlot.appendChild(profileCard);
+    if (profileCard) profileCardSlot.appendChild(profileCard);
     else {
-      profileIdentitySlot.innerHTML = profileHeaderHTML();
+      profileCardSlot.innerHTML = profileHeaderHTML();
       document.getElementById("cp-profile-edit-fallback")?.addEventListener("click", () => {
         settingsBody.querySelector('[data-action="edit-profile"]')?.click();
       });
     }
 
+    if (statsGrid) profilePage.insertBefore(statsGrid, postsPane);
     if (achievements) achievementsPane.appendChild(achievements);
     else achievementsPane.appendChild(createFallbackAchievements());
     if (tournamentBadges) achievementsPane.appendChild(tournamentBadges);
-    if (contributor) achievementsPane.appendChild(contributor);
-    if (statsGrid) activityPane.appendChild(statsGrid);
 
-    const activityCopy = activity?.cloneNode(true);
-    if (activityCopy) {
-      activityCopy.id = "cp-profile-activity-copy";
-      activityPane.appendChild(activityCopy);
-    }
-
+    // Contributor is an account/settings option, not a community achievement.
+    if (contributor && !settingsNodes.includes(contributor)) settingsNodes.push(contributor);
     settingsNodes.forEach(node => settingsBody.appendChild(node));
 
     // Keep any remaining legacy YOU-tab items under Settings instead of showing them on the landing page.
