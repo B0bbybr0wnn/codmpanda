@@ -28476,3 +28476,311 @@ function cpRenderYouTabLayoutV2() {
 // Replace the previous YOU-tab wrapper chain with one source of truth.
 renderYouTab = cpRenderYouTabLayoutV2;
 window.renderYouTab = cpRenderYouTabLayoutV2;
+
+
+/* Full-screen CODMPanda public player profiles. Intentionally appended after the YOU-tab implementation. */
+(function cpPublicProfileFullPageV1() {
+  if (window.__cpPublicProfileFullPageV1) return;
+  window.__cpPublicProfileFullPageV1 = true;
+  const postMap = new Map();
+  window.__cpPublicProfilePostMap = postMap;
+  let loadToken = 0;
+
+  function millis(v) {
+    if (!v) return 0;
+    if (typeof v.toMillis === 'function') return v.toMillis();
+    if (typeof v.seconds === 'number') return v.seconds * 1000;
+    if (typeof v._seconds === 'number') return v._seconds * 1000;
+    if (v instanceof Date) return v.getTime();
+    const n = Date.parse(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function themeFor(u) {
+    const t = typeof PROFILE_THEMES !== 'undefined' ? PROFILE_THEMES : {};
+    return t[u.themeStyle || 'dark'] || t.dark || {name:'Operator Black',gradient:'#111',border:'#242424',glow:'none'};
+  }
+  function frameFor(u) {
+    const values = [u.avatarFrame,u.equippedAvatarFrame,u.equippedFrame,u.selectedFrame,u.frameId,u.frame,u.profileFrame];
+    for (const value of values) {
+      const key = window.CODMNormalizeFrameKey ? window.CODMNormalizeFrameKey(value) : String(value || 'none').toLowerCase().replace(/[\s-]+/g,'_');
+      if (key && key !== 'none') return key;
+    }
+    return 'none';
+  }
+  function frameName(u) {
+    const key = frameFor(u);
+    return window.CODM_WAR_ARTIFACT_FRAMES?.[key]?.name ||
+      (typeof AVATAR_FRAMES !== 'undefined' ? AVATAR_FRAMES[key]?.name : '') ||
+      (key === 'none' ? 'No frame equipped' : key.replace(/_/g,' '));
+  }
+  function avatarHTML(u,size) {
+    const normalized = Object.assign({},u,{ign:u.ign||u.displayName||u.username||'Operator',avatar:u.avatar||u.photoURL||u.photoUrl||''});
+    if (typeof window.CODMRenderFramedAvatar === 'function') return window.CODMRenderFramedAvatar(normalized,size);
+    const inner = normalized.avatar ? '<img alt="" src="'+esc(normalized.avatar)+'" style="width:100%;height:100%;object-fit:cover">' : esc(getInitials(normalized.ign));
+    return '<div style="width:'+size+'px;height:'+size+'px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#202024;font-weight:900;">'+inner+'</div>';
+  }
+  function styles() {
+    if (document.getElementById('cp-public-profile-page-css')) return;
+    const s = document.createElement('style'); s.id='cp-public-profile-page-css';
+    s.textContent = [
+      '.cp-pp-page{font-family:inherit;color:#f5f5f5;background:#050505}.cp-pp-page *{box-sizing:border-box}',
+      '.cp-pp-page .cp-pp-scroll{min-height:0;flex:1 1 auto;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}',
+      '.cp-pp-page .cp-pp-body{width:100%;max-width:760px;margin:0 auto;padding:16px 16px calc(28px + env(safe-area-inset-bottom,0px))}',
+      '.cp-pp-page .cp-pp-tabs{position:sticky;top:0;z-index:5;display:flex;gap:7px;padding:10px 0;background:rgba(5,5,5,.97);backdrop-filter:blur(12px)}',
+      '.cp-pp-page .cp-pp-tab{flex:1;min-width:0;padding:11px 6px;border:1px solid #252525;border-radius:13px;background:#101010;color:#9ca3af;font-size:11px;font-weight:800;white-space:nowrap}',
+      '.cp-pp-page .cp-pp-tab[aria-selected=true]{background:rgba(255,107,0,.13);border-color:rgba(255,107,0,.65);color:#ff873c}',
+      '.cp-pp-page .cp-pp-stat{border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.23);border-radius:13px;padding:10px 5px;text-align:center;min-width:0}',
+      '.cp-pp-page .cp-pp-stat strong{display:block;font-size:16px;font-weight:900;line-height:1.1}.cp-pp-page .cp-pp-stat span{display:block;margin-top:5px;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#858585}',
+      '.cp-pp-page .cp-pp-fact{padding:12px;border:1px solid #242424;border-radius:13px;background:#101010;min-width:0}.cp-pp-page .cp-pp-fact small{display:block;font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#737373;margin-bottom:5px}.cp-pp-page .cp-pp-fact strong{display:block;font-size:12px;line-height:1.45;overflow-wrap:anywhere}',
+      '.cp-pp-page .cp-pp-name{overflow-wrap:anywhere;cursor:pointer}.cp-pp-page .cp-pp-avatar{display:flex;align-items:center;justify-content:center;flex:0 0 auto;overflow:visible}',
+      '.cp-pp-page .cp-pp-empty{padding:30px 18px;text-align:center;border:1px solid #262626;border-radius:18px;background:#0d0d0d}',
+      '.cp-pp-page .cp-pp-spinner{width:26px;height:26px;border:3px solid #282828;border-top-color:#ff6b00;border-radius:50%;margin:0 auto;animation:cpPPSpin .8s linear infinite}@keyframes cpPPSpin{to{transform:rotate(360deg)}}'
+    ].join('');
+    document.head.appendChild(s);
+  }
+  function rootNode() {
+    let r = document.getElementById('cp-public-profile-page');
+    if (r) return r;
+    styles();
+    r = document.createElement('div');
+    r.id='cp-public-profile-page'; r.className='cp-pp-page';
+    r.style.cssText='position:fixed;inset:0;z-index:8000;display:flex;flex-direction:column;overflow:hidden;background:#050505;color:#f5f5f5;';
+    r.innerHTML =
+      '<header style="flex:0 0 auto;padding:calc(env(safe-area-inset-top,0px) + 8px) 14px 12px;border-bottom:1px solid #202020;background:rgba(5,5,5,.98);display:flex;align-items:center;gap:12px;">' +
+        '<button type="button" id="cp-pp-back" aria-label="Back" class="btn-press" style="width:42px;height:42px;flex:0 0 42px;border:1px solid #292929;border-radius:14px;background:#111;display:flex;align-items:center;justify-content:center;color:#fff;font-size:26px;line-height:1;">&#8249;</button>' +
+        '<div style="flex:1;min-width:0"><div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#ff7a2e">PLAYER PROFILE</div><div id="cp-pp-top-name" style="font-size:14px;font-weight:900;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Loading operator…</div></div>' +
+        '<div style="font-size:9px;font-weight:900;letter-spacing:.1em;color:#666;border:1px solid #242424;background:#0e0e0e;padding:7px 8px;border-radius:9px">CODM</div>' +
+      '</header><main class="cp-pp-scroll"><div id="cp-pp-body" class="cp-pp-body"></div></main>';
+    r.__cpPPStack=[]; r.__cpPPData=null; r.__cpPPActiveTab='posts';
+    r.addEventListener('click',handleRootClick);
+    r.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();goBack()} if(e.key==='Enter'&&e.target?.classList?.contains('mention-text')){e.preventDefault();handleMention(e.target)}});
+    document.body.appendChild(r);
+    try { history.pushState(Object.assign({},history.state||{},{cpPublicProfilePage:true}),'',location.href); r.__cpPPHistoryPushed=true; } catch (_) {}
+    return r;
+  }
+  function closeRoot() {
+    const r=document.getElementById('cp-public-profile-page'); if(!r)return;
+    const shouldBack=!!(r.__cpPPHistoryPushed&&history.state?.cpPublicProfilePage); r.remove();
+    if(shouldBack)try{history.back()}catch(_){}
+  }
+  function goBack() {
+    const r=document.getElementById('cp-public-profile-page'); if(!r)return;
+    if(r.__cpPPStack?.length){showProfile(r.__cpPPStack.pop(),false);return}
+    closeRoot();
+  }
+  async function canView(u,uid) {
+    if(uid===State.user?.uid||u.privateProfile!==true)return true;
+    try {const snap=await getDoc(doc(db,'users',State.user.uid));return (snap.exists()?snap.data().friends||[]:[]).includes(uid)} catch(_){return false}
+  }
+  function loading(r,text) {
+    const body=r.querySelector('#cp-pp-body');
+    if(body)body.innerHTML='<div class="cp-pp-empty"><div class="cp-pp-spinner"></div><p class="text-xs text-gray-500 mt-3">'+esc(text||'Loading player profile…')+'</p></div>';
+  }
+  function renderPage(r,data) {
+    r.__cpPPData=data; r.__cpPPActiveTab='posts';
+    const u=data.user, uid=data.uid, body=r.querySelector('#cp-pp-body');
+    if(!body)return;
+    r.querySelector('#cp-pp-top-name').textContent=u.ign||u.displayName||'Player Profile';
+    if(data.restricted){
+      body.innerHTML='<div class="cp-pp-empty mt-3"><div style="width:64px;height:64px;margin:0 auto 14px;border-radius:20px;border:1px solid #55341f;background:rgba(255,107,0,.1);display:flex;align-items:center;justify-content:center;font-size:30px">🔒</div><div class="text-base font-black mb-2">Private Profile</div><p class="text-xs text-gray-400 leading-relaxed">'+esc(u.ign||'This player')+' keeps their profile private. Only accepted friends can view their posts and stats.</p></div>';
+      return;
+    }
+    const theme=themeFor(u), countFriends=Array.isArray(u.friends)?u.friends.length:0, wins=Number(u.tournamentWins)||0;
+    const verified=typeof renderVerifiedBadge==='function'?renderVerifiedBadge(u):'';
+    const bio=u.bio?'<p class="text-xs text-gray-300 leading-relaxed mt-3 whitespace-pre-wrap break-words">'+esc(u.bio)+'</p>':'<p class="text-xs text-gray-500 mt-3">No bio added yet.</p>';
+    body.innerHTML =
+      '<section class="rounded-2xl border p-4 mb-1" style="background:'+theme.gradient+';border-color:'+theme.border+';box-shadow:'+theme.glow+'">' +
+        '<div class="flex items-center gap-4"><div data-uid="'+esc(uid)+'" data-profile-link="true" class="cp-pp-avatar" style="width:78px;height:78px">'+avatarHTML(u,78)+'</div>' +
+          '<div class="flex-1 min-w-0"><div class="flex items-center gap-1.5 flex-wrap"><span data-uid="'+esc(uid)+'" data-profile-link="true" class="user-name-link cp-pp-name text-2xl font-black">'+esc(u.ign||u.displayName||'Unknown')+'</span>'+verified+'</div>' +
+          '<div class="text-xs text-gray-400 mt-1">'+esc(u.rank||'Rookie')+' <span class="text-gray-600">·</span> '+esc(u.region||'Global')+'</div>' +
+          '<div class="text-[9px] text-gray-500 mt-2 leading-relaxed">✦ '+esc(theme.name||'Operator Black')+' <span class="text-gray-700">·</span> '+esc(frameName(u))+'</div></div></div>' +
+        bio + (u.favGun?'<div class="text-[11px] mt-3 text-gray-400">🎯 Favourite weapon <strong class="text-gray-200">'+esc(u.favGun)+'</strong></div>':'') +
+        '<div class="grid grid-cols-3 gap-2 mt-4"><div class="cp-pp-stat"><strong style="color:#ff7a2e">'+(data.posts||[]).length+'</strong><span>Posts</span></div><div class="cp-pp-stat"><strong style="color:#f2ca62">'+countFriends+'</strong><span>Friends</span></div><div class="cp-pp-stat"><strong style="color:#78dba5">'+wins+'</strong><span>Tournament wins</span></div></div>' +
+      '</section><nav class="cp-pp-tabs" aria-label="Player profile sections"><button type="button" class="cp-pp-tab" data-cp-pp-tab="posts" role="tab" aria-selected="true">Posts</button><button type="button" class="cp-pp-tab" data-cp-pp-tab="achievements" role="tab" aria-selected="false">Achievements</button><button type="button" class="cp-pp-tab" data-cp-pp-tab="about" role="tab" aria-selected="false">About</button></nav>' +
+      '<section id="cp-pp-tab-content" aria-live="polite" style="padding-top:4px"></section>';
+    renderTab(r,'posts');
+    if(window.lucide)window.lucide.createIcons();
+    if(typeof window.__codmpandaRefreshNamesAndAvatars==='function')setTimeout(window.__codmpandaRefreshNamesAndAvatars,100);
+  }
+  function tabButtons(r,tab) {
+    r.querySelectorAll('[data-cp-pp-tab]').forEach(btn=>btn.setAttribute('aria-selected',btn.dataset.cpPpTab===tab?'true':'false'));
+  }
+  async function countsFor(data) {
+    if(data.counts)return data.counts;
+    async function count(name){try{return (await getDocs(query(collection(db,name),where('uid','==',data.uid),limit(200)))).size||0}catch(_){return 0}}
+    const vals=await Promise.all([count('vaults'),count('clips'),count('lobbies')]);
+    data.counts={vaults:vals[0],clips:vals[1],lobbies:vals[2],posts:data.posts.length};
+    return data.counts;
+  }
+  function badgeLabel(value) {
+    const defs={first_leak:['🥉','First Leak'],rising:['🥈','Rising Contributor'],legend:['🥇','Legend'],elite:['💎','Elite'],founder:['🏅','Founder'],verified:['🔵','Verified Creator']};
+    return defs[value]||['⭐',String(value||'Community Badge').replace(/[_-]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase())];
+  }
+  async function renderTab(r,tab) {
+    const data=r.__cpPPData;
+    if(!data||data.restricted)return;
+    r.__cpPPActiveTab=tab; tabButtons(r,tab);
+    const host=r.querySelector('#cp-pp-tab-content'); if(!host)return;
+    if(tab==='posts'){
+      if(!data.posts.length){host.innerHTML='<div class="cp-pp-empty mt-2"><div style="font-size:34px;margin-bottom:8px">📝</div><div class="text-sm font-black">No posts yet</div><p class="text-xs text-gray-500 mt-2">When this player shares something with the community, it will appear here.</p></div>';return}
+      host.innerHTML=data.posts.map(post=>{try{return renderHomePostCard(post)}catch(err){console.warn('[CODMPanda] Profile post render failed',err);return '<article class="bg-card border border-border rounded-2xl p-4 mb-3"><p class="text-sm whitespace-pre-wrap break-words">'+esc(post.text||post.caption||'Community post')+'</p><p class="text-[10px] text-gray-500 mt-2">'+esc(timeAgo(post.createdAt))+'</p></article>'}}).join('');
+      if(window.lucide)window.lucide.createIcons();
+      if(typeof window.__codmpandaRefreshNamesAndAvatars==='function')setTimeout(window.__codmpandaRefreshNamesAndAvatars,100);
+      return;
+    }
+    if(tab==='achievements'){
+      host.innerHTML='<div class="cp-pp-empty mt-2"><div class="cp-pp-spinner"></div><p class="text-xs text-gray-500 mt-3">Checking community achievements…</p></div>';
+      const c=await countsFor(data);
+      if(!r.isConnected||r.__cpPPData!==data||r.__cpPPActiveTab!=='achievements')return;
+      const u=data.user, approved=Number(u.approvedCount)||0, wins=Number(u.tournamentWins)||0;
+      const rows=[['🔧','Loadout Creator','Publish a build',c.vaults>0,c.vaults],['🎬','Clip Creator','Share a CODM clip',c.clips>0,c.clips],['💬','Conversation Starter','Publish a community post',c.posts>0,c.posts],['🎮','Squad Organizer','Post an LFG lobby',c.lobbies>0,c.lobbies],['✅','Approved Contributor','Have a submission approved',approved>0,approved],['🏆','Tournament Winner','Record a tournament win',wins>0,wins]];
+      const badges=Array.isArray(u.badges)?u.badges:[];
+      host.innerHTML='<section class="bg-card border border-border rounded-2xl p-4 mt-2"><div class="flex items-center justify-between mb-3"><div><h2 class="font-black">Community Achievements</h2><p class="text-[10px] text-gray-500 mt-1">Milestones from real CODMPanda activity</p></div><span class="text-2xl">🏅</span></div><div class="grid grid-cols-2 gap-2">'+rows.map(x=>'<div class="rounded-xl border '+(x[3]?'border-primary/30 bg-primary/5':'border-border bg-cardAlt opacity-70')+' p-3"><div class="flex items-center gap-2 mb-1"><span class="text-lg">'+x[0]+'</span><span class="text-xs font-bold">'+x[1]+'</span></div><p class="text-[10px] text-gray-500">'+x[2]+'</p><div class="text-[10px] mt-2 '+(x[3]?'text-green-400':'text-gray-600')+'">'+(x[3]?'UNLOCKED'+(x[4]>1?' · '+x[4]:''):'NOT YET')+'</div></div>').join('')+'</div></section>'+
+        (badges.length?'<section class="bg-card border border-border rounded-2xl p-4 mt-3"><h3 class="text-xs font-black uppercase tracking-wider text-gray-400 mb-3">Earned Profile Badges</h3><div class="flex flex-wrap gap-2">'+badges.map(v=>{const b=badgeLabel(v);return '<div class="flex items-center gap-2 rounded-full border border-border bg-cardAlt px-3 py-2"><span>'+b[0]+'</span><span class="text-[10px] font-bold">'+esc(b[1])+'</span></div>'}).join('')+'</div></section>':'')+
+        '<p class="text-[10px] text-gray-600 leading-relaxed mt-3 px-1">These are CODMPanda community milestones, not CODM in-game XP or currency.</p>';
+      return;
+    }
+    if(tab==='about'){
+      const u=data.user, joined=u.joinedAt||u.createdAt||u.created||null, joinedMs=millis(joined);
+      const joinedText=joinedMs?new Date(joinedMs).toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'}):'Not available';
+      const facts=[['Rank',u.rank||'Rookie'],['Region',u.region||'Global'],['Favourite weapon',u.favGun||'Not set'],['Profile theme',themeFor(u).name||'Operator Black'],['Avatar frame',frameName(u)],['Joined CODMPanda',joinedText]];
+      host.innerHTML=(u.bio?'<section class="bg-card border border-border rounded-2xl p-4 mt-2 mb-3"><div class="text-[10px] font-black uppercase tracking-wider text-gray-500 mb-2">About this player</div><p class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap break-words">'+esc(u.bio)+'</p></section>':'')+
+        '<section class="bg-card border border-border rounded-2xl p-4 mt-2"><div class="flex items-center justify-between mb-3"><div><h2 class="font-black">Operator Details</h2><p class="text-[10px] text-gray-500 mt-1">Player identity and profile cosmetics</p></div><span class="text-2xl">🎮</span></div><div class="grid grid-cols-2 gap-2">'+facts.map(x=>'<div class="cp-pp-fact"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></div>').join('')+'</div></section>';
+    }
+  }
+  async function handleMention(el) {
+    const name=String(el?.dataset?.mentionName||el?.textContent||'').replace(/^@/,'').trim();
+    if(!name)return;
+    const uid=el.dataset.mentionUid||window.__cpMentionUidByName?.[name.toLowerCase()];
+    if(uid){showProfile(uid,true);return}
+    try{const found=await getDocs(query(collection(db,'users'),where('ign','==',name),limit(5)));if(found.docs?.length)showProfile(found.docs[0].id,true);else toast('Could not find @'+name+' on CODMPanda','info')}catch(_){toast('Could not open that mention yet','info')}
+  }
+  function handleRootClick(event) {
+    const r=document.getElementById('cp-public-profile-page');
+    const target=event.target instanceof Element?event.target:event.target?.parentElement;
+    if(!r||!target)return;
+    if(target.closest('#cp-pp-back')){event.preventDefault();event.stopPropagation();goBack();return}
+    if(target.closest('[data-cp-pp-retry]')){event.preventDefault();event.stopPropagation();showProfile(r.dataset.uid,false);return}
+    const tab=target.closest('[data-cp-pp-tab]');
+    if(tab){event.preventDefault();event.stopPropagation();if(r.__cpPPData&&!r.__cpPPData.restricted)renderTab(r,tab.dataset.cpPpTab);return}
+    const mention=target.closest('.mention-text');
+    if(mention){event.preventDefault();event.stopPropagation();handleMention(mention);return}
+    if(target.closest('.post-like-btn')){event.preventDefault();event.stopPropagation();toggleProfileLike(target.closest('.post-like-btn'));return}
+    const comments=target.closest('.post-comments-btn');
+    if(comments){event.preventDefault();event.stopPropagation();openPostComments(comments.dataset.id);return}
+    const share=target.closest('.post-share-btn');
+    if(share){event.preventDefault();event.stopPropagation();openShareSheet({title:'CODMPanda Post',text:'Check out this post on CODMPanda!',url:location.origin+'/?post='+encodeURIComponent(share.dataset.id||'')});return}
+    const menu=target.closest('.post-menu-btn');
+    if(menu){event.preventDefault();event.stopPropagation();openPostMenu(menu.dataset.id);return}
+    const uidNode=target.closest('[data-uid]');
+    if(uidNode?.dataset.uid){event.preventDefault();event.stopPropagation();if(uidNode.dataset.uid!==r.dataset.uid)showProfile(uidNode.dataset.uid,true)}
+  }
+  async function toggleProfileLike(button) {
+    const id=String(button.dataset.id||''), post=postMap.get(id);
+    if(!post||!id)return;
+    if(!State.user){if(typeof showAuthGate==='function')showAuthGate();return}
+    State.likedItems=State.likedItems||{};State.likedItems.post=State.likedItems.post||{};
+    const was=!!State.likedItems.post[id], old=Number(post.likes)||0, next=!was;
+    State.likedItems.post[id]=next;post.likes=next?old+1:Math.max(0,old-1);
+    button.innerHTML='<i data-lucide="heart" class="w-4 h-4 '+(next?'fill-current':'')+'"></i> <span data-reaction-count="1">'+post.likes+'</span>';
+    button.classList.toggle('text-primary',next);button.classList.toggle('text-gray-400',!next);
+    if(window.lucide)window.lucide.createIcons();
+    await toggleLike('post',id,'likes');
+  }
+  const originalComments=openPostComments;
+  openPostComments=async function(postId){
+    const id=String(postId||''), post=postMap.get(id), feed=typeof homeCache!=='undefined'&&Array.isArray(homeCache.feed)?homeCache.feed:null;
+    const already=!!(feed&&feed.some(x=>x.id===id));
+    if(post&&feed&&!already)feed.push(post);
+    try{return await originalComments.apply(this,arguments)}
+    finally{if(post&&feed&&!already){const index=feed.indexOf(post);if(index>=0)feed.splice(index,1)}}
+  };
+  window.openPostComments=openPostComments;
+  const originalMenu=openPostMenu;
+  openPostMenu=function(postId){
+    const id=String(postId||''), post=postMap.get(id), feed=typeof homeCache!=='undefined'&&Array.isArray(homeCache.feed)?homeCache.feed:null;
+    const already=!!(feed&&feed.some(x=>x.id===id));
+    if(post&&feed&&!already)feed.push(post);
+    try{return originalMenu.apply(this,arguments)}
+    finally{if(post&&feed&&!already){const index=feed.indexOf(post);if(index>=0)feed.splice(index,1)}}
+  };
+  const originalSendComment=sendPostComment;
+  sendPostComment=async function(postId){
+    const post=postMap.get(String(postId||'')), result=await originalSendComment.apply(this,arguments);
+    if(post)try{
+      const snap=await getDoc(doc(db,'posts',String(postId)));
+      if(snap.exists()){
+        post.commentCount=Number(snap.data().commentCount)||0;
+        const r=document.getElementById('cp-public-profile-page');
+        r?.querySelectorAll('.post-comments-btn').forEach(btn=>{if(String(btn.dataset.id)===String(postId))btn.innerHTML='<i data-lucide="message-circle" class="w-4 h-4"></i> '+post.commentCount});
+        if(window.lucide)window.lucide.createIcons();
+      }
+    }catch(_){}
+    return result;
+  };
+  window.sendPostComment=sendPostComment;
+
+  async function showProfile(uid,recordHistory) {
+    uid=String(uid||'').trim();if(!uid)return;
+    if(!State.user){if(typeof showAuthGate==='function')showAuthGate();else toast('Sign in to view player profiles','info');return}
+    const sheet=document.getElementById('sheet-container');
+    if(sheet&&!sheet.classList.contains('hidden'))closeSheet();
+    let r=document.getElementById('cp-public-profile-page');
+    if(r&&r.dataset.uid===uid&&r.__cpPPData)return;
+    if(r&&r.dataset.uid&&r.dataset.uid!==uid&&recordHistory!==false){
+      const stack=r.__cpPPStack||(r.__cpPPStack=[]);if(stack[stack.length-1]!==r.dataset.uid)stack.push(r.dataset.uid);
+    }
+    r=rootNode();const token=++loadToken;r.dataset.uid=uid;r.__cpPPData=null;r.__cpPPActiveTab='posts';
+    r.querySelector('#cp-pp-top-name').textContent='Loading player profile…';loading(r,'Loading player profile…');
+    try{
+      const snap=await getDoc(doc(db,'users',uid));
+      if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
+      if(!snap.exists()){r.querySelector('#cp-pp-top-name').textContent='Player not found';r.querySelector('#cp-pp-body').innerHTML='<div class="cp-pp-empty mt-3"><div style="font-size:32px;margin-bottom:10px">🔎</div><div class="text-sm font-black">Player not found</div><p class="text-xs text-gray-500 mt-2">This account may no longer be available.</p></div>';return}
+      const user=Object.assign({},snap.data(),{id:uid,uid});
+      if(!await canView(user,uid)){if(token===loadToken&&r.isConnected)renderPage(r,{uid,user,posts:[],counts:null,restricted:true});return}
+      if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
+      try{if(typeof __c54LoadLikes==='function')await __c54LoadLikes()}catch(_){}
+      const snapshot=await getDocs(query(collection(db,'posts'),where('uid','==',uid),limit(100)));
+      if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
+      const posts=snapshot.docs.map(d=>{
+        const raw=d.data()||{}, post=Object.assign({},raw,{
+          id:d.id,uid:raw.uid||uid,ign:user.ign||user.displayName||raw.ign||'Unknown',
+          avatar:user.avatar||user.photoURL||user.photoUrl||raw.avatar||'',
+          avatarFrame:user.avatarFrame||user.equippedAvatarFrame||user.equippedFrame||raw.avatarFrame||'none',
+          equippedAvatarFrame:user.equippedAvatarFrame||user.avatarFrame||raw.equippedAvatarFrame||'none',
+          isPro:user.isPro===true||user.pro===true||user.subscription==='pro'||user.proStatus==='active',
+          verified:user.verified===true,likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0
+        });
+        postMap.set(String(post.id),post);return post;
+      }).sort((a,b)=>millis(b.createdAt)-millis(a.createdAt));
+      renderPage(r,{uid,user,posts,counts:null,restricted:false});
+    }catch(err){
+      if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
+      console.warn('[CODMPanda] Full-screen player profile failed',err);
+      r.querySelector('#cp-pp-top-name').textContent='Profile unavailable';
+      r.querySelector('#cp-pp-body').innerHTML='<div class="cp-pp-empty mt-3"><div style="font-size:32px;margin-bottom:10px">⚠️</div><div class="text-sm font-black">Could not load profile</div><p class="text-xs text-gray-500 mt-2">Check your connection and try again.</p><button type="button" data-cp-pp-retry class="btn-press mt-4 px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-black">Try again</button></div>';
+    }
+  }
+  function globalProfileClick(event) {
+    const target=event.target instanceof Element?event.target:event.target?.parentElement;
+    if(!target||target.closest('#cp-public-profile-page'))return;
+    const mention=target.closest('.mention-text');
+    if(mention){event.preventDefault();event.stopImmediatePropagation();handleMention(mention);return}
+    const node=target.closest('[data-uid]');if(!node||!node.dataset.uid||!State.user)return;
+    const action=target.closest('button,input,textarea,select,[role="button"]');
+    if(action&&!action.classList.contains('user-name-link')&&!action.hasAttribute('data-profile-link'))return;
+    if(node.matches('button')&&!node.classList.contains('user-name-link')&&!node.hasAttribute('data-profile-link'))return;
+    if(node.matches('a')&&!node.classList.contains('user-name-link')&&!node.hasAttribute('data-profile-link'))return;
+    if(target.closest('.post-like-btn,.post-comments-btn,.post-share-btn,.post-menu-btn,.join-btn,.report-lobby,.delete-lobby,.share-lobby,.like-clip,.hype-leak,.vault-menu-btn,.home-like-btn,.home-share-btn,.home-join-btn,.home-copy-btn,.home-view-vault-btn,.share-vault-btn,.comment-btn'))return;
+    event.preventDefault();event.stopImmediatePropagation();showProfile(node.dataset.uid,true);
+  }
+  openUserProfile=showProfile;window.openUserProfile=showProfile;
+  document.addEventListener('click',globalProfileClick,true);
+  window.addEventListener('popstate',function(){
+    const r=document.getElementById('cp-public-profile-page');if(!r)return;
+    if(r.__cpPPStack?.length){
+      showProfile(r.__cpPPStack.pop(),false).then(()=>{try{history.pushState({cpPublicProfilePage:true},'',location.href);const active=document.getElementById('cp-public-profile-page');if(active)active.__cpPPHistoryPushed=true}catch(_){}});
+    }else{r.__cpPPHistoryPushed=false;r.remove()}
+  });
+  console.log('[CODMPanda] Full-screen public profile pages ready');
+})();
