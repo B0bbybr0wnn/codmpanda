@@ -273,18 +273,21 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const excludedRoots = [profileCard, activity, themeFrames, statsGrid, achievements, tournamentBadges]
       .filter(Boolean);
     const knownSettingsRoots = [...settingsNodes, contributor].filter(Boolean);
-    const extraSettingsCards = [...content.querySelectorAll(".bg-card, .bg-gradient-to-br")]
+    const extraSettingsCandidates = [...content.querySelectorAll(".bg-card, .bg-gradient-to-br")]
       .filter(card => {
         if (excludedRoots.some(root => root === card || root.contains(card) || card.contains(root))) return false;
         if (knownSettingsRoots.some(root => root === card || root.contains(card) || card.contains(root))) return false;
         if (card.querySelector("#cp-open-profile, #cp-open-settings, [data-cp-profile-tab], #cp-you-home-menu")) return false;
         const text = (card.innerText || card.textContent || "").toLowerCase();
         const hasAction = !!card.querySelector("button, a, input, select, [role='button']");
-        return hasAction && /account|setting|support|report|bug|notification|sign out|signout|log out|logout|privacy|terms|contributor|go pro|admin|delete account|feedback|help/.test(text);
-      })
-      .filter(card => ![...card.querySelectorAll(".bg-card, .bg-gradient-to-br")].some(child =>
-        child !== card && (child.innerText || child.textContent || "").toLowerCase().match(/account|setting|support|report|bug|notification|sign out|signout|log out|logout|privacy|terms|contributor|go pro|admin|delete account|feedback|help/)
-      ));
+        return hasAction && /account|setting|support|report|bug|notification|sign out|signout|log out|logout|privacy|terms|contributor|admin|delete account|feedback|help|upgrade|pro/.test(text);
+      });
+    // Keep only the outermost matching settings cards. This preserves complete
+    // settings groups and their options instead of filtering away the parent
+    // because one of its child cards also contains a matching word.
+    const extraSettingsCards = extraSettingsCandidates.filter(card =>
+      !extraSettingsCandidates.some(other => other !== card && other.contains(card))
+    );
 
     const app = document.createElement("div");
     app.id = "cp-you-app";
@@ -430,39 +433,9 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
       .filter((node, index, list) => node && list.indexOf(node) === index)
       .forEach(node => settingsBody.appendChild(node));
 
-    // Recover the remaining legacy Settings space as well: some settings controls
-    // are rows inside a wrapper rather than standalone .bg-card elements, so the
-    // card-only collection above can miss them. Move those original nodes (not
-    // clones, so listeners remain intact), while removing profile-only content and
-    // the obsolete nested Profile/Settings navigation.
-    const legacyRemainder = [...content.childNodes];
-    legacyRemainder.forEach(node => {
-      if (node.nodeType !== Node.ELEMENT_NODE) return;
-      const el = node;
-      if (el === app || el === profileCard || el === activity || el === themeFrames ||
-          el === statsGrid || el === achievements || el === tournamentBadges ||
-          el === contributor || el === notificationCard || el === proCard ||
-          settingsNodes.includes(el) || extraSettingsCards.includes(el)) return;
-      el.querySelectorAll("#cp-open-profile, #cp-open-settings, #cp-you-home-menu, [data-cp-profile-tab], #activity-stats-card, #theme-frame-buttons, #tournament-badge-card, #cp-v4-achievements, #contributor-card-injected, #unlock-pro-btn")
-        .forEach(found => {
-          const removable = found.closest(".bg-card, .bg-gradient-to-br") || found;
-          if (removable !== el && removable.parentNode) removable.remove();
-        });
-      // Strip only the old two-button navigation wrapper, not settings rows.
-      [...el.querySelectorAll("button")].forEach(button => {
-        const label = (button.innerText || button.textContent || "").trim().toLowerCase();
-        if ((label === "profile" || label === "settings") &&
-            (button.id === "cp-open-profile" || button.id === "cp-open-settings" ||
-             button.closest("#cp-you-home-menu"))) {
-          const nav = button.closest("#cp-you-home-menu") || button.parentElement;
-          if (nav && nav !== el && nav.parentNode) nav.remove();
-        }
-      });
-      if (el.querySelector("button, a, input, select, [role='button']") &&
-          !el.querySelector("#cp-you-home-menu, [data-cp-profile-tab]")) {
-        settingsBody.appendChild(el);
-      }
-    });
+    // Do not append the legacy YOU wrapper here: it contains the old nested
+    // Profile/Settings navigation. Settings options are collected above as their
+    // original settings sections/cards, avoiding a second Settings menu.
 
     // Preserve the old theme/frame button's event listeners if it was injected already.
     // Replace the old page only after all unhandled sections have been carried forward.
