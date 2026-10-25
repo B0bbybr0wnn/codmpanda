@@ -10829,7 +10829,6 @@ async function openUserProfile(uid) {
   try {
     const snap = await getDoc(doc(db, 'users', uid));
     if (!snap.exists()) {
-      closeSheet();
       toast('User not found', 'error');
       return;
     }
@@ -11013,8 +11012,6 @@ async function openUserProfile(uid) {
     if (window.lucide) window.lucide.createIcons();
   } catch (e) {
     console.error('Profile view error:', e);
-    // Always remove the loading overlay when profile data cannot be loaded.
-    closeSheet();
     toast('Failed to load profile', 'error');
   }
 }
