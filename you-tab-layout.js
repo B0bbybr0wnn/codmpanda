@@ -264,7 +264,8 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
 
     const legacyProfileExtras = [statsGrid, achievements, tournamentBadges, contributor]
       .filter((node, index, list) => node && list.indexOf(node) === index);
-    const settingsNodes = [...settingSections, notificationCard, proCard]
+    // Pro is a home-screen promotion, not a Settings option.
+    const settingsNodes = [...settingSections, notificationCard]
       .filter((node, index, list) => node && list.indexOf(node) === index);
 
     // Collect additional real settings cards from the legacy YOU markup before
@@ -317,6 +318,12 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     settingsButton.addEventListener("click", () => setPage("settings"));
     menu.append(profileButton, settingsButton);
     home.append(profileCardSlot, themeSlot, menu);
+    // Keep the Upgrade to Pro promotion immediately below the Profile/Settings pills.
+    const proSlot = document.createElement("div");
+    proSlot.id = "cp-you-pro-promotion";
+    proSlot.className = "mt-3 mb-3";
+    if (proCard) proSlot.appendChild(proCard);
+    if (proCard) home.appendChild(proSlot);
 
     const profilePage = document.createElement("section");
     profilePage.id = "cp-you-profile";
@@ -423,9 +430,39 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
       .filter((node, index, list) => node && list.indexOf(node) === index)
       .forEach(node => settingsBody.appendChild(node));
 
-    // Do not move the old YOU-page wrapper into Settings: it contains its own
-    // legacy Profile/Settings navigation and creates a second nested menu.
-    // Keep only the actual settings sections gathered above.
+    // Recover the remaining legacy Settings space as well: some settings controls
+    // are rows inside a wrapper rather than standalone .bg-card elements, so the
+    // card-only collection above can miss them. Move those original nodes (not
+    // clones, so listeners remain intact), while removing profile-only content and
+    // the obsolete nested Profile/Settings navigation.
+    const legacyRemainder = [...content.childNodes];
+    legacyRemainder.forEach(node => {
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      const el = node;
+      if (el === app || el === profileCard || el === activity || el === themeFrames ||
+          el === statsGrid || el === achievements || el === tournamentBadges ||
+          el === contributor || el === notificationCard || el === proCard ||
+          settingsNodes.includes(el) || extraSettingsCards.includes(el)) return;
+      el.querySelectorAll("#cp-open-profile, #cp-open-settings, #cp-you-home-menu, [data-cp-profile-tab], #activity-stats-card, #theme-frame-buttons, #tournament-badge-card, #cp-v4-achievements, #contributor-card-injected, #unlock-pro-btn")
+        .forEach(found => {
+          const removable = found.closest(".bg-card, .bg-gradient-to-br") || found;
+          if (removable !== el && removable.parentNode) removable.remove();
+        });
+      // Strip only the old two-button navigation wrapper, not settings rows.
+      [...el.querySelectorAll("button")].forEach(button => {
+        const label = (button.innerText || button.textContent || "").trim().toLowerCase();
+        if ((label === "profile" || label === "settings") &&
+            (button.id === "cp-open-profile" || button.id === "cp-open-settings" ||
+             button.closest("#cp-you-home-menu"))) {
+          const nav = button.closest("#cp-you-home-menu") || button.parentElement;
+          if (nav && nav !== el && nav.parentNode) nav.remove();
+        }
+      });
+      if (el.querySelector("button, a, input, select, [role='button']") &&
+          !el.querySelector("#cp-you-home-menu, [data-cp-profile-tab]")) {
+        settingsBody.appendChild(el);
+      }
+    });
 
     // Preserve the old theme/frame button's event listeners if it was injected already.
     // Replace the old page only after all unhandled sections have been carried forward.
