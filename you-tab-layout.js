@@ -411,6 +411,14 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     settingsBody.className = "space-y-3";
     settingsPage.appendChild(settingsBody);
 
+    // Remove the redundant inner "Settings" heading only. Keep the original
+    // settings options/card contents inside the single Settings tab.
+    if (settingsRoot) {
+      const innerSettingsHeading = [...settingsRoot.querySelectorAll(".uppercase")]
+        .find(el => el.textContent.trim().toLowerCase() === "settings");
+      if (innerSettingsHeading) innerSettingsHeading.remove();
+    }
+
     // Move, rather than clone, existing controls so their click handlers continue to work.
     if (activity) activityPane.appendChild(activity);
     else {
