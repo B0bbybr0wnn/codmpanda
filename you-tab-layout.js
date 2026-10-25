@@ -398,32 +398,9 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     activityPane.dataset.cpProfilePane = "activity";
     activityPane.className = "hidden space-y-3 mt-4";
 
-    const profileDetails = document.createElement("div");
-    profileDetails.id = "cp-you-profile-details";
-    profileDetails.className = "mb-4";
-    if (profileCard) {
-      // Show the real profile card on both the YOU landing screen and Profile,
-      // preserving its avatar frame, badges, and original appearance.
-      const profileCardCopy = profileCard.cloneNode(true);
-      profileCardCopy.querySelectorAll("[id]").forEach(el => el.removeAttribute("id"));
-      profileCardCopy.querySelectorAll("button").forEach(button => {
-        if (/edit profile/i.test(button.textContent || "")) {
-          button.addEventListener("click", () => editButton?.click());
-        }
-      });
-      profileDetails.appendChild(profileCardCopy);
-    } else {
-      profileDetails.innerHTML = profileHeaderHTML();
-      const profileEditButton = profileDetails.querySelector("#cp-profile-edit-fallback");
-      if (profileEditButton) {
-        profileEditButton.id = "cp-profile-edit-on-profile";
-        profileEditButton.addEventListener("click", () => {
-          document.querySelector('#cp-you-settings [data-action="edit-profile"]')?.click();
-        });
-      }
-    }
-
-    profilePage.append(profileDetails, profileTabs, postsPane, achievementsPane, activityPane);
+    // The original profile card stays at the top of the YOU screen only.
+    // Do not clone or recreate it inside the Profile panel.
+    profilePage.append(profileTabs, postsPane, achievementsPane, activityPane);
 
     const settingsPage = document.createElement("section");
     settingsPage.id = "cp-you-settings";
