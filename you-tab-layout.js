@@ -368,19 +368,8 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     if (contributor && !settingsNodes.includes(contributor)) settingsNodes.push(contributor);
     settingsNodes.forEach(node => settingsBody.appendChild(node));
 
-    // Keep any remaining legacy YOU-tab items under Settings instead of showing them on the landing page.
-    const leftovers = [...content.childNodes].filter(node => {
-      if (node.nodeType === Node.TEXT_NODE) return !!node.textContent.trim();
-      return node !== app && node.parentNode === content;
-    });
-    if (leftovers.length) {
-      const legacy = document.createElement("div");
-      legacy.id = "cp-you-legacy-settings";
-      legacy.className = "space-y-3";
-      legacy.innerHTML = '<div class="text-xs font-bold text-gray-400 uppercase px-1 pt-2">More settings</div>';
-      leftovers.forEach(node => legacy.appendChild(node));
-      settingsBody.appendChild(legacy);
-    }
+    // Do not append the old full YOU-tab DOM as leftovers: that would recreate
+    // duplicate Profile/Settings controls inside the new screens.
 
     // Preserve the old theme/frame button's event listeners if it was injected already.
     // Then replace the original long YOU page with the 3 clean destinations.
