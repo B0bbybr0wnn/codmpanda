@@ -148,12 +148,14 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     return header;
   }
 
+  // The profile/settings switcher changes only the content panel. The YOU
+  // header (profile card, Themes/Avatar Frame buttons, and switcher) stays put.
   function setPage(which) {
     const home = document.getElementById("cp-you-home");
     const profilePage = document.getElementById("cp-you-profile");
     const settingsPage = document.getElementById("cp-you-settings");
     if (!home || !profilePage || !settingsPage) return;
-    home.classList.toggle("hidden", which !== "home");
+    home.classList.remove("hidden");
     profilePage.classList.toggle("hidden", which !== "profile");
     settingsPage.classList.toggle("hidden", which !== "settings");
     const profileButton = document.getElementById("cp-open-profile");
@@ -163,11 +165,6 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
         (which !== "settings" ? "bg-primary text-white" : "text-gray-400");
       settingsButton.className = "flex-1 text-sm font-bold rounded-lg px-4 py-2.5 transition " +
         (which === "settings" ? "bg-primary text-white" : "text-gray-400");
-    }
-    if (which === "home") {
-      activeProfileTab = "posts";
-      const activity = document.getElementById("cp-you-activity-card");
-      if (activity && activity.firstElementChild) activity.firstElementChild.scrollTop = 0;
     }
     const content = contentEl();
     if (content) content.scrollTop = 0;
@@ -310,6 +307,9 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const knownSettingsRoots = [...settingsNodes, settingsRoot, contributor, proCard].filter(Boolean);
     const extraSettingsCandidates = [...content.querySelectorAll(".bg-card, .bg-gradient-to-br")]
       .filter(card => {
+        // The original tablist belongs to the legacy YOU wrapper, never to Settings.
+        if (card.matches('[data-you-subtab], [role="tablist"][aria-label="You sections"]') ||
+            card.querySelector('[data-you-subtab], [role="tablist"][aria-label="You sections"]')) return false;
         if (excludedRoots.some(root => root === card || root.contains(card) || card.contains(root))) return false;
         // Never classify the Upgrade to Pro promotion (or its wrapper) as a setting.
         if (proCard && (card === proCard || card.contains(proCard) || proCard.contains(card))) return false;
@@ -359,17 +359,13 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     settingsButton.addEventListener("click", () => setPage("settings"));
     menu.append(profileButton, settingsButton);
     home.append(profileCardSlot, themeSlot, menu);
-    // Keep the Upgrade to Pro promotion immediately below the Profile/Settings pills.
-    const proSlot = document.createElement("div");
-    proSlot.id = "cp-you-pro-promotion";
-    proSlot.className = "mt-3 mb-3";
-    if (proCard) proSlot.appendChild(proCard);
-    if (proCard) home.appendChild(proSlot);
+    // Keep the Upgrade to Pro promotion at the bottom of the YOU tab,
+    // outside the settings content. It is appended after both tab panels.
 
     const profilePage = document.createElement("section");
     profilePage.id = "cp-you-profile";
     profilePage.className = "hidden";
-    profilePage.appendChild(makePageHeader("Profile", "Your community page", () => setPage("home")));
+
 
     // These are profile sub-tabs, shown only after opening the Profile screen.
     const profileTabs = document.createElement("div");
@@ -428,7 +424,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const settingsPage = document.createElement("section");
     settingsPage.id = "cp-you-settings";
     settingsPage.className = "hidden";
-    settingsPage.appendChild(makePageHeader("Settings", "Manage your account and app preferences", () => setPage("home")));
+
     const settingsBody = document.createElement("div");
     settingsBody.id = "cp-you-settings-body";
     settingsBody.className = "space-y-3";
@@ -467,18 +463,18 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
 
     // Contributor is an account/settings option, not a community achievement.
     if (contributor && !settingsNodes.includes(contributor)) settingsNodes.push(contributor);
-    // Show the original Settings controls directly under the page title, without
-    // nesting a second card titled "Settings" inside the Settings page.
-    if (settingsRoot) {
-      const legacySettingsHeading = [...settingsRoot.querySelectorAll(".uppercase")]
-        .find(el => el.textContent.trim().toLowerCase() === "settings");
-      if (legacySettingsHeading) legacySettingsHeading.remove();
-      settingsRoot.classList.remove("bg-card", "border", "border-border", "rounded-2xl", "p-4", "mb-3");
-      settingsBody.appendChild(settingsRoot);
-    }
-
-    [...settingsNodes, ...extraSettingsCards]
-      .filter((node, index, list) => node && list.indexOf(node) === index && node !== settingsRoot && node !== proCard)
+    // Put the notification toggle first, followed by the original dark Settings
+    // card and the existing Support/Admin/Danger Zone sections. Keep their
+    // original markup and event handlers intact.
+    const orderedSettingsNodes = [
+      notificationCard,
+      settingsRoot,
+      ...settingSections,
+      contributor,
+      ...extraSettingsCards
+    ];
+    orderedSettingsNodes
+      .filter((node, index, list) => node && list.indexOf(node) === index && node !== proCard)
       .forEach(node => settingsBody.appendChild(node));
 
     // Recover settings controls that are rendered as rows or plain wrappers,
@@ -501,8 +497,8 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
       root !== app &&
       !alreadyMoved.has(root) &&
       ![...alreadyMoved].some(moved => moved && root.contains(moved)) &&
-      // Never re-append the original YOU page wrapper: it contains the old
-      // Profile/Settings tabs and the legacy Settings card, causing nesting.
+      // Never re-append the original YOU tablist or any wrapper containing it.
+      !root.matches('[data-you-subtab], [role="tablist"][aria-label="You sections"]') &&
       !root.querySelector('[data-you-subtab], [role="tablist"][aria-label="You sections"]')
     );
     legacyRoots.forEach(root => {
@@ -534,10 +530,14 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     // Preserve the old theme/frame button's event listeners if it was injected already.
     // Replace the old page only after all unhandled sections have been carried forward.
     content.replaceChildren(app);
-    app.append(home, profilePage, settingsPage);
+    // One page: the header remains visible while Profile/Settings swap the
+    // single content area directly below the switcher.
+    home.append(profilePage, settingsPage);
+    if (proCard) home.appendChild(proSlot);
+    app.append(home);
 
     if (window.lucide) window.lucide.createIcons();
-    setPage("home");
+    setPage("profile");
     setProfileTab("posts");
   }
 
