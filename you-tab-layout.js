@@ -494,11 +494,16 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
       "#activity-stats-card", "#theme-frame-buttons", "#tournament-badge-card",
       "#cp-v4-achievements", "#contributor-card-injected", "#unlock-pro-btn",
       "#edit-profile-btn", "#cp-open-profile", "#cp-open-settings",
-      "#cp-you-home-menu", "[data-cp-profile-tab]"
+      "#cp-you-home-menu", "[data-cp-profile-tab]", "[data-you-subtab]",
+      '[role="tablist"][aria-label="You sections"]'
     ].join(",");
     const legacyRoots = [...content.children].filter(root =>
-      root !== app && !alreadyMoved.has(root) &&
-      ![...alreadyMoved].some(moved => moved && root.contains(moved))
+      root !== app &&
+      !alreadyMoved.has(root) &&
+      ![...alreadyMoved].some(moved => moved && root.contains(moved)) &&
+      // Never re-append the original YOU page wrapper: it contains the old
+      // Profile/Settings tabs and the legacy Settings card, causing nesting.
+      !root.querySelector('[data-you-subtab], [role="tablist"][aria-label="You sections"]')
     );
     legacyRoots.forEach(root => {
       // Remove only known profile/promotion/navigation elements from the legacy
