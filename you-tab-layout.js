@@ -30,6 +30,37 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
   const profile = () => state().profile || {};
   const isYouTab = () => state().currentTab === "you";
 
+  // Do not show an upgrade pitch to users whose current account data marks
+  // them as an active Pro/Premium member.
+  function userHasProAccess() {
+    const s = state();
+    const u = s.user || {};
+    const p = s.profile || {};
+    const flags = [
+      s.isPro, s.proActive, s.isPremium, s.hasPro,
+      u.isPro, u.proActive, u.isPremium, u.hasPro,
+      p.isPro, p.proActive, p.isPremium, p.hasPro
+    ];
+    if (flags.some(value => value === true)) return true;
+
+    const plans = [
+      s.plan, s.subscription?.plan, s.subscriptionPlan,
+      u.plan, u.subscription?.plan, u.subscriptionPlan,
+      p.plan, p.subscription?.plan, p.subscriptionPlan
+    ];
+    if (plans.some(value => typeof value === "string" && /^(pro|premium|paid)$/i.test(value.trim()))) return true;
+
+    const expiryValues = [
+      s.proUntil, s.proExpiresAt, s.premiumUntil, s.premiumExpiresAt,
+      u.proUntil, u.proExpiresAt, u.premiumUntil, u.premiumExpiresAt,
+      p.proUntil, p.proExpiresAt, p.premiumUntil, p.premiumExpiresAt
+    ];
+    return expiryValues.some(value => {
+      const expiry = dateMillis(value);
+      return expiry > Date.now();
+    });
+  }
+
   function elementWithHeader(root, title) {
     const header = [...root.querySelectorAll(".uppercase")]
       .find(el => el.textContent.trim().toLowerCase() === title.toLowerCase());
@@ -257,6 +288,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const contributor = content.querySelector("#contributor-card-injected");
     const notificationCard = content.querySelector("#notif-toggle")?.closest(".bg-card") || null;
     const proCard = content.querySelector("#unlock-pro-btn")?.closest(".bg-gradient-to-br") || null;
+    if (proCard && userHasProAccess()) proCard.remove();
 
     // The Settings page already has its own page title. Keep the legacy
     // Settings options, but remove the inner legacy "Settings" card heading.
@@ -455,7 +487,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     // the Pro promotion into Settings.
     const alreadyMoved = new Set([
       app, profileCard, activity, themeFrames, statsGrid, achievements,
-      tournamentBadges, contributor, notificationCard, proCard,
+      tournamentBadges, contributor, notificationCard, proCard, settingsRoot,
       ...settingsNodes, ...extraSettingsCards
     ].filter(Boolean));
     const excludedIds = [
