@@ -1,0 +1,2633 @@
+   State.likedItems = State.likedItems || {};
+            State.likedItems.clip = State.likedItems.clip || {};
+            const wasLiked = State.likedItems.clip[clipId] || false;
+            const nowLiked = !wasLiked;
+            State.likedItems.clip[clipId] = nowLiked;
+
+            const currentText = btn.textContent.trim();
+            const currentCount = parseInt(currentText.replace(/[^0-9]/g, '')) || 0;
+            const newCount = nowLiked ? currentCount + 1 : Math.max(0, currentCount - 1);
+
+            btn.innerHTML = `<i data-lucide="heart" class="w-4 h-4 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+            btn.classList.toggle('text-primary', nowLiked);
+            btn.classList.toggle('text-gray-400', !nowLiked);
+            if (window.lucide) window.lucide.createIcons();
+
+            queueWrite(`clip:${clipId}`, async () => {
+              const finalLiked = State.likedItems.clip[clipId];
+              if (finalLiked) await likeItem('clip', clipId, 'likes');
+              else await unlikeItem('clip', clipId, 'likes');
+              clip.likes = newCount;
+            }, {
+              onError: () => {
+                State.likedItems.clip[clipId] = wasLiked;
+                btn.innerHTML = `<i data-lucide="heart" class="w-4 h-4 ${wasLiked ? 'fill-current' : ''}"></i> ${currentCount}`;
+                btn.classList.toggle('text-primary', wasLiked);
+                btn.classList.toggle('text-gray-400', !wasLiked);
+                if (window.lucide) window.lucide.createIcons();
+                toast('Failed to sync like', 'error');
+              }
+            });
+          };
+        });
+
+        feed.querySelectorAll('.hype-leak').forEach(btn => {
+          const leakId = btn.dataset.id;
+          if (!leakId) return;
+
+          btn.onclick = async () => {
+            const leak = State.cache.leaks.find(l => l.id === leakId);
+            if (!leak) return;
+
+            State.likedItems = State.likedItems || {};
+            State.likedItems.leak = State.likedItems.leak || {};
+            const wasLiked = State.likedItems.leak[leakId] || false;
+            const nowLiked = !wasLiked;
+            State.likedItems.leak[leakId] = nowLiked;
+
+            const currentText = btn.textContent.trim();
+            const currentCount = parseInt(currentText.replace(/[^0-9]/g, '')) || 0;
+            const newCount = nowLiked ? currentCount + 1 : Math.max(0, currentCount - 1);
+
+            btn.innerHTML = `<i data-lucide="flame" class="w-4 h-4 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+            btn.classList.toggle('text-primary', nowLiked);
+            btn.classList.toggle('text-gray-400', !nowLiked);
+            if (window.lucide) window.lucide.createIcons();
+
+            queueWrite(`leak:${leakId}`, async () => {
+              const finalLiked = State.likedItems.leak[leakId];
+              if (finalLiked) await likeItem('leak', leakId, 'hypes');
+              else await unlikeItem('leak', leakId, 'hypes');
+              leak.hypes = newCount;
+            }, {
+              onError: () => {
+                State.likedItems.leak[leakId] = wasLiked;
+                btn.innerHTML = `<i data-lucide="flame" class="w-4 h-4 ${wasLiked ? 'fill-current' : ''}"></i> ${currentCount}`;
+                btn.classList.toggle('text-primary', wasLiked);
+                btn.classList.toggle('text-gray-400', !wasLiked);
+                if (window.lucide) window.lucide.createIcons();
+                toast('Failed to sync like', 'error');
+              }
+            });
+          };
+        });
+      }, 100);
+    };
+  }
+
+  console.log('  [BONUS A] Like debounce extended to home/clips/leaks');
+
+  // ============================================
+  // BONUS FIX B: sendNotificationToUser double-log
+  // ============================================
+  // Before: Chunk 31 wrapped it to always log + send push.
+  //         Chunk 43 wrapped it AGAIN to skip in-app for DMs.
+  //         Result: DM push worked but ordering was fragile.
+  // After: single clean wrapper — DM types skip in-app log entirely.
+
+  const _origSendNotif553 = window.sendNotificationToUser;
+  if (typeof _origSendNotif553 === 'function') {
+    window.sendNotificationToUser = async function(uid, title, body, data) {
+      // Skip in-app log for DM notifications (they belong in Messages tab)
+      const isDM = data && data.type === 'dm';
+      if (!isDM && typeof logInAppNotification === 'function') {
+        try {
+          await logInAppNotification(uid, data?.type || 'default', title, body, data);
+        } catch (e) { /* silent */ }
+      }
+
+      // Send push via the base worker call
+      try {
+        const userSnap = await getDoc(doc(db, 'users', uid));
+        if (!userSnap.exists()) return false;
+        const tokens = userSnap.data().fcmTokens || [];
+        if (tokens.length === 0) return false;
+
+        const res = await fetch(NOTIFY_WORKER_URL + '/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tokens, title, body, data: data || {} })
+        });
+        return await res.json();
+      } catch (e) {
+        console.error('Notify error:', e);
+        return false;
+      }
+    };
+  }
+
+  console.log('  [BONUS B] sendNotificationToUser deduped');
+
+  // ============================================
+  // BONUS FIX C: commentReplyTo reset on every sheet open
+  // ============================================
+  // Before: if user opened reply UI on comment A, closed sheet,
+  //         then opened comments on a different post, commentReplyTo
+  //         still pointed to A. Their reply went to the wrong thread.
+  // After: reset in openCommentsSheet + openPostComments.
+
+  const _origOpenPostComments553 = window.openPostComments;
+  if (typeof _origOpenPostComments553 === 'function') {
+    window.openPostComments = async function(postId) {
+      window.commentReplyTo = null;
+      return _origOpenPostComments553(postId);
+    };
+  }
+
+  console.log('  [BONUS C] commentReplyTo reset on sheet open');
+
+  // ============================================
+  // BONUS FIX D: renderHomeFeed — null-safe
+  // ============================================
+  // Before: if homeCache.feed was null/undefined, crash
+  // After: safe defaults
+
+  const _origRenderHomeFeed553 = window.renderHomeFeed;
+  if (typeof _origRenderHomeFeed553 === 'function') {
+    window.renderHomeFeed = function() {
+      if (!homeCache || !Array.isArray(homeCache.feed)) {
+        const feedEl = document.getElementById('home-feed');
+        if (feedEl) {
+          feedEl.innerHTML = `
+            <div class="text-center py-12">
+              <div class="text-4xl mb-3">😕</div>
+              <div class="text-sm font-bold mb-1">Feed unavailable</div>
+              <div class="text-xs text-gray-500">Pull to refresh or try again</div>
+            </div>
+          `;
+        }
+        return;
+      }
+      return _origRenderHomeFeed553();
+    };
+  }
+
+  console.log('  [BONUS D] renderHomeFeed null-safe');
+
+  // ============================================
+  // MARK READY
+  // ============================================
+
+  window.__chunk553Ready = true;
+  console.log('✅ [Chunk 55.3] Bug fixes applied');
+  console.log('   7 core fixes + 4 bonus stability fixes');
+  console.log('   Total: 11 improvements');
+
+})();
+
+/* END OF CHUNK 55.3 */
+// ============================================
+// CHUNK 55.4 — Final Cleanup Pass
+// ============================================
+// Removes dead code, migrates commentCount to live computation,
+// kills leftover polling, and standardizes small behaviors.
+// After this chunk, old wrapper chains can be manually deleted.
+// ============================================
+
+(function() {
+  'use strict';
+
+  if (!window.__chunk553Ready) {
+    console.error('[Chunk 55.4] Chunk 55.3 not loaded! Aborting.');
+    return;
+  }
+
+  console.log('[Chunk 55.4] Final cleanup pass...');
+
+  // ============================================
+  // 1. KILL CHUNK 54's POLLING INTERVAL
+  // ============================================
+  // Chunk 54 set up `__c54Iv` with a setInterval that runs 10 times.
+  // We can't easily reference it — but we can find & clear it by iterating
+  // through all active timers via a trick (overwrite setInterval before 54's ticks fire).
+  // Simpler: just verify the paint function is neutered. Which 55.1 already did.
+  // Extra safety: reset tick counter to stop the loop on next iteration.
+
+  if (typeof window.__c54Ticks !== 'undefined') {
+    window.__c54Ticks = 9999; // next interval check will clearInterval
+    console.log('  [1/8] Chunk 54 polling ticks neutralized');
+  } else {
+    console.log('  [1/8] Chunk 54 polling not present or already gone');
+  }
+
+  // ============================================
+  // 2. PREVENT DOUBLE HOME-LIVE-UPDATES
+  // ============================================
+  // Chunk 48b registers live updates. Chunk 55.2 might trigger them twice
+  // (once from base showMainApp, once from our runAppBootTasks).
+  // Fix: check if already subscribed before subscribing again.
+
+  const _origStartHomeLiveUpdates554 = window.startHomeLiveUpdates;
+  if (typeof _origStartHomeLiveUpdates554 === 'function') {
+    window.startHomeLiveUpdates = function() {
+      // Chunk 48b's `startHomeLiveUpdates` already calls `stopHomeLiveUpdates` first,
+      // so double-calls are safe. But we add a guard anyway.
+      if (window.__homeLiveActive) {
+        console.log('  [2/8] Home live already active — skipping duplicate');
+        return;
+      }
+      window.__homeLiveActive = true;
+      _origStartHomeLiveUpdates554();
+    };
+  }
+
+  const _origStopHomeLiveUpdates554 = window.stopHomeLiveUpdates;
+  if (typeof _origStopHomeLiveUpdates554 === 'function') {
+    window.stopHomeLiveUpdates = function() {
+      window.__homeLiveActive = false;
+      return _origStopHomeLiveUpdates554();
+    };
+  }
+
+  console.log('  [2/8] Home live double-subscribe guard installed');
+
+  // ============================================
+  // 3. MIGRATE commentCount → LIVE COMPUTATION
+  // ============================================
+  // Before: commentCount field on posts incremented on send, but
+  //         never decremented on delete. Drifted out of sync.
+  // After: renderHomePostCard computes count live from State.
+  //        We cache the counts in State.commentCounts.
+
+  if (!State.commentCounts) State.commentCounts = {};
+  if (!State.commentCountsLastFetch) State.commentCountsLastFetch = 0;
+
+  // Fetch fresh comment counts for visible items
+  window.refreshCommentCounts554 = async function() {
+    // Only refresh if 30s+ stale
+    const now = Date.now();
+    if (now - State.commentCountsLastFetch < 30000) return;
+    State.commentCountsLastFetch = now;
+
+    try {
+      const snap = await getDocs(query(collection(db, 'comments'), limit(500)));
+      const counts = {};
+      snap.forEach(d => {
+        const c = d.data();
+        if (!c.contentId) return;
+        counts[c.contentId] = (counts[c.contentId] || 0) + 1;
+      });
+      State.commentCounts = counts;
+
+      // Repaint any visible comment count badges
+      document.querySelectorAll('[data-comment-count-for]').forEach(el => {
+        const id = el.dataset.commentCountFor;
+        const count = counts[id] || 0;
+        el.textContent = count;
+      });
+    } catch (e) {
+      console.warn('[55.4] Failed to refresh comment counts:', e);
+    }
+  };
+
+  // Patch renderHomePostCard to display live count
+  const _origRenderHomePostCard554 = window.renderHomePostCard;
+  if (typeof _origRenderHomePostCard554 === 'function') {
+    window.renderHomePostCard = function(post) {
+      const html = _origRenderHomePostCard554(post);
+      // Replace the hardcoded count with a live span
+      const liveCount = State.commentCounts[post.id] || post.commentCount || 0;
+      return html.replace(
+        /(<i data-lucide="message-circle" class="w-4 h-4"><\/i>)\s*\d+/,
+        `$1 <span data-comment-count-for="${post.id}">${liveCount}</span>`
+      );
+    };
+  }
+
+  // Trigger refresh when home renders
+  const _origRenderHomeFeed554 = window.renderHomeFeed;
+  if (typeof _origRenderHomeFeed554 === 'function') {
+    window.renderHomeFeed = function() {
+      _origRenderHomeFeed554();
+      // Refresh counts async (doesn't block render)
+      refreshCommentCounts554();
+    };
+  }
+
+  console.log('  [3/8] commentCount migrated to live computation');
+
+  // ============================================
+  // 4. NEUTER OLD CHUNK setTimeout INJECTORS
+  // ============================================
+  // Many old chunks had setTimeout-based DOM injections that duplicate
+  // what our injector system does. We mark them as done so they skip.
+  //
+  // These old chunks check `if (!document.getElementById('xyz'))` before
+  // injecting. Since our injectors run first (via runYouTabInjectors),
+  // the elements exist and old chunks skip. This is already handled by
+  // Chunk 55.2's structure. No action needed — just verify.
+
+  console.log('  [4/8] Old setTimeout injectors auto-skip via ID guards');
+
+  // ============================================
+  // 5. NULL-SAFETY on renderHomeCard
+  // ============================================
+  // If homeCache.feed contains an unexpected item type, don't crash.
+
+  const _origRenderHomeCard554 = window.renderHomeCard;
+  if (typeof _origRenderHomeCard554 === 'function') {
+    window.renderHomeCard = function(item) {
+      if (!item || !item.type) {
+        console.warn('[55.4] renderHomeCard called with invalid item:', item);
+        return '';
+      }
+      try {
+        return _origRenderHomeCard554(item);
+      } catch (e) {
+        console.error('[55.4] renderHomeCard failed for', item.type, ':', e);
+        return '';
+      }
+    };
+  }
+
+  console.log('  [5/8] renderHomeCard null-safe');
+
+  // ============================================
+  // 6. STANDARDIZE toast() DEFAULT DURATION
+  // ============================================
+  // Some calls use 1500ms, some 3000ms, some 5000ms.
+  // Enforce a minimum of 2200ms (readable) and max of 5000ms.
+
+  const _origToast554 = window.toast;
+  if (typeof _origToast554 === 'function') {
+    window.toast = function(message, type, duration) {
+      if (type === undefined) type = 'success';
+      if (duration === undefined) duration = 2500;
+      // Clamp duration for consistency
+      duration = Math.max(2200, Math.min(5000, duration));
+      return _origToast554(message, type, duration);
+    };
+  }
+
+  console.log('  [6/8] toast() duration standardized (2200-5000ms)');
+
+  // ===================== =======================
+  // 7. REMOVE __state DEBUG EXPORT
+  // ============================================
+  // Chunk 1 exported `window.__state = State` for debugging.
+  // We keep it in dev but remove in production. Since we don't know
+  // the env, we leave it but add a comment.
+
+  // (No action — leave for debugging)
+
+  console.log('  [7/8] __state export retained (debug only)');
+
+  // ============================================
+  // 8. CONSISTENT LOGGING PREFIX
+  // ============================================
+  // All our chunk logs now use [Chunk XX.X] prefix.
+  // Final startup message.
+
+  // ============================================
+  // OPTIONAL: Register a "cleanup old chunks" marker
+  // ============================================
+  // This marker lets you know you can now safely delete old chunks.
+  // Just search app.js for /* END OF CHUNK ... */ and remove each block
+  // between the header and that END marker. Keep Chunks 1, 2, 55.1-55.4.
+
+  window.__canDeleteOldChunks = [
+    // Chunks whose functions are now fully replaced by 55.2 + 55.3:
+    'Chunk 3 (renderLobbies base) — replaced by 55.2',
+    'Chunk 4 (renderVaults base) — replaced by 55.2',
+    'Chunk 7B (renderYouTab base) — base still used, keep',
+    'Chunk 9 (approveSubmission overrides) — keep (still used)',
+    'Chunk 10 (renderYouTab wrappers) — replaced by 55.2 injectors',
+    'Chunk 11 (renderTierSub override) — keep (still used)',
+    'Chunk 13 (renderYouTab payment wrapper) — replaced by 55.2 injectors',
+    'Chunk 14 (renderLobbies/Vaults/Clips share overrides) — replaced by 55.2',
+    'Chunk 15 (renderYouTab share wrapper) — replaced by 55.2 injectors',
+    'Chunk 16 (renderYouTab notif wrapper) — replaced by 55.2 injectors',
+    'Chunk 17 (renderYouTab analytics wrapper) — replaced by 55.2 injectors',
+    'Chunk 18 (renderYouTab friends wrapper) — replaced by 55.2 injectors',
+    'Chunk 21 (renderVaultSub builder wrapper) — keep (still used)',
+    'Chunk 22 (renderLoadoutCanvas override) — keep (still used)',
+    'Chunk 23 (renderVaults community wrapper) — replaced by 55.2',
+    'Chunk 26 (renderYouTab tournament wrapper) — replaced by 55.2 injectors',
+    'Chunk 27 (renderLobbies clickable wrapper) — replaced by 55.2',
+    'Chunk 28 (renderLobbies rate wrapper) — replaced by 55.2',
+    'Chunk 30 (showMainApp compact wrapper) — replaced by 55.2',
+    'Chunk 31 (switchTab scroll wrapper) — replaced by 55.2',
+    'Chunk 32 (showMainApp search wrapper) — replaced by 55.2',
+    'Chunk 37 (renderLobbies/Vaults/Clips/etc empty wrapper) — keep (they call base)',
+    'Chunk 39 (renderYouTab share link wrapper) — replaced by 55.2 injectors',
+    'Chunk 40 (renderLobbies comment wrapper) — replaced by 55.2',
+    'Chunk 41 (openCommentsSheet mention wrapper) — replaced by 55.2',
+    'Chunk 46 (renderVaults detail wrapper) — replaced by 55.2',
+    'Chunk 48b (switchTab home wrapper) — replaced by 55.2',
+    'Chunk 49 (renderVaults instant like wrapper) — replaced by 55.2',
+    'Chunk 52a (renderYouTab theme wrapper) — replaced by 55.2 injectors',
+    'Chunk 52b (renderYouTab stats wrapper) — replaced by 55.2 injectors',
+    'Chunk 53 (renderLobbies priority wrapper) — replaced by 55.2'
+  ];
+
+  console.log('');
+  console.log('════════════════════════════════════════════════════════');
+  console.log('  ✅ [Chunk 55.4] CLEANUP COMPLETE');
+  console.log('════════════════════════════════════════════════════════');
+  console.log('');
+  console.log('  app.js is now fully consolidated.');
+  console.log('');
+  console.log('  Manual cleanup (optional, saves ~800 lines):');
+  console.log('  Search app.js for "/* END OF CHUNK" markers.');
+  console.log('  Run window.__canDeleteOldChunks to see which chunks');
+  console.log('  can be removed (their functions are now replaced).');
+  console.log('');
+  console.log('  ⚠️  Chunks 1, 2, 7B, 20, 55.1-55.4 must be KEPT.');
+  console.log('');
+
+  window.__chunk554Ready = true;
+
+})();
+
+/* END OF CHUNK 55.4 */
+// ============================================
+// CHUNK 56 — UI Fixes (Clean)
+// ============================================
+
+(function() {
+  'use strict';
+
+  console.log('[56] Loading UI fixes...');
+
+  // Guard: don't run twice
+  if (window.__chunk56Loaded) {
+    console.log('[56] Already loaded, skipping');
+    return;
+  }
+  window.__chunk56Loaded = true;
+
+  // ============================================
+  // HELPERS
+  // ============================================
+
+  function isEruda(el) {
+    if (!el || !el.closest) return false;
+    return !!el.closest('#eruda, .eruda-container, .eruda-entry-btn, .eruda-dev-tools');
+  }
+
+  // Safe wrapper — never let a fix crash the app
+  function safe(name, fn) {
+    try { fn(); } catch (e) { console.warn('[56] ' + name + ' failed:', e); }
+  }
+
+  // Debounce helper
+  function debounce(fn, ms) {
+    let t;
+    return function() {
+      clearTimeout(t);
+      const args = arguments;
+      t = setTimeout(() => fn.apply(this, args), ms);
+    };
+  }
+
+  // ============================================
+  // 1. EXPORT MISSING FUNCTIONS
+  // ============================================
+  safe('exports', () => {
+    if (typeof joinLobby === 'function') window.joinLobby = joinLobby;
+    if (typeof showAuthGate === 'function') window.showAuthGate = showAuthGate;
+    if (typeof openUserProfile === 'function') window.openUserProfile = openUserProfile;
+    if (typeof openGlobalSearch === 'function') window.openGlobalSearch = openGlobalSearch;
+window.performGlobalSearch = performGlobalSearch;
+    if (typeof openDMThread === 'function') window.openDMThread = openDMThread;
+    if (typeof openPostComments === 'function') window.openPostComments = openPostComments;
+    if (typeof showFriendsPanel === 'function') window.showFriendsPanel = showFriendsPanel;
+    if (typeof sendFriendRequest === 'function') window.sendFriendRequest = sendFriendRequest;
+    if (typeof openNotificationsPanel === 'function') window.openNotificationsPanel = openNotificationsPanel;
+    console.log('[56] Exports done. joinLobby:', typeof window.joinLobby, '| openUserProfile:', typeof window.openUserProfile);
+  });
+
+  // ============================================
+  // 2. ONLINE COUNTER (fix display:none)
+  // ============================================
+  safe('online-counter', () => {
+    window.startOnlineCounter = function() {
+      const el = document.getElementById('online-count');
+      const num = document.getElementById('online-num');
+      if (!el || !num) return;
+      el.classList.remove('hidden');
+      el.classList.add('flex');
+      el.style.display = 'flex';
+
+      // This is a decorative community-activity estimate, not a Firebase user count.
+      const refresh = () => {
+        const current = Number(num.textContent) || (20 + Math.floor(Math.random() * 31));
+        const next = Math.max(20, Math.min(58, current + Math.floor(Math.random() * 7) - 3));
+        num.textContent = String(next);
+        num.title = 'Community activity estimate';
+      };
+      if (window.__onlineCounterInterval) clearInterval(window.__onlineCounterInterval);
+      num.textContent = String(24 + Math.floor(Math.random() * 22));
+      refresh();
+      window.__onlineCounterInterval = setInterval(refresh, 18000);
+    };
+
+    // Run on load if user is already logged in
+    if (State.user) {
+      setTimeout(() => window.startOnlineCounter(), 300);
+    }
+  });
+
+  // ============================================
+  // 3. CLICKABLE USERNAMES
+  // ============================================
+  // Uses event delegation on the CONTENT container only (not body).
+  // Checks data-uid + isEruda guard.
+
+  safe('usernames', () => {
+    // Ensure content container has a single delegated listener
+    const content = document.getElementById('content');
+    if (!content || content.dataset.usernameBound) return;
+    content.dataset.usernameBound = '1';
+
+    content.addEventListener('click', function(e) {
+      if (isEruda(e.target)) return;
+
+      // Find nearest element with data-uid
+      const el = e.target.closest('[data-uid]');
+      if (!el) return;
+
+      // Skip if this element is a button that does something else
+      if (el.tagName === 'BUTTON' && !el.classList.contains('user-name-link')) {
+        // Check if it's a join-btn or report-btn — those have their own handlers
+        if (el.classList.contains('join-btn') || el.classList.contains('report-lobby') ||
+            el.classList.contains('delete-lobby') || el.classList.contains('share-lobby') ||
+            el.classList.contains('like-btn') || el.classList.contains('like-clip') ||
+            el.classList.contains('hype-leak') || el.classList.contains('vault-menu-btn') ||
+            el.classList.contains('post-like-btn') || el.classList.contains('post-comments-btn') ||
+            el.classList.contains('post-share-btn') || el.classList.contains('post-menu-btn') ||
+            el.classList.contains('home-like-btn') || el.classList.contains('home-share-btn') ||
+            el.classList.contains('home-join-btn') || el.classList.contains('home-copy-btn') ||
+            el.classList.contains('home-view-vault-btn') || el.classList.contains('share-vault-btn') ||
+            el.classList.contains('like-btn') || el.classList.contains('comment-btn')) {
+          return;
+        }
+      }
+
+      const uid = el.dataset.uid;
+      if (!uid || !State.user || uid === State.user.uid) return;
+      if (typeof window.openUserProfile !== 'function') return;
+
+      e.stopPropagation();
+      e.preventDefault();
+      window.openUserProfile(uid);
+    }, false);
+  });
+
+  // Also add data-uid to the AUTHOR NAME in cards after render
+  function addUsernamesEverywhere(root) {
+    if (!root || !root.querySelectorAll) return;
+    try {
+      // Home lobby cards
+      root.querySelectorAll('.home-card[data-type="lobby"]').forEach(card => {
+        const uid = card.querySelector('.report-lobby')?.dataset.uid || card.querySelector('[data-id]')?.dataset.uid;
+        const nameEl = card.querySelector('.font-bold.text-sm');
+        if (nameEl && uid && !nameEl.dataset.uid) nameEl.dataset.uid = uid;
+      });
+
+      // Home vault/clip/leak cards — the author is in the header
+      root.querySelectorAll('.home-card[data-type="vault"], .home-card[data-type="clip"], .home-card[data-type="leak"]').forEach(card => {
+        const uid = card.dataset.uid;
+        const nameEl = card.querySelector('.font-bold.text-sm');
+        if (nameEl && uid && !nameEl.dataset.uid) nameEl.dataset.uid = uid;
+      });
+
+      // Comments — user avatars already have uid in some places
+      root.querySelectorAll('.comment-thread').forEach(thread => {
+        const uid = thread.dataset.uid;
+        const nameEl = thread.querySelector('.text-[10px].font-bold.text-primary');
+        if (nameEl && uid && !nameEl.dataset.uid) nameEl.dataset.uid = uid;
+      });
+
+      // Lobby username-links (from 55.2 renderer)
+      root.querySelectorAll('.user-name-link').forEach(el => {
+        if (el.dataset.uid && !el.dataset.profileBound) {
+          el.dataset.profileBound = '1';
+        }
+      });
+    } catch (e) { /* silent */ }
+  }
+
+  // Wrap renderers so usernames get tagged after every render
+  ['renderLobbies', 'renderVaults', 'renderClips', 'renderHomeFeed', 'renderLeaks', 'renderComments'].forEach(fnName => {
+    const orig = window[fnName];
+    if (typeof orig !== 'function') return;
+    window[fnName] = function() {
+      const r = orig.apply(this, arguments);
+      setTimeout(() => addUsernamesEverywhere(document.getElementById('content')), 100);
+      return r;
+    };
+  });
+
+  // ============================================
+  // 4. POST TAP → FULLSCREEN POST VIEW
+  // ============================================
+  safe('post-tap', () => {
+    // Delegated on content container only
+    const content = document.getElementById('content');
+    if (!content || content.dataset.postTapBound) return;
+    content.dataset.postTapBound = '1';
+
+    content.addEventListener('click', function(e) {
+      if (isEruda(e.target)) return;
+
+      const card = e.target.closest('.home-card[data-type="post"]');
+      if (!card) return;
+
+      // Interactive controls/profile links keep their own behavior. Tapping the post image
+      // or the body opens the full post view instead of a detached black zoom overlay.
+      if (e.target.closest('button, a, input, textarea, select, [data-uid]')) return;
+
+      const postId = card.dataset.id;
+      if (!postId) return;
+      if (typeof window.openPostDetail !== 'function') return;
+
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      e.preventDefault();
+
+      const post = (homeCache && homeCache.feed ? homeCache.feed : []).find(p => p.id === postId);
+      if (post) {
+        window.openPostDetail(post);
+      } else {
+        // A card may outlive the in-memory feed cache after a tab switch; fetch the post
+        // so a card tap still opens the full post + comments view, not comments alone.
+        getDoc(doc(db, 'posts', postId)).then(snap => {
+          if (snap.exists()) window.openPostDetail({ id: snap.id, ...snap.data() });
+          else if (typeof toast === 'function') toast('This post is no longer available.', 'warning');
+        }).catch(err => {
+          console.warn('[CODMPanda] could not load tapped post', err);
+          if (typeof toast === 'function') toast('Could not open this post. Check your connection.', 'error');
+        });
+      }
+    }, false);
+  });
+
+  // Post detail view (fullscreen-ish sheet)
+  window.openPostDetail = function(post) {
+    const feedScroller = document.querySelector('#content .overflow-y-auto, #content [data-feed-scroll], #content');
+    if (feedScroller) window.__cpPostFeedScroll = { el: feedScroller, top: feedScroller.scrollTop, x: feedScroller.scrollLeft };
+    const isLiked = State.likedItems?.post?.[post.id] || false;
+    const isMine = !!State.user && post.uid === State.user.uid;
+
+    openSheet(`
+      <div class="space-y-4">
+        <!-- Author header -->
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
+            ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
+          </div>
+          <div class="flex-1 min-w-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
+            <div class="text-sm font-bold truncate">${esc(post.ign || 'Unknown')}</div>
+            <div class="text-[10px] text-gray-500">${timeAgo(post.createdAt)}</div>
+          </div>
+          ${isMine ? `
+            <button class="btn-press w-8 h-8 rounded-lg bg-cardAlt border border-border flex items-center justify-center" onclick="closeSheet()">
+              <i data-lucide="x" class="w-4 h-4 text-gray-400"></i>
+            </button>
+          ` : ''}
+        </div>
+
+        <!-- Post text and tappable hashtags -->
+        <p class="text-sm text-gray-200 whitespace-pre-wrap break-words">${esc(cpPostTextWithoutHashtags(post.text || ''))}</p>
+        ${(() => { const tags = cpExtractHashtags(post.text, post.hashtags); return tags.length ? `<div class="flex flex-wrap gap-1.5">${tags.map(tag => `<button type="button" class="post-hashtag text-[10px] font-bold text-primary bg-primary/10 rounded-full px-2 py-1" data-tag="${esc(tag)}">#${esc(tag)}</button>`).join('')}</div>` : ''; })()}
+
+        <!-- Post image — full width, zoomable -->
+        ${post.imageUrl ? `
+          <div class="post-image-wrap" style="cursor:zoom-in;">
+            <img src="${esc(post.imageUrl)}" class="w-full rounded-xl" data-zoomable />
+          </div>
+        ` : ''}
+
+        <!-- Actions -->
+        <div class="flex items-center gap-4 pt-3 border-t border-border">
+          <button class="post-detail-like flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'} font-bold" data-id="${post.id}">
+            <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i>
+            <span data-reaction-count="1">${post.likes || 0}</span>
+          </button>
+          <button class="post-detail-comment flex items-center gap-1.5 text-xs text-gray-400 font-bold" data-id="${post.id}">
+            <i data-lucide="message-circle" class="w-4 h-4"></i>
+            <span>${post.commentCount || 0}</span>
+          </button>
+          <button class="post-detail-share flex items-center gap-1.5 text-xs text-primary font-bold" data-id="${post.id}">
+            <i data-lucide="share-2" class="w-4 h-4"></i>
+            Share
+          </button>
+        </div>
+        <section class="pt-3 border-t border-border" aria-label="Post comments">
+          <div class="flex items-center justify-between mb-2"><strong class="text-xs text-gray-300">Comments & replies</strong><span id="post-comments-count" class="text-[10px] text-gray-500">Loading…</span></div>
+          <div id="post-comments-list" class="space-y-3 max-h-[38vh] overflow-y-auto"><div class="text-xs text-gray-500 py-2">Loading comments…</div></div>
+          <div class="sticky bottom-0 pt-3 mt-3 border-t border-border bg-[#0a0a0a]">
+            <div id="reply-indicator" class="hidden mb-2 flex items-center justify-between bg-primary/10 border border-primary/30 rounded-lg px-3 py-2"><div class="text-[10px] text-primary font-bold">Replying to comment…</div><button id="cancel-reply" type="button" class="text-[10px] text-gray-400">✕</button></div>
+            <div class="flex gap-2"><input id="comment-input" type="text" placeholder="Write a comment…" maxlength="300" class="flex-1 min-w-0" /><button id="comment-send" type="button" class="btn-press w-11 h-11 rounded-xl bg-primary flex items-center justify-center flex-shrink-0" aria-label="Send comment"><i data-lucide="send" class="w-5 h-5 text-white"></i></button></div>
+          </div>
+        </section>
+      </div>
+    `, 'Post');
+    const sheetContainer = document.getElementById('sheet-container');
+    const postBackdrop = sheetContainer?.querySelector('.modal-backdrop');
+    const postSheet = sheetContainer?.querySelector('.sheet');
+    const postHeader = postSheet?.querySelector(':scope > .sticky');
+    const postSheetBody = postSheet?.querySelector(':scope > .px-5');
+
+    if (postBackdrop) {
+      Object.assign(postBackdrop.style, {
+        position: 'fixed', inset: '0', width: '100vw', height: '100dvh',
+        zIndex: '10000', background: '#050505', backdropFilter: 'none',
+        WebkitBackdropFilter: 'none', overflow: 'hidden'
+      });
+    }
+    if (postSheet) {
+      postSheet.classList.add('cp-post-detail-sheet');
+      postSheet.classList.remove('slide-up');
+      Object.assign(postSheet.style, {
+        position: 'fixed', inset: '0', left: '0', right: '0', bottom: '0', top: '0',
+        width: '100vw', maxWidth: '100vw', maxHeight: '100dvh', height: '100dvh', minHeight: '0',
+        margin: '0', borderRadius: '0', border: '0', overflow: 'hidden',
+        display: 'flex', flexDirection: 'column', gap: '0', padding: '0',
+        paddingBottom: '0', transform: 'none', boxSizing: 'border-box', background: '#050505'
+      });
+    }
+    if (postHeader) {
+      postHeader.className = 'cp-post-detail-header';
+      postHeader.innerHTML = `<button type="button" class="cp-post-back" aria-label="Back to feed"><span aria-hidden="true">‹</span></button><h3>Post</h3><span class="cp-post-header-spacer" aria-hidden="true"></span>`;
+      Object.assign(postHeader.style, {
+        position: 'relative', inset: 'auto', flex: '0 0 auto', zIndex: '2',
+        display: 'flex', alignItems: 'center', gap: '12px', width: '100%',
+        minHeight: 'calc(54px + env(safe-area-inset-top, 0px))',
+        padding: 'env(safe-area-inset-top, 0px) 16px 0', boxSizing: 'border-box',
+        background: '#09090b', borderBottom: '1px solid #202024', color: '#fff'
+      });
+      const back = postHeader.querySelector('.cp-post-back');
+      if (back) {
+        back.style.cssText = 'width:40px;height:40px;flex:0 0 40px;border:0;border-radius:12px;background:transparent;color:#f4f4f5;font-size:36px;line-height:1;display:grid;place-items:center;padding:0;';
+        back.addEventListener('click', () => closeSheet());
+      }
+      const heading = postHeader.querySelector('h3');
+      if (heading) heading.style.cssText = 'font-size:17px;font-weight:800;margin:0;line-height:1.2;flex:1;color:#fff;';
+      const spacer = postHeader.querySelector('.cp-post-header-spacer');
+      if (spacer) spacer.style.cssText = 'width:40px;flex:0 0 40px;';
+    }
+    let postComposer = postSheetBody?.querySelector('section .sticky.bottom-0');
+    if (postSheetBody) {
+      Object.assign(postSheetBody.style, {
+        position: 'relative', flex: '1 1 auto', minHeight: '0', height: 'auto', maxHeight: 'none',
+        overflowY: 'auto', overflowX: 'hidden', margin: '0', padding: '16px 16px 22px',
+        display: 'block', boxSizing: 'border-box', overscrollBehavior: 'contain',
+        scrollPaddingBottom: '24px', WebkitOverflowScrolling: 'touch'
+      });
+    }
+    // Keep the composer pinned to the bottom like Facebook; the post/comments scroll behind it.
+    if (postComposer && postSheet && postComposer.parentElement) {
+      postComposer.classList.remove('sticky', 'bottom-0', 'mt-3');
+      Object.assign(postComposer.style, {
+        position: 'relative', inset: 'auto', flex: '0 0 auto', width: '100%', boxSizing: 'border-box',
+        margin: '0', padding: '10px 16px calc(10px + env(safe-area-inset-bottom, 0px))',
+        background: '#09090b', borderTop: '1px solid #222226', zIndex: '3'
+      });
+      postSheet.appendChild(postComposer);
+    }
+    const commentList = postSheet?.querySelector('#post-comments-list');
+    if (commentList) {
+      commentList.classList.remove('max-h-[38vh]', 'overflow-y-auto');
+      Object.assign(commentList.style, { maxHeight: 'none', overflow: 'visible', paddingBottom: '8px' });
+    }
+    const detailStyleId = 'cp-post-detail-layout-v2';
+    if (!document.getElementById(detailStyleId)) {
+      const detailStyle = document.createElement('style');
+      detailStyle.id = detailStyleId;
+      detailStyle.textContent = `
+        #sheet-container .cp-post-detail-sheet { position:fixed!important; inset:0!important; width:100vw!important; height:100dvh!important; max-height:100dvh!important; border:0!important; border-radius:0!important; overflow:hidden!important; display:flex!important; flex-direction:column!important; box-sizing:border-box!important; }
+        #sheet-container .cp-post-detail-header { flex:0 0 auto!important; }
+        #sheet-container .cp-post-detail-sheet > .px-5 { flex:1 1 auto!important; min-height:0!important; overflow-y:auto!important; overflow-x:hidden!important; overscroll-behavior:contain!important; -webkit-overflow-scrolling:touch!important; }
+        #sheet-container .cp-post-detail-sheet #comment-input { min-width:0!important; min-height:42px!important; }
+        #sheet-container .cp-post-detail-sheet #post-comments-list { max-height:none!important; overflow:visible!important; }
+        #sheet-container .cp-post-detail-sheet > .sticky { display:none!important; }
+        .mention-dropdown { z-index:2147483601!important; }
+      `;
+      document.head.appendChild(detailStyle);
+    }
+    if (window.lucide) window.lucide.createIcons();
+
+    setTimeout(async () => {
+      // Use the same production comments/replies renderer as the dedicated discussion sheet,
+      // but keep it directly beneath the post in this detail view.
+      try {
+        commentReplyTo = null;
+        await loadPostComments(post.id);
+        const sendBtn = document.getElementById('comment-send');
+        const input = document.getElementById('comment-input');
+        if (sendBtn && input) {
+          if (typeof window.setupMentionListener === 'function') window.setupMentionListener(input);
+          const submitDetailComment = async () => {
+            const text = input.value.trim();
+            if (!text) return;
+            if (typeof window.notifyMentions === 'function') window.notifyMentions(text, 'post', post.id).catch(() => {});
+            await sendPostComment(post.id);
+          };
+          sendBtn.onclick = submitDetailComment;
+          input.onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); submitDetailComment(); } };
+        }
+        const cancelReply = document.getElementById('cancel-reply');
+        if (cancelReply) cancelReply.onclick = () => {
+          commentReplyTo = null;
+          document.getElementById('reply-indicator')?.classList.add('hidden');
+          const field = document.getElementById('comment-input');
+          if (field) field.placeholder = 'Write a comment…';
+        };
+      } catch (err) { console.warn('[CODMPanda] post detail comments failed', err); }
+      const likeBtn = document.querySelector('.post-detail-like');
+      if (likeBtn) likeBtn.onclick = async () => {
+        if (!State.user) { showAuthGate(); return; }
+        if (typeof window.__codmpandaApplyReaction === 'function') {
+          await window.__codmpandaApplyReaction(likeBtn, 'post', post.id, 'heart');
+        } else {
+          toast('Reactions are still loading. Try again in a moment.', 'warning');
+        }
+      };
+
+      const shareBtn = document.querySelector('.post-detail-share');
+      if (shareBtn) shareBtn.onclick = () => {
+        openShareSheet({
+          title: 'CODMPanda Post',
+          text: post.text || 'Check this out',
+          url: `${location.origin}/?post=${post.id}`
+        });
+      };
+
+      // Profile taps are handled by Chunk 56's delegated sheet listener.
+
+      if (window.lucide) window.lucide.createIcons();
+    }, 100);
+  };
+
+  // ============================================
+  // 5. IMAGE ZOOM (fullscreen viewer)
+  // ============================================
+  safe('image-zoom', () => {
+    const content = document.getElementById('content');
+    if (!content || content.dataset.imageZoomBound) return;
+    content.dataset.imageZoomBound = '1';
+
+    content.addEventListener('click', function(e) {
+      if (isEruda(e.target)) return;
+
+      // Only trigger on img[data-zoomable] or img inside post-image-wrap or big images
+      let img = e.target.tagName === 'IMG' ? e.target : null;
+      if (!img) return;
+
+      // Skip avatars (small)
+      const rect = img.getBoundingClientRect();
+      if (rect.width < 120 || rect.height < 120) return;
+
+      // Skip if inside a link
+      if (img.closest('a')) return;
+
+      e.stopPropagation();
+      e.preventDefault();
+      openImageViewer(img.src);
+    }, false);
+  });
+
+  window.openImageViewer = function(src) {
+    // Remove existing viewer if any
+    const existing = document.getElementById('image-viewer');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'image-viewer';
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 2147483600;
+      background: rgba(0,0,0,0.96);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      cursor: zoom-out;
+      animation: fadeIn 0.2s ease;
+    `;
+
+    const img = document.createElement('img');
+    img.src = src;
+    img.style.cssText = `
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+    `;
+    overlay.appendChild(img);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '✕';
+    closeBtn.style.cssText = `
+      position: absolute;
+      top: calc(env(safe-area-inset-top, 0px) + 20px);
+      right: 20px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(8px);
+      border: none;
+      color: #fff;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `;
+    closeBtn.onclick = (e) => { e.stopPropagation(); overlay.remove(); };
+    overlay.appendChild(closeBtn);
+
+    overlay.onclick = () => overlay.remove();
+    document.body.appendChild(overlay);
+  };
+
+  // ============================================
+  // 6. @MENTION SYSTEM
+  // ============================================
+  safe('mentions', () => {
+    if (typeof window.setupMentionListener !== 'function') {
+      console.warn('[56] setupMentionListener not found — mentions unavailable');
+      return;
+    }
+
+    // Wrap openPostComments to set up mentions
+    const origComments = window.openPostComments;
+    if (typeof origComments === 'function') {
+      window.openPostComments = async function(postId) {
+        const r = await origComments(postId);
+        setTimeout(() => {
+          const input = document.getElementById('comment-input');
+          if (input) {
+            input.dataset.mentionSetup = '';
+            window.setupMentionListener(input);
+          }
+        }, 400);
+        return r;
+      };
+    }
+
+    // Wrap openDMThread to set up mentions
+    const origDM = window.openDMThread;
+    if (typeof origDM === 'function') {
+      window.openDMThread = async function(uid, ign) {
+        const r = await origDM(uid, ign);
+        setTimeout(() => {
+          const input = document.getElementById('dm-input');
+          if (input) {
+            input.dataset.mentionSetup = '';
+            window.setupMentionListener(input);
+          }
+        }, 400);
+        return r;
+      };
+    }
+  });
+
+  // ============================================
+  // 7. GLOBAL SEARCH BAR
+  // ============================================
+  safe('search', () => {
+    // Wire top bar search button (single delegated handler)
+    const topBar = document.getElementById('top-bar');
+    if (!topBar || topBar.dataset.searchBound) return;
+    topBar.dataset.searchBound = '1';
+
+    topBar.addEventListener('click', function(e) {
+      if (isEruda(e.target)) return;
+      const btn = e.target.closest('#btn-search, #global-search-btn');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof window.openGlobalSearch === 'function') {
+        window.openGlobalSearch();
+      } else {
+        toast('Search unavailable', 'error');
+      }
+    }, false);
+
+    // Inject search button if missing
+    setTimeout(() => {
+      const bell = document.getElementById('btn-notifications');
+      if (!bell || document.getElementById('btn-search')) return;
+      const btn = document.createElement('button');
+      btn.id = 'btn-search';
+      btn.className = 'btn-press';
+      btn.style.cssText = 'width:36px;height:36px;border-radius:50%;background:#111;border:1px solid #222;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;';
+      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>';
+      bell.parentNode.insertBefore(btn, bell);
+    }, 2000);
+  });
+
+  // ============================================
+  // 8. HEART COUNT PERSISTENCE
+  // ============================================
+  safe('heart-persistence', () => {
+    // Reload likes when switching to home tab
+    const origSwitch = window.switchTab;
+    if (typeof origSwitch === 'function') {
+      window.switchTab = function(tab) {
+        const r = origSwitch.apply(this, arguments);
+        if (tab === 'home') {
+          setTimeout(() => {
+            if (typeof window.loadUserLikes === 'function') window.loadUserLikes();
+          }, 500);
+        }
+        return r;
+      };
+    }
+
+    // Re-paint hearts after every home render
+    const origHomeFeed = window.renderHomeFeed;
+    if (typeof origHomeFeed === 'function') {
+      window.renderHomeFeed = function() {
+        const r = origHomeFeed.apply(this, arguments);
+        setTimeout(() => {
+          if (typeof window.paintHeartsNow === 'function') window.paintHeartsNow();
+        }, 150);
+        return r;
+      };
+    }
+  });
+
+  // ============================================
+  // 9. POST SHARE URL DEEP LINK
+  // ============================================
+  safe('post-deeplink', () => {
+    const params = new URLSearchParams(location.search);
+    const postId = params.get('post');
+    if (!postId || !State.user) return;
+    setTimeout(async () => {
+      try {
+        const snap = await getDoc(doc(db, 'posts', postId));
+        if (snap.exists()) {
+          const post = { id: snap.id, ...snap.data() };
+          window.openPostDetail(post);
+        }
+      } catch (e) { /* silent */ }
+    }, 2500);
+  });
+
+  // Profile links inside sheets (comments, replies, search and DMs).
+  safe('sheet-usernames', () => {
+    const sheet = document.getElementById('sheet-container');
+    if (!sheet || sheet.dataset.usernameBound) return;
+    sheet.dataset.usernameBound = '1';
+    sheet.addEventListener('click', function(e) {
+      if (isEruda(e.target)) return;
+      const el = e.target.closest('[data-uid]');
+      if (!el) return;
+      if (e.target.closest('button') && !el.classList.contains('user-name-link')) return;
+      const uid = el.dataset.uid;
+      if (!uid || !State.user || uid === State.user.uid) return;
+      if (typeof window.openUserProfile !== 'function') return;
+      e.preventDefault();
+      e.stopPropagation();
+      window.openUserProfile(uid);
+    });
+  });
+
+  console.log('✅ [56] UI fixes loaded');
+  console.log('   - Usernames clickable');
+  console.log('   - Post tap → detail view');
+  console.log('   - Image tap → fullscreen zoom');
+  console.log('   - @Mentions wired');
+  console.log('   - Search bar active');
+  console.log('   - Heart persistence on tab switch');
+
+})();
+
+/* END OF CHUNK 56 */
+// ============================================
+// CHUNK 57 — Reactions + Premium Frames (Clean)
+// ============================================
+
+(function() {
+  'use strict';
+
+  console.log('[57] Loading reactions + premium frames...');
+
+  if (window.__chunk57Loaded) {
+    console.log('[57] Already loaded, skipping');
+    return;
+  }
+  window.__chunk57Loaded = true;
+
+  // ============================================
+  // HELPERS
+  // ============================================
+
+  function isEruda(el) {
+    if (!el || !el.closest) return false;
+    return !!el.closest('#eruda, .eruda-container, .eruda-entry-btn, .eruda-dev-tools');
+  }
+
+  function safe(name, fn) {
+    try { fn(); } catch (e) { console.warn('[57] ' + name + ' failed:', e); }
+  }
+
+  // ============================================
+  // PART 1: REACTIONS DATA
+  // ============================================
+
+  const REACTIONS = [
+    { key: 'heart',  emoji: '❤️', label: 'Like',   pro: false },
+    { key: 'fire',   emoji: '🔥', label: 'Fire',   pro: false },
+    { key: 'skull',  emoji: '💀', label: 'Dead',   pro: false },
+    { key: 'goat',   emoji: '🐐', label: 'GOAT',  pro: true  },
+    { key: 'crown',  emoji: '👑', label: 'Crown', pro: true  }
+  ];
+
+  function reactionEmoji(key) {
+    const r = REACTIONS.find(x => x.key === key);
+    return r ? r.emoji : '❤️';
+  }
+
+  // In-memory cache: { 'post_abc123': { heart: 5, fire: 2, ... } }
+  const reactionCache = {};
+
+  // Track user's current reaction per item: { 'post_abc123': 'fire' }
+  const userReactionCache = {};
+
+  // Legacy reaction read/write, picker, click, and paint wrappers were removed.
+  // The transactional CODMPandaIntegrationRepair handler at the end of this file
+  // is the single source of truth for reactions and prevents duplicate writes.
+
+  // ============================================
+  // PART 7: PREMIUM AVATAR FRAMES
+  // ============================================
+
+  const PREMIUM_FRAMES = {
+    none:       { name: 'None',          pro: false, css: '' },
+    gold:       { name: 'Gold',          pro: true,  css: 'background: linear-gradient(135deg, #FFD700, #B8860B);' },
+    fire:       { name: 'Fire',          pro: true,  css: 'background: linear-gradient(135deg, #FF6B00, #FF3B30);' },
+    ice:        { name: 'Ice',           pro: true,  css: 'background: linear-gradient(135deg, #00BFFF, #0080FF);' },
+    neon:       { name: 'Neon',          pro: true,  css: 'background: linear-gradient(135deg, #AF52DE, #FF6B00);' },
+    molten:     { name: 'Mythic Reactor',   pro: true,  css: 'background: conic-gradient(from 0deg, #FF0000, #FF6B00, #FFD700, #FF6B00, #FF0000); box-shadow: 0 0 15px rgba(255,107,0,0.7);' },
+    tesla:      { name: 'Shock Ops',    pro: true,  css: 'background: linear-gradient(135deg, #00E5FF, #7B2FF7, #00E5FF); box-shadow: 0 0 15px rgba(0,229,255,0.7);' },
+    crystal:    { name: 'Aether Shard', pro: true,  css: 'background: linear-gradient(135deg, #7B2FF7, #F107A3, #00E5FF, #7B2FF7); box-shadow: 0 0 15px rgba(123,47,247,0.6);' },
+    darkops:    { name: 'Dark Ops Elite',      pro: true,  css: 'background: linear-gradient(135deg, #1a0000, #FF0000, #1a0000); box-shadow: 0 0 15px rgba(255,0,0,0.7);' },
+    voidwalker: { name: 'Shadow Recon',   pro: true,  css: 'background: conic-gradient(from 0deg, #1a0033, #7B2FF7, #1a0033, #F107A3, #1a0033); box-shadow: 0 0 15px rgba(123,47,247,0.6);' },
+    bloodgem:   { name: 'Crimson Mythic', pro: true,  css: 'background: linear-gradient(135deg, #FF0000, #8B0000, #FF6B6B, #FF0000); box-shadow: 0 0 15px rgba(255,0,0,0.6);' },
+    jade:       { name: 'Toxic Spectre',   pro: true,  css: 'background: linear-gradient(135deg, #00FF7F, #00C957, #FFD700, #00FF7F); box-shadow: 0 0 15px rgba(0,255,127,0.5);' }
+  };
+
+  // Override the legacy renderer too: never use the old conic/gradient rings for profile avatars.
+  window.getAvatarWithFrame = function(avatarUrl, ign, size) {
+    if (window.CODMRenderFramedAvatar && (State.profile?.avatarFrame || 'none') !== 'none') {
+      return window.CODMRenderFramedAvatar({ ...(State.profile || {}), avatar: avatarUrl || State.profile?.avatar || '', ign: ign || State.profile?.ign || 'Operator' }, size);
+    }
+    const r=Math.max(26,Number(size)||44);
+    return `<div style="width:${r}px;height:${r}px;border-radius:50%;overflow:hidden;background:rgba(255,107,0,.15);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:${Math.round(r*.35)}px">${avatarUrl?`<img src="${esc(avatarUrl)}" style="width:100%;height:100%;object-fit:cover" />`:getInitials(ign)}</div>`;
+  };
+
+  // Override avatar frame picker
+  window.openAvatarFramePicker = function() {
+    const isPro = State.profile?.isPro;
+    const currentFrame = State.profile?.avatarFrame || 'none';
+
+    openSheet(`
+      <div class="space-y-4">
+        <div class="text-center text-xs text-gray-500">
+          Choose your frame · available to every player
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          ${Object.entries(PREMIUM_FRAMES).map(([key, frame]) => {
+            const isSelected = currentFrame === key;
+            const isLocked = false;
+            const preview = frame.css
+              ? `<div style="${frame.css} width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative;">
+                   <div style="width: 50px; height: 50px; border-radius: 50%; background: #111; display: flex; align-items: center; justify-content: center; border: 2px solid #0a0a0a; overflow: hidden;">
+                     ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width:100%;height:100%;object-fit:cover;" />` : 'CP'}
+                   </div>
+                   ${isLocked ? `<div style="position: absolute; top: -4px; right: -4px; font-size: 14px;">🔒</div>` : ''}
+                 </div>`
+              : `<div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(255,107,0,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 22px;">
+                   ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />` : 'CP'}
+                 </div>`;
+            return `
+              <button class="frame-pick-btn btn-press flex flex-col items-center gap-2 p-3 rounded-2xl ${isSelected ? 'bg-primary/10 border-2 border-primary' : 'bg-card border border-border'}" data-frame="${key}" data-locked="${isLocked}">
+                ${preview}
+                <span class="text-[9px] font-bold ${isSelected ? 'text-primary' : 'text-gray-400'} text-center leading-tight">${frame.name}</span>
+              </button>
+            `;
+          }).join('')}
+        </div>
+        
+      </div>
+    `, '✨ Avatar Frames');
+
+    document.querySelectorAll('.frame-pick-btn').forEach(btn => {
+      btn.onclick = async () => {
+        if (btn.dataset.locked === 'true') {
+          closeSheet();
+          setTimeout(() => showProPaywall('Unlock premium frames with Pro.'), 300);
+          return;
+        }
+        try {
+          await updateDoc(doc(db, 'users', State.user.uid), {
+            avatarFrame: btn.dataset.frame
+          });
+          State.profile.avatarFrame = btn.dataset.frame;
+          toast('✨ Frame applied!', 'success');
+          closeSheet();
+          if (State.currentTab === 'you') setTimeout(renderYouTab, 300);
+        } catch (e) {
+          toast('Failed: ' + e.message, 'error');
+        }
+      };
+    });
+
+    const upBtn = document.getElementById('frame-upgrade');
+    if (upBtn) upBtn.onclick = () => { closeSheet(); setTimeout(goPro, 300); };
+
+    if (window.lucide) window.lucide.createIcons();
+  };
+
+  // Legacy reaction tab-switch wrappers and prefetch removed; the integration
+  // repair hydrates reactions after renders and visibility changes.
+
+  // ============================================
+  // DONE
+  // ============================================
+
+  console.log('✅ [57] Reactions + premium frames loaded');
+  console.log('   - 5 reactions: ❤️ 🔥 💀 🐐 👑');
+  console.log('   - Free: first 3 · Pro: all 5');
+  console.log('   - Hold any reaction button for 1 second to open picker');
+  console.log('   - 11 premium frames including Molten, Tesla, Crystal, Void Walker');
+
+})();
+
+/* END OF CHUNK 57 */
+
+
+/* CODMPanda visual identity upgrade — layered tactical cosmetics + activity guard */
+(function CODMPandaVisualUpgrade(){
+  if (window.__codmpandaVisualUpgrade) return;
+  window.__codmpandaVisualUpgrade = true;
+  const css = `
+  .cp-avatar-shell{position:relative!important;overflow:visible!important;isolation:isolate;flex-shrink:0}
+  .cp-avatar-core{position:absolute!important;z-index:8!important;left:19%;top:19%;width:62%;height:62%;margin:0!important;overflow:hidden;border-radius:50%;background:#101014;box-sizing:border-box;border:1px solid rgba(255,255,255,.16);}
+  .cp-avatar-core img{width:100%;height:100%;object-fit:cover;display:block}
+  .cp-frame-art{position:absolute;inset:-4%;width:108%;height:108%;z-index:10;pointer-events:none;overflow:visible;filter:drop-shadow(0 0 4px var(--cp-glow,#ff5a1f));}
+  .cp-frame-art path,.cp-frame-art circle{vector-effect:non-scaling-stroke}.cp-frame-art-fire,.cp-frame-art-mythic{filter:drop-shadow(0 0 5px var(--cp-glow,#ff5a1f)) drop-shadow(0 0 2px #ffb12c)}.cp-frame-art-darkmatter,.cp-frame-art-neon{filter:drop-shadow(0 0 5px var(--cp-glow,#b34cff)) drop-shadow(0 0 2px #fff)}.cp-frame-art-gold,.cp-frame-art-championship{filter:drop-shadow(0 0 4px var(--cp-glow,#ffd45e))}.cp-frame-art-ice,.cp-frame-art-diamond,.cp-frame-art-aether{filter:drop-shadow(0 0 5px var(--cp-glow,#6beaff))}
+  .cp-frame-inferno{--cp-glow:#ff4b18}.cp-frame-darkmatter{--cp-glow:#b34cff}.cp-frame-diamond{--cp-glow:#6beaff}.cp-frame-dragon{--cp-glow:#ffb000}.cp-frame-championship{--cp-glow:#ffd45e}.cp-frame-reaper{--cp-glow:#e33c59}.cp-frame-aether{--cp-glow:#49ffc5}.cp-frame-neon{--cp-glow:#ff36c7}
+  .cp-theme-profile{position:relative;overflow:hidden;background-size:cover!important;border-color:var(--cp-theme-border,#292929)!important;box-shadow:0 0 28px var(--cp-theme-glow,transparent)!important}
+  .cp-theme-profile:before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.28;background-image:repeating-linear-gradient(135deg,transparent 0 18px,rgba(255,255,255,.045) 19px 20px,transparent 21px 38px);}
+  .cp-theme-profile>*{position:relative;z-index:1}
+  .cp-profile-cosmetic-label{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border:1px solid rgba(255,255,255,.15);border-radius:999px;background:rgba(0,0,0,.35);font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#ddd}
+  .cp-ops-panel{background:linear-gradient(145deg,#171717,#0b0b0d);border:1px solid #292929;border-radius:18px;padding:14px;margin-top:12px}
+  .cp-ops-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+  .cp-ops-tile{background:rgba(255,255,255,.035);border:1px solid #2b2b2b;border-radius:12px;padding:11px;text-align:left;color:#eee}
+  .cp-ops-tile strong{display:block;font-size:11px;margin-top:5px}.cp-ops-tile small{display:block;color:#888;font-size:9px;margin-top:3px}
+  `;
+  const style=document.createElement('style'); style.id='codmpanda-visual-upgrade-css'; style.textContent=css; document.head.appendChild(style);
+
+  // Expand the existing theme and frame catalog without removing older cosmetics.
+  if (typeof PROFILE_THEMES !== 'undefined') {
+    PROFILE_THEMES.reaper={name:'Shadow Reaper',pro:true,gradient:'radial-gradient(ellipse at 15% 0%,#65142a 0,transparent 55%),linear-gradient(145deg,#17070d,#050506 70%,#310b17)',border:'#e33c59',glow:'0 0 30px rgba(227,60,89,.35)',nameColor:'#ff657b',animated:true};
+    PROFILE_THEMES.dragon={name:'Dragon’s Wrath',pro:true,gradient:'radial-gradient(ellipse at 10% 0%,#78320a 0,transparent 56%),linear-gradient(145deg,#241006,#050505 68%,#4a1208)',border:'#ff8a28',glow:'0 0 30px rgba(255,90,24,.35)',nameColor:'#ffb14a',animated:true};
+    PROFILE_THEMES.championship={name:'Championship Elite',pro:true,gradient:'radial-gradient(ellipse at 15% 0%,#59410b 0,transparent 56%),linear-gradient(145deg,#171204,#050505 70%,#342407)',border:'#f4c542',glow:'0 0 30px rgba(244,197,66,.3)',nameColor:'#ffe28a',animated:true};
+    PROFILE_THEMES.aether={name:'Aether Guardian',pro:true,gradient:'radial-gradient(ellipse at 10% 0%,#075e51 0,transparent 56%),linear-gradient(145deg,#061c1b,#050606 70%,#073e37)',border:'#49ffc5',glow:'0 0 30px rgba(73,255,197,.28)',nameColor:'#8dffe0',animated:true};
+  }
+  if (typeof AVATAR_FRAMES !== 'undefined') {
+    AVATAR_FRAMES.reaper = {name:'Shadow Reaper',pro:true,style:'background:linear-gradient(135deg,#ff4c65,#210811,#8b1028);padding:4px;border-radius:50%;box-shadow:0 0 15px rgba(227,60,89,.7)'};
+    AVATAR_FRAMES.aether = {name:'Aether Guardian',pro:true,style:'background:linear-gradient(135deg,#8dffe0,#063d3a,#19b79b);padding:4px;border-radius:50%;box-shadow:0 0 15px rgba(73,255,197,.65)'};
+  }
+  const FRAME_META={
+    none:{name:'No Frame',cls:''}, gold:{name:'Diamond Sovereign',cls:'cp-frame-championship'}, fire:{name:'Inferno Protocol',cls:'cp-frame-inferno'}, ice:{name:'Arctic Ops',cls:'cp-frame-diamond'}, neon:{name:'Neon Rift',cls:'cp-frame-neon'}, mythic:{name:'Dragon’s Wrath',cls:'cp-frame-dragon'}, diamond:{name:'Diamond Division',cls:'cp-frame-diamond'}, darkmatter:{name:'Dark Matter',cls:'cp-frame-darkmatter'}, championship:{name:'Championship Elite',cls:'cp-frame-championship'}, reaper:{name:'Shadow Reaper',cls:'cp-frame-reaper'}, aether:{name:'Aether Guardian',cls:'cp-frame-aether'}
+  };
+  const THEME_META={
+    dark:{name:'Operator Black',gradient:'linear-gradient(145deg,#17191e,#070809 65%,#17100d)',border:'#35383e',glow:'0 0 0 rgba(0,0,0,0)'},
+    gold:{name:'Diamond Sovereign',gradient:'radial-gradient(ellipse at 15% 0%,#47320b 0,transparent 52%),linear-gradient(145deg,#171105,#060606 70%,#2c2108)',border:'#e5b942',glow:'rgba(229,185,66,.24)'},
+    fire:{name:'Inferno Protocol',gradient:'radial-gradient(ellipse at 0% 0%,#7a1b07 0,transparent 58%),linear-gradient(145deg,#230b07,#070707 66%,#3d1008)',border:'#ff5727',glow:'rgba(255,65,24,.28)'},
+    ice:{name:'Arctic Ops',gradient:'radial-gradient(ellipse at 0% 0%,#06466b 0,transparent 60%),linear-gradient(145deg,#071a29,#06090e 70%,#07304a)',border:'#52d8ff',glow:'rgba(82,216,255,.23)'},
+    galaxy:{name:'Dark Matter',gradient:'radial-gradient(ellipse at 10% 0%,#552078 0,transparent 60%),linear-gradient(145deg,#170923,#060609 70%,#301047)',border:'#bc68ff',glow:'rgba(188,104,255,.26)'},
+    reaper:{name:'Shadow Reaper',gradient:'radial-gradient(ellipse at 15% 0%,#65142a 0,transparent 55%),linear-gradient(145deg,#17070d,#050506 70%,#310b17)',border:'#e33c59',glow:'rgba(227,60,89,.35)'},
+    dragon:{name:'Dragon’s Wrath',gradient:'radial-gradient(ellipse at 10% 0%,#78320a 0,transparent 56%),linear-gradient(145deg,#241006,#050505 68%,#4a1208)',border:'#ff8a28',glow:'rgba(255,90,24,.35)'},
+    championship:{name:'Championship Elite',gradient:'radial-gradient(ellipse at 15% 0%,#59410b 0,transparent 56%),linear-gradient(145deg,#171204,#050505 70%,#342407)',border:'#f4c542',glow:'rgba(244,197,66,.3)'},
+    aether:{name:'Aether Guardian',gradient:'radial-gradient(ellipse at 10% 0%,#075e51 0,transparent 56%),linear-gradient(145deg,#061c1b,#050606 70%,#073e37)',border:'#49ffc5',glow:'rgba(73,255,197,.28)'}
+  };
+  function esc2(v){try{return esc(String(v||''))}catch(_){return String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}}
+  // Distinct tactical-art frame overlays. Each motif is part of the border artwork,
+  // not a duplicate colored ring; the user's own avatar remains visible in the center.
+  function frameSvg(frame){
+    const motifs={
+      fire:{c:['#ff3a16','#ffb12c','#5b1007'],art:'<path d="M17 31L7 19l15 3 5-13 8 14M83 31l10-12-15 3-5-13-8 14M17 69L7 81l15-3 5 13 8-14M83 69l10 12-15-3-5 13-8-14"/><path d="M22 19l8 8-7 2M78 19l-8 8 7 2M22 81l8-8-7-2M78 81l-8-8 7-2"/>'},
+      gold:{c:['#fff0a1','#b77b12','#fff8d0'],art:'<path d="M20 16l7 8 7-8 7 8 9-12 9 12 7-8 7 8 7-8-4 18H24z"/><path d="M30 77l8 6 12-8 12 8 8-6-4 13H34z"/><circle cx="50" cy="8" r="3"/><path d="M13 43l7 7-7 7M87 43l-7 7 7 7"/>'},
+      ice:{c:['#e7ffff','#39caff','#124a9c'],art:'<path d="M50 4v15M44 10l6 6 6-6M50 81v15M44 90l6-6 6 6M4 50h15M10 44l6 6-6 6M81 50h15M90 44l-6 6 6 6"/><path d="M19 24l10 4-5 10M81 24l-10 4 5 10M19 76l10-4-5-10M81 76l-10-4 5-10"/>'},
+      neon:{c:['#ff43c8','#7b42ff','#30e9ff'],art:'<path d="M17 18l12 8-8 8 12 7M83 18l-12 8 8 8-12 7M17 82l12-8-8-8 12-7M83 82l-12-8 8-8-12-7"/><path d="M35 8l4 7-4 7-4-7zM65 78l4 7-4 7-4-7zM8 35l7 4 7-4-7-4zM78 65l7 4 7-4-7-4z"/>'},
+      diamond:{c:['#efffff','#4bdcff','#4b6cff'],art:'<path d="M50 4l8 10-8 10-8-10zM50 76l8 10-8 10-8-10zM4 50l10-8 10 8-10 8zM76 50l10-8 10 8-10 8z"/><path d="M23 13l7 9-4 8M77 13l-7 9 4 8M23 87l7-9-4-8M77 87l-7-9 4-8"/>'},
+      mythic:{c:['#ffbd3c','#f34a13','#641007'],art:'<path d="M16 29Q6 15 20 11l8 13 8-5-2 14M84 29Q94 15 80 11l-8 13-8-5 2 14M22 66l8 5 5-8 7 10M78 66l-8 5-5-8-7 10"/><path d="M38 16l12-9 12 9-5 8H43z"/><path d="M35 83l15 8 15-8-6-5H41z"/>'},
+      darkmatter:{c:['#d07bff','#5627a8','#090611'],art:'<path d="M50 5l5 15-5 7-5-7zM50 73l5 7-5 15-5-15zM5 50l15-5 7 5-7 5zM73 50l7-5 15 5-15 5z"/><path d="M18 18l12 4 4 12-12-4zM82 18l-12 4-4 12 12-4zM18 82l12-4 4-12-12 4zM82 82l-12-4-4-12 12 4z"/>'},
+      championship:{c:['#fff1a6','#d49a20','#fff8d8'],art:'<path d="M28 8h44l-5 15H33zM33 77h34l5 15H28z"/><path d="M13 28l10 5-5 10M87 28l-10 5 5 10M13 72l10-5-5-10M87 72l-10-5 5-10"/><path d="M40 13l10 8 10-8M40 87l10-8 10 8"/>'},
+      reaper:{c:['#ff4c65','#8b1028','#13080d'],art:'<path d="M21 15l10 7-2 13-9-7zM79 15l-10 7 2 13 9-7zM21 85l10-7-2-13-9 7zM79 85l-10-7 2-13 9 7z"/><path d="M36 8l5 8-5 8-5-8zM64 76l5 8-5 8-5-8z"/><path d="M9 40l9 4-4 6M91 40l-9 4 4 6"/>'},
+      aether:{c:['#8dffe0','#19b79b','#063d3a'],art:'<path d="M50 4q14 10 0 22Q36 14 50 4zM50 74q14 10 0 22Q36 84 50 74zM4 50q10-14 22 0Q14 64 4 50zM74 50q10-14 22 0Q84 64 74 50z"/><path d="M19 19l12 7-7 12M81 19l-12 7 7 12M19 81l12-7-7-12M81 81l-12-7 7-12"/>'}
+    };
+    const k=motifs[frame]?frame:(frame==='gold'?'gold':'fire'),m=motifs[k],c=m.c;
+    const tacticalExtras={
+      fire:'<path d="M4 34L13 38 9 48 17 52 10 62 4 58M96 34L87 38 91 48 83 52 90 62 96 58"/><path d="M31 3l4 8-4 7-4-7zM69 82l4 8-4 7-4-7z"/>',
+      gold:'<path d="M28 4l5 8-5 8-5-8zM72 80l5 8-5 8-5-8zM3 30l10 4-4 10M97 30l-10 4 4 10"/>',
+      ice:'<path d="M7 25l12 8-7 13 10 4-10 4 7 13-12 8M93 25l-12 8 7 13-10 4 10 4-7 13 12 8"/>',
+      neon:'<path d="M3 27l15 5-7 10 10 8-10 8 7 10-15 5M97 27l-15 5 7 10-10 8 10 8-7 10 15 5"/>',
+      diamond:'<path d="M7 22l12 8-7 10 9 10-9 10 7 10-12 8M93 22l-12 8 7 10-9 10 9 10-7 10 12 8"/>',
+      mythic:'<path d="M4 27l15 6-4 12 8 5-8 5 4 12-15 6M96 27l-15 6 4 12-8 5 8 5-4 12 15 6"/><path d="M36 3l4 8-4 8-4-8zM64 81l4 8-4 8-4-8z"/>',
+      darkmatter:'<path d="M3 25l15 5-5 12 10 8-10 8 5 12-15 5M97 25l-15 5 5 12-10 8 10 8-5 12 15 5"/>',
+      championship:'<path d="M4 30h13l-4 9 8 11-8 11 4 9H4M96 30H83l4 9-8 11 8 11-4 9h13"/>',
+      reaper:'<path d="M4 24l15 9-8 13 10 4-10 4 8 13-15 9M96 24l-15 9 8 13-10 4 10 4-8 13 15 9"/>',
+      aether:'<path d="M4 29l14 7-6 14 6 14-14 7M96 29l-14 7 6 14-6 14 14 7"/>'
+    };
+    const grad='cpgrad-'+String(frame).replace(/[^a-z0-9_-]/gi,'')+'-'+Math.random().toString(36).slice(2,7);
+    // Premium frames are sculpted equipment pieces around the circular portrait, not rings.
+    // Heavy filled plates, a helmet crest and weapon-like side blades create a distinct silhouette.
+    const crest = k==='mythic'||k==='fire' ? '<path d="M34 20L29 7 42 13 50 2 58 13 71 7 66 20 59 25 41 25Z" fill="#17100d" stroke="url(#'+grad+')" stroke-width="2.5"/><path d="M42 17l8-7 8 7-8 5z" fill="'+c[0]+'"/>' : k==='reaper'||k==='darkmatter' ? '<path d="M31 20L35 5 44 14 50 1 56 14 65 5 69 20 59 26 41 26Z" fill="#100910" stroke="url(#'+grad+')" stroke-width="2.5"/><path d="M39 18l11 5 11-5-5 9H44Z" fill="'+c[0]+'"/>' : '<path d="M31 19L35 6 45 13 50 3 55 13 65 6 69 19 60 26 40 26Z" fill="#111316" stroke="url(#'+grad+')" stroke-width="2.5"/><path d="M40 18l10-6 10 6-10 6z" fill="'+c[0]+'"/>';
+    const blades = '<path d="M8 27L21 34 16 43 24 49 15 55 20 66 8 73 12 59 5 51 12 43Z" fill="#111316" stroke="url(#'+grad+')" stroke-width="2"/><path d="M92 27L79 34 84 43 76 49 85 55 80 66 92 73 88 59 95 51 88 43Z" fill="#111316" stroke="url(#'+grad+')" stroke-width="2"/><path d="M10 33l11 16-9 17M90 33L79 49l9 17" fill="none" stroke="'+c[0]+'" stroke-width="2.5"/>';
+    const bottom = '<path d="M30 78L39 84 50 79 61 84 70 78 66 94 55 90 50 98 45 90 34 94Z" fill="#111316" stroke="url(#'+grad+')" stroke-width="2.5"/><path d="M42 84l8 5 8-5-3 8h-10Z" fill="'+c[0]+'"/>';
+    return `<svg class="cp-frame-art cp-frame-art-${k} ${FRAME_META[frame]?.cls||'cp-frame-inferno'}" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="${grad}" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${c[0]}"/><stop offset=".5" stop-color="${c[1]}"/><stop offset="1" stop-color="${c[2]}"/></linearGradient></defs>
+      <!-- Rebuilt as separate armor pieces: deliberately no circular/continuous ring. -->
+      <g stroke="#08090b" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M29 17L34 6 43 12 50 2 57 12 66 6 71 17 62 25 38 25Z" fill="#14161a" stroke="url(#${grad})" stroke-width="2.8"/>
+        <path d="M37 15L44 17 50 10 56 17 63 15 59 22 41 22Z" fill="${c[0]}" stroke="#111" stroke-width="1.4"/>
+        <path d="M13 27L23 24 31 33 26 42 31 49 24 57 28 69 17 78 9 68 13 58 7 50 13 42 8 34Z" fill="#17191d" stroke="url(#${grad})" stroke-width="2.8"/>
+        <path d="M87 27L77 24 69 33 74 42 69 49 76 57 72 69 83 78 91 68 87 58 93 50 87 42 92 34Z" fill="#17191d" stroke="url(#${grad})" stroke-width="2.8"/>
+        <path d="M9 32L21 40 15 49 22 55 16 66 10 61 13 51 8 45Z" fill="${c[1]}" stroke="#0a0a0a" stroke-width="1.7"/>
+        <path d="M91 32L79 40 85 49 78 55 84 66 90 61 87 51 92 45Z" fill="${c[1]}" stroke="#0a0a0a" stroke-width="1.7"/>
+        <path d="M28 76L38 81 50 76 62 81 72 76 68 89 58 87 50 96 42 87 32 89Z" fill="#15171b" stroke="url(#${grad})" stroke-width="2.8"/>
+        <path d="M41 82L50 86 59 82 56 89 50 92 44 89Z" fill="${c[0]}" stroke="#0a0a0a" stroke-width="1.3"/>
+        <path d="M24 28L31 34 27 40M76 28L69 34 73 40M25 62L32 67M75 62L68 67" fill="none" stroke="${c[0]}" stroke-width="2.2"/>
+        <path d="M33 7L30 2 37 5M67 7L70 2 63 5M12 72L5 78 14 79M88 72L95 78 86 79" fill="none" stroke="${c[1]}" stroke-width="2.2"/>
+      </g>
+      <g fill="none" stroke="url(#${grad})" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">${m.art}${tacticalExtras[k]||''}</g>
+      <path d="M18 20l5 3-3 5-5-3zM82 20l-5 3 3 5 5-3zM20 81l5-3 3 5-5 3zM80 81l-5-3-3 5 5 3z" fill="${c[0]}" stroke="#090a0c" stroke-width="1.5"/>
+    </svg>`;
+  }
+  const WAR_ARTIFACT_FRAMES={
+    ghost_ops:{name:'Ghost Ops',file:'01_ghost_ops.png',tier:'PRO'}, mythic_crystal:{name:'Mythic Crystal',file:'02_mythic_crystal.png',tier:'PRO'}, inferno:{name:'Inferno',file:'03_inferno.png',tier:'PRO'}, frost_division:{name:'Frost Division',file:'04_frost_division.png',tier:'PRO'}, legendary_rank:{name:'Legendary Rank',file:'05_legendary_rank.png',tier:'PRO'}, zombie_hunter:{name:'Zombie Hunter',file:'06_zombie_hunter.png',tier:'PRO'}, dragon_blade:{name:'Dragon Blade',file:'07_dragon_blade.png',tier:'PRO'}, shadow_legion:{name:'Shadow Legion',file:'08_shadow_legion.png',tier:'FREE'}, war_trophy:{name:'War Trophy',file:'09_war_trophy.png',tier:'PRO'}, cosmic_vanguard:{name:'Cosmic Vanguard',file:'10_cosmic_vanguard.png',tier:'FREE'}, ranked_champion:{name:'Ranked Champion',file:'11_ranked_champion.png',tier:'PRO'}, weapon_master:{name:'Weapon Master',file:'12_weapon_master.png',tier:'FREE'}, ice_crystal:{name:'Ice Crystal',file:'13_ice_crystal.png',tier:'FREE'}, battle_hardened:{name:'Battle Hardened',file:'14_battle_hardened.png',tier:'FREE'}, sharpshooter:{name:'Sharpshooter',file:'15_sharpshooter.png',tier:'FREE'}, task_force:{name:'Task Force',file:'16_task_force.png',tier:'PRO'}, urban_warrior:{name:'Urban Warrior',file:'17_urban_warrior.png',tier:'FREE'}, chemical_warfare:{name:'Chemical Warfare',file:'18_chemical_warfare.png',tier:'FREE'}, war_trophy_skulls:{name:'War Trophy Skulls',file:'19_war_trophy_skulls.png',tier:'FREE'}, war_machine:{name:'War Machine',file:'20_war_machine.png',tier:'FREE'}
+  };
+  // Publish the registry for the later integration IIFE; JS block scope otherwise hides it.
+  window.CODM_WAR_ARTIFACT_FRAMES = WAR_ARTIFACT_FRAMES;
+  function renderFramedAvatar(user,size=44){
+    const storedFrame=user?.avatarFrame||'none';
+    // Old CSS/SVG frame IDs are retired. Pro-only PNG artwork must not render for a Free profile.
+    const candidate=WAR_ARTIFACT_FRAMES[storedFrame];
+    const hasPro= user?.isPro===true || user?.pro===true || user?.subscription==='pro' || user?.proStatus==='active';
+    const frame=(storedFrame==='none'||(candidate&&(candidate.tier!=='PRO'||hasPro)))?storedFrame:'none';
+    const name=user?.ign||user?.displayName||'Operator'; const url=user?.avatar||user?.photoURL||user?.photoUrl||''; const r=Math.max(26,Number(size)||44);
+    const avatarContent=url?`<img src="${esc2(url)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block">`:esc2((typeof getInitials==='function'?getInitials(name):name.slice(0,2).toUpperCase()));
+    if(frame==='none') return `<div class="cp-avatar-shell cp-avatar-no-frame" style="width:${r}px;height:${r}px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#202024;font-weight:900;font-size:${Math.round(r*.32)}px">${avatarContent}</div>`;
+    const artifact=WAR_ARTIFACT_FRAMES[frame];
+    const art=`<img class="cp-war-artifact-frame" src="/frames/${artifact.file}" alt="" aria-hidden="true" loading="lazy" onerror="this.style.display='none'">`;
+    return `<div class="cp-avatar-shell ${FRAME_META[frame]?.cls||''}" style="width:${r}px;height:${r}px;border-radius:50%;"><div class="cp-avatar-core" style="border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:${Math.round(r*.32)}px">${avatarContent}</div>${art}</div>`;
+  }
+  window.CODMRenderFramedAvatar=renderFramedAvatar;
+
+  // Keep the online activity estimate small, lively, and never zero.
+  try{ if(window.__onlineCounterInterval) clearInterval(window.__onlineCounterInterval); }catch(_){}
+  const cpStartOnlineCounter=function(){
+    const el=document.getElementById('online-count'),num=document.getElementById('online-num');if(!el||!num)return;
+    el.classList.remove('hidden');el.classList.add('flex');let n=Number(num.textContent);if(!Number.isFinite(n)||n<20||n>58)n=27+Math.floor(Math.random()*13);num.textContent=String(n);num.title='Community activity estimate';
+    if(window.__onlineCounterInterval)clearInterval(window.__onlineCounterInterval);
+    const tick=()=>{const mode=Math.random();const steps=mode<.18?[-4,-3,-2,-1,1,2,3,4,5]:mode<.48?[-2,-1,0,1,2]:[-1,0,0,1];const step=steps[Math.floor(Math.random()*steps.length)];n=Math.max(22,Math.min(54,n+step));num.textContent=String(n);};
+    const schedule=()=>{const mode=Math.random();const delay=mode<.22?1800+Math.random()*2800:mode<.55?4500+Math.random()*6500:11000+Math.random()*15000;window.__onlineCounterInterval=setTimeout(()=>{tick();schedule()},delay)};schedule();
+  };
+  window.startOnlineCounter=cpStartOnlineCounter;
+  try { startOnlineCounter=cpStartOnlineCounter; } catch(_) {}
+
+  // Add true frame artwork to author avatars in feed/group/comment surfaces that expose data-uid.
+  const profileCache=new Map();
+  async function getPublicProfile(uid){if(!uid)return null;if(uid===State.user?.uid)return State.profile||null;if(profileCache.has(uid))return profileCache.get(uid);try{const s=await getDoc(doc(db,'users',uid));const v=s.exists()?{id:uid,...s.data()}:null;profileCache.set(uid,v);return v}catch(_){return null}}
+  async function decorateAvatars(root=document){
+    if(!State.user)return;
+    const nodes=root.querySelectorAll?root.querySelectorAll('[data-uid]'):[];
+    for(const el of nodes){
+      // Action controls may carry data-uid for reporting; never replace their icons with avatars.
+      if(el.matches?.('button, a, input, textarea, select')) continue;
+      if(el.dataset.cpNameDone || el.classList?.contains('user-name-link')){
+        if(el.dataset.cpNameDone)continue;
+      }
+      // Refresh cached author names from the current user profile so renames
+      // propagate to old posts/comments without changing their content.
+      if(!el.dataset.cpNameDone && (el.classList?.contains('user-name-link') || (el.tagName==='SPAN' && el.classList.contains('font-bold') && !el.querySelector('img')))){
+        el.dataset.cpNameDone='1'; const nameUser=await getPublicProfile(el.dataset.uid);
+        if(nameUser?.ign){const badge=el.querySelector('.verified-badge');el.textContent=nameUser.ign;if(badge)el.appendChild(badge);}
+      }
+      if(el.closest('#sheet-container')?.dataset.cpSkipFrame==='1')continue;
+      if(!el.querySelector('img') && !/^w-(?:[0-9]+|\d+\.\d+)$/.test(el.className||'') && !/rounded-(?:full|2xl)/.test(el.className||''))continue;
+      const rect=el.getBoundingClientRect();if(rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
+      const uid=el.dataset.uid;if(!uid)continue;
+      const user=await getPublicProfile(uid);if(!user)continue;
+      const frameKey=user.avatarFrame||'none';
+      if(frameKey==='none'||!WAR_ARTIFACT_FRAMES[frameKey])continue;
+      if(el.dataset.cpFrameDone===frameKey)continue;
+      const img=el.querySelector('img');
+      const avatarUrl=user.avatar||user.photoURL||user.photoUrl||img?.getAttribute('src')||'';
+      const size=Math.max(28,Math.min(72,Math.round(Math.min(rect.width,rect.height))));
+      const holder=document.createElement('div');
+      holder.innerHTML=renderFramedAvatar({...user,avatar:avatarUrl,ign:user.ign||user.displayName||'Operator'},size);
+      const rendered=holder.firstElementChild;if(!rendered)continue;
+      el.replaceChildren(rendered);
+      el.dataset.cpFrameDone=frameKey;
+      el.dataset.cpFrameMode='png';
+      el.classList.add('cp-avatar-framed-host');
+      el.style.overflow='visible';
+    }
+  }
+  const observer=new MutationObserver(()=>{clearTimeout(window.__cpFrameScanTimer);window.__cpFrameScanTimer=setTimeout(()=>decorateAvatars(document),250)});
+  observer.observe(document.documentElement,{childList:true,subtree:true});
+  setTimeout(()=>decorateAvatars(document),1000);
+
+  // Make viewed profiles display the owner's theme and full avatar artwork (not the viewer's cosmetics).
+  const originalOpenProfile=window.openUserProfile;
+  if(typeof originalOpenProfile==='function')window.openUserProfile=async function(uid){
+    const result=await originalOpenProfile.apply(this,arguments);
+    setTimeout(async()=>{try{
+      const user=await getPublicProfile(uid);if(!user)return;
+      const sheet=document.querySelector('#sheet-container .px-5');if(!sheet)return;
+      const card=sheet.querySelector('.bg-card.border.rounded-2xl');if(card){const t=THEME_META[user.themeStyle]||THEME_META.dark;card.classList.add('cp-theme-profile');card.style.background=t.gradient;card.style.setProperty('--cp-theme-border',t.border);card.style.setProperty('--cp-theme-glow',t.glow);}
+      const avatar=sheet.querySelector('.bg-gradient-to-br.from-primary\\/30.to-gold\\/30');
+      if(avatar){const parent=avatar.parentElement;const size=64;parent.innerHTML=renderFramedAvatar(user,size)+(user.isPro?'<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-gold flex items-center justify-center border-2 border-card text-sm">👑</div>':'');parent.classList.add('cp-avatar-parent');}
+      const title=sheet.querySelector('.text-base.font-black.truncate');if(title&&!title.parentElement.querySelector('.cp-theme-label')){const label=document.createElement('div');label.className='cp-profile-cosmetic-label cp-theme-label mt-1';label.textContent='✦ '+(THEME_META[user.themeStyle]?.name||'Operator Black')+' · '+(FRAME_META[user.avatarFrame]?.name||'No Frame');title.parentElement.appendChild(label)}
+    }catch(e){console.warn('Profile cosmetics:',e)}},350);
+    return result;
+  };
+
+  // Profile themes should visibly style the entire profile card, not only a border.
+  const originalYouRender=window.renderYouTab;
+  if(typeof originalYouRender==='function')window.renderYouTab=function(){const r=originalYouRender.apply(this,arguments);setTimeout(()=>{try{const content=document.getElementById('content');if(!content)return;const card=content.querySelector('.bg-card.border.border-border.rounded-2xl, .bg-card.border.border-gold.rounded-2xl');if(card){const t=THEME_META[State.profile?.themeStyle]||THEME_META.dark;card.classList.add('cp-theme-profile');card.style.background=t.gradient;card.style.setProperty('--cp-theme-border',t.border);card.style.setProperty('--cp-theme-glow',t.glow);} }catch(_){}},120);return r;};
+
+  // Add a compact CODM Ops Deck to YOU without creating another top-level tab.
+  function addOpsDeck(){
+    if(!State.user||State.currentTab!=='you')return;const content=document.getElementById('content');if(!content||content.querySelector('#cp-ops-deck'))return;
+    const anchor=content.querySelector('#theme-frame-buttons')||content.querySelector('.bg-card.border.border-border.rounded-2xl');if(!anchor)return;
+    const deck=document.createElement('section');deck.id='cp-ops-deck';deck.className='cp-ops-panel';deck.innerHTML=`<div class="flex items-center justify-between"><div><div class="text-[10px] font-black tracking-[.18em] text-primary">CODMPANDA // OPERATOR HUB</div><div class="text-sm font-black mt-1">Build your player identity</div></div><span class="cp-profile-cosmetic-label">SEASON READY</span></div><div class="cp-ops-grid"><button class="cp-ops-tile" data-cp-action="loadout">🎯<strong>Weapon Showcase</strong><small>Feature your main build</small></button><button class="cp-ops-tile" data-cp-action="missions">⚡<strong>XP & Missions</strong><small>Progress and challenges</small></button><button class="cp-ops-tile" data-cp-action="rank">🏆<strong>Rank & Titles</strong><small>Show your competitive identity</small></button><button class="cp-ops-tile" data-cp-action="clan">🛡️<strong>Squad Identity</strong><small>Recruit and find teammates</small></button></div>`;
+    anchor.insertAdjacentElement('afterend',deck);
+    deck.addEventListener('click',e=>{const b=e.target.closest('[data-cp-action]');if(!b)return;const action=b.dataset.cpAction;const info={loadout:['Weapon Showcase','Use LAB to create or share a weapon build. Your featured build can be linked from your profile as the loadout feature rolls out.'],missions:['XP & Missions','CODMPanda progression is planned around daily activity, loadout sharing, helpful community posts and squad participation. XP rewards should be server-validated before being used for premium unlocks.'],rank:['Rank & Titles','Your CODM rank is shown on your profile. Achievement titles and seasonal leaderboards are the next progression layer.'],clan:['Squad Identity','Use SQUAD to find teammates and coordinate groups. Clan emblems, recruitment roles and squad badges are planned for the same area.']}[action];if(info)openSheet(`<div class="space-y-3"><p class="text-sm text-gray-300 leading-relaxed">${esc2(info[1])}</p><button class="btn-press w-full py-3 rounded-xl bg-card border border-border font-bold" onclick="closeSheet()">Got it</button></div>`,info[0]);});
+  }
+  const origSwitch=window.switchTab;if(typeof origSwitch==='function')window.switchTab=function(tab){const r=origSwitch.apply(this,arguments);setTimeout(()=>{if(tab==='you')addOpsDeck();decorateAvatars(document)},220);return r};
+  setTimeout(()=>{if(State.currentTab==='you')addOpsDeck();},1500);
+  console.log('CODMPanda visual identity upgrade loaded');
+})();
+
+
+/* CODMPanda ad placements: reserved link slots, free-tier only, no fake ad network. */
+(function CODMPandaAdPlacements(){
+  if (window.__cpAdPlacementsReady) return;
+  window.__cpAdPlacementsReady = true;
+  const css = `
+  #ad-banner.cp-ad-banner{display:none;align-items:center;justify-content:center;gap:10px;min-height:42px;box-sizing:border-box;padding:5px 12px calc(5px + env(safe-area-inset-bottom,0px));background:rgba(13,14,17,.98);border-top:1px solid #2c2c31;box-shadow:0 -8px 24px rgba(0,0,0,.2);color:#a1a1aa;z-index:25;text-align:left;font-size:11px}
+  #ad-banner .cp-ad-copy{min-width:0;flex:1;line-height:1.35}#ad-banner .cp-ad-kicker{font-size:9px;letter-spacing:.15em;font-weight:900;color:#ff7a32;text-transform:uppercase;margin-bottom:3px}
+  #ad-banner .cp-ad-link{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;padding:8px 11px;border:1px solid #6c351b;border-radius:9px;background:#21140f;color:#ffb080;font-size:10px;font-weight:800;text-decoration:none}
+  .cp-inline-ad{display:flex;align-items:center;gap:12px;margin:8px 0 12px;padding:8px 10px;border-radius:11px;border:1px dashed #3a332d;background:linear-gradient(110deg,rgba(255,107,0,.07),rgba(255,255,255,.018));color:#aaa;min-height:48px}
+  .cp-inline-ad .cp-ad-mark{width:28px;height:28px;display:grid;place-items:center;flex:0 0 28px;border-radius:8px;background:#25160f;color:#ff8b48;font-size:18px}
+  .cp-inline-ad .cp-ad-content{min-width:0;flex:1}.cp-inline-ad strong{display:block;color:#eee;font-size:11px}.cp-inline-ad p{font-size:9px;line-height:1.25;margin:2px 0 0;color:#999}.cp-inline-ad a{font-size:10px;color:#ff9a5e;font-weight:800;text-decoration:none;white-space:nowrap}
+  @media(min-width:700px){#ad-banner.cp-ad-banner{left:50%;right:auto;transform:translateX(-50%);width:min(680px,100%);border:1px solid #2c2c31;border-bottom:0;border-radius:14px 14px 0 0}}
+  `;
+  const style=document.createElement('style');style.id='cp-ad-placement-styles';style.textContent=css;document.head.appendChild(style);
+  function ensureBanner(){
+    const banner=document.getElementById('ad-banner');if(!banner)return;
+    banner.classList.add('cp-ad-banner');
+    banner.innerHTML=`<div class="cp-ad-copy"><div class="cp-ad-kicker">Sponsored · Free plan</div><strong style="display:block;color:#e7e7e7;font-size:11px">Your ad could appear here</strong><span>Reach CODMPanda players and community members.</span></div><a class="cp-ad-link" href="#" data-cp-ad-placeholder="banner">Advertise ↗</a>`;
+    const link=banner.querySelector('[data-cp-ad-placeholder]');if(link)link.addEventListener('click',e=>{e.preventDefault();if(typeof window.toast==='function')window.toast('Ad link reserved. Add your advertiser/contact URL to activate this placement.','info',2600)});
+    const profile=window.State&&State.profile;
+    const isPro=!!(profile&&profile.isPro===true);
+    // Fail closed while entitlement is loading: never flash ads to a Pro user.
+    banner.style.display=(!profile||isPro)?'none':'flex';banner.setAttribute('aria-hidden',(!profile||isPro)?'true':'false');
+    if(!profile||isPro)banner.replaceChildren();
+  }
+  function inlineAd(index){return `<aside class="cp-inline-ad" aria-label="Advertisement"><div class="cp-ad-mark">↗</div><div class="cp-ad-content"><strong>Sponsored spot · CODMPanda</strong><p>Promote a gaming service, tournament, team, or gaming accessory to the community.</p></div><a href="#" data-cp-ad-placeholder="feed-${index}">Ad space ↗</a></aside>`}
+  function wireInlineAds(root){root.querySelectorAll('[data-cp-ad-placeholder^="feed-"]').forEach(a=>{if(a.dataset.cpBound)return;a.dataset.cpBound='1';a.addEventListener('click',e=>{e.preventDefault();if(typeof window.toast==='function')window.toast('This sponsored link slot is reserved. Add a real advertiser URL to activate it.','info',2600)})})}
+  // Add one feed ad after every 5 organic cards; do not inject into empty/error states.
+  const originalRender=window.renderHomeFeed;
+  if(typeof originalRender==='function'){
+    window.renderHomeFeed=function(){
+      const result=originalRender.apply(this,arguments);
+      const feed=document.getElementById('home-feed');
+      const profile=window.State&&State.profile;
+      const pro=!!(profile&&profile.isPro===true);
+      if(feed)feed.querySelectorAll('.cp-inline-ad').forEach(ad=>ad.remove());
+      if(feed&&profile&&!pro){
+        const cards=Array.from(feed.children).filter(el=>el.classList.contains('home-card'));
+        if(cards.length>=6){
+          for(let i=5,slot=1;i<cards.length;i+=6,slot++){
+            const ad=document.createElement('div');ad.innerHTML=inlineAd(slot);const node=ad.firstElementChild;
+            cards[i].insertAdjacentElement('beforebegin',node);
+          }
+          wireInlineAds(feed);
+        }
+      }
+      return result;
+    };
+  }
+  document.addEventListener('click',e=>{const a=e.target.closest('[data-cp-ad-placeholder="banner"]');if(!a)return;e.preventDefault();if(typeof window.toast==='function')window.toast('Ad link reserved. Add your advertiser/contact URL to activate this placement.','info',2600)});
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensureBanner,{once:true});else ensureBanner();
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)ensureBanner()});
+  // Profile/Pro status can arrive asynchronously after the initial page paint. Reconcile ads until state is current.
+  let lastAdProState=null;
+  const adEntitlementTimer=setInterval(()=>{const profile=window.State&&window.State.profile;if(!profile)return;const pro=profile.isPro===true;if(pro!==lastAdProState){lastAdProState=pro;ensureBanner();if(pro)document.querySelectorAll('.cp-inline-ad').forEach(ad=>ad.remove());else if(typeof window.renderHomeFeed==='function'&&document.getElementById('home-feed'))window.renderHomeFeed();}},900);
+  window.addEventListener('beforeunload',()=>clearInterval(adEntitlementTimer),{once:true});
+  const priorSwitch=window.switchTab;
+  if(typeof priorSwitch==='function')window.switchTab=function(tab){const out=priorSwitch.apply(this,arguments);setTimeout(ensureBanner,80);return out};
+  console.log('CODMPanda ad placements ready: bottom reserved slot + spaced feed slots');
+})();
+
+
+/* CODMPanda integration repair — preserve the prior build; unify reactions and cosmetics. */
+(function CODMPandaIntegrationRepair(){
+  if (window.__cpIntegrationRepairV2) return;
+  window.__cpIntegrationRepairV2 = true;
+
+  const REACTION_META = {
+    heart:{emoji:'❤️',label:'Like'}, fire:{emoji:'🔥',label:'Fire'},
+    skull:{emoji:'💀',label:'Dead'}, goat:{emoji:'🐐',label:'GOAT'}, crown:{emoji:'👑',label:'Crown'}
+  };
+  const CLASS_TYPES = {
+    'post-like-btn':'post','post-detail-like':'post','detail-like':'vault','detail-like-btn':'vault',
+    'comment-like-btn':'comment','comment-detail-like':'comment','like-btn':'vault','vault-like-btn':'vault',
+    'like-clip':'clip','clip-like-btn':'clip','clip-detail-like':'clip','hype-leak':'leak','leak-like-btn':'leak','leak-detail-like':'leak'
+  };
+  const COLLECTIONS = {post:'posts',comment:'comments',vault:'vaults',clip:'clips',leak:'leaks',lobby:'lobbies'};
+  const TOTAL_FIELDS = {post:'likes',comment:'likes',vault:'likes',clip:'likes',leak:'hypes',lobby:null};
+  const emojiFor = key => REACTION_META[key]?.emoji || '❤️';
+  const cache = new Map();
+  const pendingReactionWrites = new Set();
+  let pickerOpen = false;
+
+  function itemType(btn){
+    if (!btn) return null;
+    if (btn.dataset.itemType) return btn.dataset.itemType;
+    if (btn.dataset.type && COLLECTIONS[btn.dataset.type]) return btn.dataset.type;
+    for (const cls of btn.classList) if (CLASS_TYPES[cls]) return CLASS_TYPES[cls];
+    const parentType = btn.closest('[data-type]')?.dataset.type;
+    if (parentType && COLLECTIONS[parentType]) return parentType;
+    if (btn.classList.contains('home-like-btn')) return 'lobby';
+    return null;
+  }
+  function itemId(btn){return btn?.dataset.id || btn?.dataset.itemId || btn?.closest('[data-id]')?.dataset.id || null;}
+  function countNode(btn){
+    if(!btn)return null;
+    const explicit=btn.querySelector('[data-reaction-count], .like-num, #detail-like-count');
+    if(explicit)return explicit;
+    return Array.from(btn.querySelectorAll('span')).find(el=>/\d/.test(el.textContent||''))||null;
+  }
+  function getCount(btn){
+    const n=countNode(btn);
+    const source=n ? n.textContent : (btn?.textContent||'');
+    const v=parseInt(source.replace(/[^0-9-]/g,''),10);
+    return Number.isFinite(v)?Math.max(0,v):0;
+  }
+  function paintButton(btn, reaction, total, active){
+    if(!btn)return;
+    const count=Math.max(0,Number(total)||0);
+    const countEl=countNode(btn);
+    if(countEl) countEl.textContent=String(count);
+    // Keep the selected reaction as the visible control glyph, not a filled heart.
+    // Hide every heart SVG/icon variant (Lucide can replace <i> with <svg> after render).
+    let emojiEl=btn.querySelector('[data-cp-reaction-emoji]');
+    const iconEls=Array.from(btn.querySelectorAll('i[data-lucide="heart"],svg.lucide-heart,svg[data-lucide="heart"],i[data-lucide="thumbs-up"],svg.lucide-thumbs-up'));
+    if(active){
+      iconEls.forEach(el=>{el.style.display='none';});
+      if(!emojiEl){emojiEl=document.createElement('span');emojiEl.dataset.cpReactionEmoji='1';emojiEl.className='cp-reaction-emoji';emojiEl.style.cssText='display:inline-flex!important;align-items:center;justify-content:center;line-height:1;font-size:19px;min-width:20px;margin-right:3px;';btn.insertBefore(emojiEl,btn.firstChild);}
+      emojiEl.textContent=emojiFor(reaction); emojiEl.style.display='inline-flex';
+    }else{
+      if(emojiEl)emojiEl.remove();
+      iconEls.forEach(el=>{el.style.display='';el.classList.remove('fill-current');});
+    }
+    btn.dataset.cpReaction=reaction||''; btn.dataset.cpLiked=active?'1':'0';
+    btn.classList.toggle('text-primary',!!active);
+    if(!active)btn.classList.add('text-gray-400'); else btn.classList.remove('text-gray-400');
+    btn.setAttribute('aria-pressed',active?'true':'false');
+  }
+  function sameItemButtons(type,id){
+    const selectors=Object.keys(CLASS_TYPES).map(c=>'.'+c).concat('.home-like-btn');
+    return Array.from(document.querySelectorAll(selectors.join(','))).filter(b=>itemType(b)===type&&itemId(b)===id);
+  }
+  const reactionSummaryLabels={heart:'❤️',fire:'🔥',skull:'💀',goat:'🐐',crown:'👑'};
+  function paintPostReactionSummary(type,id,reactions){
+    if(type!=='post')return;
+    const entries=Object.entries(reactions||{}).filter(([key,n])=>reactionSummaryLabels[key] && Number(n)>0)
+      .sort((a,b)=>Number(b[1])-Number(a[1]));
+    sameItemButtons('post',id).forEach(btn=>{
+      let summary=btn.querySelector('[data-cp-reaction-summary]');
+      if(!entries.length){summary?.remove();return;}
+      if(!summary){summary=document.createElement('span');summary.dataset.cpReactionSummary='1';summary.setAttribute('aria-label','Reactions on this post');summary.style.cssText='display:inline-flex;align-items:center;gap:1px;white-space:nowrap;vertical-align:middle;margin-left:3px;';
+        const count=countNode(btn); if(count && count.parentNode===btn)count.insertAdjacentElement('afterend',summary); else btn.appendChild(summary);
+      }
+      // Show every reaction type that has been used; compact icons avoid crowding the post actions.
+      summary.innerHTML=entries.map(([key])=>`<span title="${key}" style="font-size:12px;line-height:1;display:inline-block">${reactionSummaryLabels[key]}</span>`).join('');
+    });
+  }
+  async function refreshPostReactionSummary(type,id){
+    if(type!=='post'||!id)return;
+    try{const snap=await getDoc(doc(db,'posts',id));if(snap.exists())paintPostReactionSummary(type,id,snap.data()?.reactions||{});}
+    catch(err){console.warn('[CODMPanda] post reaction summary refresh skipped',id,err?.code||err?.message||err);}
+  }
+
+  function showReactionPicker(btn,type,id){
+    if(pickerOpen)return; pickerOpen=true;
+    const pro=!!State.profile?.isPro;
+    const choices=Object.entries(REACTION_META).map(([key,r])=>{
+      const locked=['goat','crown'].includes(key)&&!pro;
+      return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" style="border:1px solid ${btn.dataset.cpReaction===key?'#ff6b00':'#34343a'};border-radius:14px;background:${btn.dataset.cpReaction===key?'#2a180f':'#17171b'};padding:11px 4px;color:#eee;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0"><span style="font-size:25px">${r.emoji}</span><span style="font-size:10px;font-weight:800">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">PRO 🔒</small>':''}</button>`;
+    }).join('');
+    const html=`<div class="cp-reaction-sheet" style="padding:12px 0 4px"><div style="font-size:11px;color:#aaa;text-align:center;margin-bottom:13px">${pro?'PRO OPERATOR · ALL REACTIONS':'Choose your reaction · GOAT and Crown are Pro'}</div><div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px">${choices}</div><button type="button" id="cp-reaction-cancel" style="width:100%;margin-top:12px;padding:10px;color:#999;font-size:12px">Cancel</button></div>`;
+    try{
+      // Comment picker must be a separate overlay: opening a nested sheet destroys the comments sheet.
+      if(type==='comment'){
+        document.getElementById('cp-reaction-overlay')?.remove();
+        const overlay=document.createElement('div');overlay.id='cp-reaction-overlay';overlay.style.cssText='position:fixed;inset:0;z-index:100500;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:20px;';
+        overlay.innerHTML=`<div style="width:min(420px,100%);background:#101014;border:1px solid #333;border-radius:20px;padding:16px;color:#fff;box-shadow:0 20px 80px #000"><h3 style="font-weight:900;margin:0 0 10px">React to comment</h3>${html}</div>`;
+        overlay.addEventListener('click',ev=>{if(ev.target===overlay){overlay.remove();pickerOpen=false;}});document.body.appendChild(overlay);
+      } else if(typeof openSheet==='function')openSheet(html,'React');
+      else {const overlay=document.createElement('div');overlay.id='cp-reaction-overlay';overlay.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;display:grid;place-items:center;padding:20px';overlay.innerHTML=`<div style="width:min(420px,100%);background:#101014;border:1px solid #333;border-radius:20px;padding:16px;color:#fff"><h3 style="font-weight:900;margin-bottom:10px">React</h3>${html}</div>`;document.body.appendChild(overlay);}
+      const root=type==='comment'?(document.getElementById('cp-reaction-overlay')||document):(document.querySelector('#sheet-container')||document.getElementById('cp-reaction-overlay')||document);
+      root.querySelectorAll('.cp-reaction-choice').forEach(b=>b.addEventListener('click',async()=>{
+        const key=b.dataset.reaction;
+        if(b.dataset.locked==='1'){if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();if(typeof showProPaywall==='function')setTimeout(()=>showProPaywall('Unlock GOAT and Crown reactions with Pro.'),180);pickerOpen=false;return;}
+        if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;await commitReaction(btn,type,id,key);
+      }));
+      const cancel=root.querySelector('#cp-reaction-cancel');if(cancel)cancel.addEventListener('click',()=>{if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;});
+    }catch(e){pickerOpen=false;console.warn('[CODMPanda] reaction picker failed',e);}
+  }
+  async function commitReaction(btn,type,id,key){
+    if(!State.user){if(typeof showAuthGate==='function')showAuthGate();else if(typeof toast==='function')toast('Sign in to react.','warning');return;}
+    if(!COLLECTIONS[type]||!id||!REACTION_META[key])return;
+    if(['goat','crown'].includes(key)&&!State.profile?.isPro){if(typeof showProPaywall==='function')showProPaywall('Unlock all reactions with Pro.');else if(typeof toast==='function')toast('That reaction is available with Pro.','warning');return;}
+    if(btn.dataset.cpBusy==='1')return;
+    const uid=State.user.uid, cacheKey=`${type}_${id}_${uid}`;
+    if(pendingReactionWrites.has(cacheKey))return;
+    pendingReactionWrites.add(cacheKey);
+    btn.dataset.cpBusy='1';
+    let all=sameItemButtons(type,id);all.forEach(b=>{b.dataset.cpBusy='1';});
+    try{
+      const likeRef=doc(db,'likes',`${type}_${id}_${uid}`), itemRef=doc(db,COLLECTIONS[type],id);
+      let previous=null,next=null,totalDelta=0,newTotal=0;
+      await runTransaction(db,async tx=>{
+        const [likeSnap,itemSnap]=await Promise.all([tx.get(likeRef),tx.get(itemRef)]);
+        if(!itemSnap.exists())throw new Error('This item is no longer available.');
+        const old=itemSnap.data()||{};previous=likeSnap.exists()?(REACTION_META[likeSnap.data().reaction]?likeSnap.data().reaction:'heart'):null;
+        next=previous===key?null:key;
+        const reactionCounts={...(old.reactions||{})};
+        if(previous&&next!==previous)reactionCounts[previous]=Math.max(0,(Number(reactionCounts[previous])||0)-1);
+        if(next&&next!==previous)reactionCounts[next]=(Number(reactionCounts[next])||0)+1;
+        const totalField=TOTAL_FIELDS[type];
+        totalDelta=(!previous&&next)?1:(previous&&!next?-1:0);
+        const update={reactions:reactionCounts};
+        if(totalField){update[totalField]=Math.max(0,(Number(old[totalField])||0)+totalDelta);newTotal=update[totalField];}
+        else newTotal=Object.values(reactionCounts).reduce((sum,n)=>sum+(Number(n)||0),0);
+        tx.update(itemRef,update);
+        if(next)tx.set(likeRef,{itemType:type,itemId:id,userId:uid,reaction:next,createdAt:serverTimestamp()});
+        else tx.delete(likeRef);
+      });
+      cache.set(cacheKey,next);
+      if(!State.likedItems)State.likedItems={};if(!State.likedItems[type])State.likedItems[type]={};State.likedItems[type][id]=!!next;
+      all=sameItemButtons(type,id);
+      all.forEach(b=>paintButton(b,next||'heart',totalFieldCount(type,id,newTotal,b),!!next));
+      paintPostReactionSummary(type,id,reactionCounts);
+      if(typeof toast==='function')toast(next?`${emojiFor(next)} Reacted`:'Reaction removed','success',1000);
+    }catch(err){
+      console.error('[CODMPanda] reaction save failed',type,id,err);
+      if(typeof toast==='function')toast('Reaction could not be saved. Check your connection and try again.','error',2000);
+    }finally{pendingReactionWrites.delete(cacheKey);btn.dataset.cpBusy='';sameItemButtons(type,id).forEach(b=>{b.dataset.cpBusy='';});}
+  }
+  function totalFieldCount(type,id,fallback,btn){
+    // Prefer the transaction's canonical total when available; a duplicate card may have stale markup.
+    return Number.isFinite(fallback)?fallback:getCount(btn);
+  }
+  window.__codmpandaApplyReaction=async function(btn,type,id,key='heart'){return commitReaction(btn,type,id,key);};
+
+  // One delegated event path for every supported surface; long-press opens the same center sheet.
+  const selector=Object.keys(CLASS_TYPES).map(c=>'.'+c).concat('.home-like-btn').join(',');
+  let pressTimer=null, longPressed=false, pressedBtn=null;
+  const reactionSheetObserver=new MutationObserver(()=>{
+    if(pickerOpen&&!document.querySelector('.cp-reaction-choice')){
+      document.getElementById('cp-reaction-overlay')?.remove();
+      pickerOpen=false;
+    }
+  });
+  reactionSheetObserver.observe(document.body,{childList:true,subtree:true});
+  function clearPress(){if(pressTimer)clearTimeout(pressTimer);pressTimer=null;pressedBtn=null;}
+  document.addEventListener('pointerdown',e=>{
+    const btn=e.target.closest?.(selector);if(!btn||!itemId(btn)||e.button>0)return;
+    pressedBtn=btn;longPressed=false;clearPress();pressedBtn=btn;
+    pressTimer=setTimeout(()=>{longPressed=true;const t=itemType(btn),id=itemId(btn);if(t&&id)showReactionPicker(btn,t,id);},550);
+  },{capture:true,passive:true});
+  document.addEventListener('pointerup',clearPress,{capture:true,passive:true});
+  document.addEventListener('pointercancel',clearPress,{capture:true,passive:true});
+  document.addEventListener('click',e=>{
+    const btn=e.target.closest?.(selector);if(!btn)return;
+    const type=itemType(btn),id=itemId(btn);if(!type||!id)return;
+    e.preventDefault();e.stopImmediatePropagation();e.stopPropagation();
+    if(longPressed){longPressed=false;return;}
+    commitReaction(btn,type,id,'heart');
+  },true);
+
+  // Load the current user's persisted reactions after login and paint all rendered surfaces consistently.
+  async function hydrateVisibleReactions(){
+    if(!State.user)return;
+    const buttons=Array.from(document.querySelectorAll(selector));
+    const unique=new Map();
+    for(const b of buttons){const t=itemType(b),id=itemId(b);if(t&&id)unique.set(`${t}_${id}`,{type:t,id});}
+    await Promise.all(Array.from(unique.values()).map(async({type,id})=>{
+      const key=`${type}_${id}_${State.user.uid}`;
+      try{
+        let reaction=cache.get(key);
+        if(reaction===undefined || reaction==='__refresh__'){let snap=await getDoc(doc(db,'likes',`${type}_${id}_${State.user.uid}`));let saved=snap.exists()?snap.data():null;if(!saved){try{const matches=await getDocs(query(collection(db,'likes'),where('userId','==',State.user.uid),where('itemId','==',id),where('itemType','==',type),limit(1)));if(!matches.empty)saved=matches.docs[0].data();}catch(queryErr){console.warn('[CODMPanda] reaction fallback lookup failed',type,id,queryErr?.code||queryErr?.message||queryErr);}}reaction=saved?(REACTION_META[saved.reaction]?saved.reaction:'heart'):null;cache.set(key,reaction);}
+        if(pendingReactionWrites.has(key))return;
+        const all=sameItemButtons(type,id);all.forEach(b=>{if(!b.dataset.cpBusy)paintButton(b,reaction||'heart',getCount(b),!!reaction);});
+        if(type==='post') await refreshPostReactionSummary(type,id);
+      }catch(e){console.warn('[CODMPanda] reaction hydration skipped',type,id,e?.code||e?.message||e);}
+    }));
+  }
+  window.__codmpandaHydrateReactions=hydrateVisibleReactions;
+  // Re-hydrate when a tab/card renderer inserts reaction controls after the initial pass.
+  // Debounced and limited to additions containing reaction buttons to avoid observer loops.
+  let reactionDomHydrateTimer=null;
+  const reactionDomObserver=new MutationObserver(records=>{
+    const hasNewReactionButton=records.some(record=>Array.from(record.addedNodes||[]).some(node=>{
+      if(node.nodeType!==1)return false;
+      return (node.matches?.(selector)) || !!node.querySelector?.(selector);
+    }));
+    if(hasNewReactionButton && State.user){
+      clearTimeout(reactionDomHydrateTimer);
+      reactionDomHydrateTimer=setTimeout(()=>hydrateVisibleReactions(),160);
+    }
+  });
+  reactionDomObserver.observe(document.getElementById('content')||document.body,{childList:true,subtree:true});
+  window.addEventListener('beforeunload',()=>{clearTimeout(reactionDomHydrateTimer);reactionDomObserver.disconnect();},{once:true});
+  const renderNames=['renderHomeFeed','renderVaults','renderClips','renderLeaks','renderYouTab','renderComments'];
+  renderNames.forEach(name=>{const original=window[name];if(typeof original!=='function'||original.__cpReactionHydrateWrapped)return;const wrapped=function(){const out=original.apply(this,arguments);setTimeout(hydrateVisibleReactions,180);setTimeout(refreshPublicNamesAndAvatars,250);return out;};wrapped.__cpReactionHydrateWrapped=true;window[name]=wrapped;});
+  setTimeout(hydrateVisibleReactions,1200);
+  let lastReactionUid = State.user?.uid || null;
+  const reactionAuthSync = setInterval(() => { const uid = State.user?.uid || null; if (uid !== lastReactionUid) { lastReactionUid = uid; cache.clear(); if (uid) setTimeout(hydrateVisibleReactions, 120); else document.querySelectorAll(selector).forEach(b => paintButton(b, 'heart', getCount(b), false)); } }, 500);
+  window.addEventListener('beforeunload', () => clearInterval(reactionAuthSync), { once: true });
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){hydrateVisibleReactions();refreshPublicNamesAndAvatars();}});
+
+  // Refresh author labels from the live users collection, without replacing nodes or destroying badges/content.
+  const profileCache=new Map();
+  async function publicProfile(uid){
+    if(!uid)return null;if(uid===State.user?.uid)return State.profile||null;
+    if(profileCache.has(uid))return profileCache.get(uid);
+    try{const snap=await getDoc(doc(db,'users',uid));const u=snap.exists()?{id:uid,...snap.data()}:null;profileCache.set(uid,u);return u;}catch(_){return null;}
+  }
+  function setNameText(el,name){
+    if(!el||!name)return;
+    const badge=el.querySelector('.verified-badge');
+    const textNodes=Array.from(el.childNodes).filter(n=>n.nodeType===Node.TEXT_NODE);
+    if(textNodes.length){textNodes[0].nodeValue=' '+name+' ';for(let i=1;i<textNodes.length;i++)if(textNodes[i].nodeValue.trim())textNodes[i].nodeValue='';}
+    else if(!el.querySelector('img,svg,button'))el.insertBefore(document.createTextNode(name+' '),badge||null);
+    if(badge && (badge.parentNode!==el || el.lastElementChild!==badge))el.appendChild(badge);
+  }
+  async function refreshPublicNamesAndAvatars(){
+    if(!State.user)return;
+    const nodes=Array.from(document.querySelectorAll('[data-uid]'));
+    for(const el of nodes){
+      const uid=el.dataset.uid;if(!uid)continue;
+      const isName=el.classList.contains('user-name-link')||((el.tagName==='SPAN'||el.tagName==='DIV')&&el.classList.contains('font-bold')&&!el.querySelector('img'));
+      if(isName){const u=await publicProfile(uid);if(u){setNameText(el,u.ign||u.displayName||u.username);if(u.verified&&!el.querySelector('.verified-badge')&&typeof renderVerifiedBadge==='function')el.insertAdjacentHTML('beforeend',renderVerifiedBadge(u));else if(!u.verified)el.querySelector('.verified-badge')?.remove();}}
+      const frameDone=el.dataset.cpFrameApplied;
+      const rect=el.getBoundingClientRect?.();
+      // data-uid is also used by report/action buttons; only decorate compact avatar hosts.
+      if(el.matches('button, a, input, textarea, select') || isName)continue;
+      if(!rect||rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
+      if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.querySelector('img'))continue;
+      const u=await publicProfile(uid);if(!u)continue;
+      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};let frame=u.avatarFrame||'none';if(frame!=='none'&&!frameCatalog[frame])frame='none';if(!window.CODMRenderFramedAvatar)continue;
+      const img=el.querySelector('img');const avatar=u.avatar||u.photoURL||u.photoUrl||img?.getAttribute('src')||'';
+      const name=u.ign||u.displayName||'Operator';
+      if(frame==='none'){if(frameDone){el.innerHTML=avatar?`<img src="${esc(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`:esc(getInitials(name));delete el.dataset.cpFrameApplied;el.classList.remove('cp-avatar-framed-host');el.style.overflow='hidden';}continue;}
+      if(frameDone===frame)continue;
+      const shell=document.createElement('div');shell.innerHTML=window.CODMRenderFramedAvatar({...u,avatar,ign:name},Math.max(28,Math.min(72,Math.round(Math.min(rect.width,rect.height)))));
+      const rendered=shell.firstElementChild;if(!rendered)continue;
+      // Only replace the contents of a compact avatar node, never a card or profile wrapper.
+      el.innerHTML='';el.appendChild(rendered);el.dataset.cpFrameApplied=frame;el.style.overflow='visible';el.classList.add('cp-avatar-framed-host');
+    }
+  }
+  window.__codmpandaRefreshNamesAndAvatars=refreshPublicNamesAndAvatars;
+  const nameObserver=new MutationObserver(()=>{clearTimeout(window.__cpNameRefreshTimer);window.__cpNameRefreshTimer=setTimeout(refreshPublicNamesAndAvatars,350);});
+  nameObserver.observe(document.documentElement,{childList:true,subtree:true});
+
+  // War Artifact picker: use the real PNGs from /frames; enforce the requested Free/Pro split.
+  window.openAvatarFramePicker=function(){
+    try {
+      const pro=!!(State.profile && (State.profile.isPro===true || State.profile.pro===true || State.profile.subscription==='pro' || State.profile.proStatus==='active'));
+      const stored=State.profile?.avatarFrame||'none';
+      const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};
+      if(!Object.keys(frameCatalog).length)throw new Error('War Artifact frame catalogue is unavailable');
+      const current=(stored==='none'||(frameCatalog[stored]&&(frameCatalog[stored].tier!=='PRO'||pro)))?stored:'none';
+      const avatar=State.profile?.avatar||State.profile?.photoURL||State.profile?.photoUrl||'';
+      const old=document.getElementById('cp-war-frame-modal'); if(old)old.remove();
+      const overlay=document.createElement('div'); overlay.id='cp-war-frame-modal';
+      overlay.style.cssText='position:fixed;inset:0;z-index:100500;background:rgba(0,0,0,.78);display:flex;align-items:flex-end;justify-content:center;padding:0;';
+      const panel=document.createElement('section');
+      panel.style.cssText='width:100%;max-width:620px;max-height:88dvh;overflow:auto;background:#0d0d0f;color:#f5f5f5;border-radius:22px 22px 0 0;padding:18px 16px calc(22px + env(safe-area-inset-bottom));box-sizing:border-box;border:1px solid #28282c;';
+      const header=document.createElement('div');header.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;';
+      header.innerHTML='<div><strong style="font-size:19px">✨ Avatar Frames</strong><div style="font-size:12px;color:#aaa;margin-top:4px">Choose a frame for your profile picture</div></div><button type="button" aria-label="Close frames" style="width:38px;height:38px;border:0;border-radius:50%;background:#222;color:#fff;font-size:24px">×</button>';
+      header.querySelector('button').onclick=()=>overlay.remove();panel.appendChild(header);
+      const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;';
+      const choices=[['none','No Frame','FREE',null],...Object.entries(frameCatalog).map(([k,v])=>[k,v.name,v.tier,v.file])];
+      for(const [key,name,tier,file] of choices){
+        const locked=tier==='PRO'&&!pro,selected=current===key;
+        const button=document.createElement('button');button.type='button';button.dataset.frame=key;
+        button.style.cssText=`min-width:0;min-height:126px;padding:9px 4px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:7px;background:${selected?'#25170f':'#171719'};border:1px solid ${selected?'#ff6b00':'#303034'};border-radius:13px;color:#eee;`;
+        const preview=document.createElement('div');preview.style.cssText='position:relative;width:76px;height:76px;flex:none;';
+        if(key==='none'){
+          const plain=document.createElement('div');plain.style.cssText='position:absolute;inset:8px;border-radius:50%;overflow:hidden;background:#29292d;display:grid;place-items:center;color:#aaa;font-weight:800;';
+          if(avatar){const img=document.createElement('img');img.src=avatar;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover';plain.appendChild(img)}else plain.textContent='×';preview.appendChild(plain);
+        } else {
+          const core=document.createElement('div');core.style.cssText='position:absolute;left:22%;top:22%;width:56%;height:56%;border-radius:50%;overflow:hidden;background:#222;display:grid;place-items:center;color:#aaa;font-size:11px;';
+          if(avatar){const img=document.createElement('img');img.src=avatar;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover';core.appendChild(img)}else core.textContent='CP';
+          const frame=document.createElement('img');frame.src='/frames/'+file;frame.alt='';frame.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;';
+          frame.onerror=()=>{frame.style.display='none';};preview.append(core,frame);
+        }
+        const label=document.createElement('strong');label.textContent=name;label.style.cssText='font-size:10px;line-height:1.2;text-align:center;';
+        const status=document.createElement('small');status.textContent=locked?'PRO 🔒':(selected?'SELECTED':tier);status.style.cssText=`font-size:9px;color:${locked?'#f2cc68':selected?'#ff8a36':'#aaa'};`;
+        button.append(preview,label,status);
+        button.onclick=async()=>{
+          if(locked){overlay.remove();if(typeof showProPaywall==='function')showProPaywall('Unlock this frame with Pro.');else if(typeof goPro==='function')goPro();return;}
+          if(!State.user){overlay.remove();if(typeof showAuthGate==='function')showAuthGate();return;}
+          button.disabled=true;
+          try{
+            await updateDoc(doc(db,'users',State.user.uid),{avatarFrame:key});
+            State.profile={...(State.profile||{}),avatarFrame:key};
+            if(typeof profileCache!=='undefined')profileCache.delete(State.user.uid);
+            overlay.remove();
+            if(typeof renderYouTab==='function'&&State.currentTab==='you')renderYouTab();
+            if(typeof refreshPublicNamesAndAvatars==='function')setTimeout(refreshPublicNamesAndAvatars,150);
+            if(typeof toast==='function')toast(key==='none'?'Avatar frame removed':'Avatar frame equipped','success');
+          }catch(err){console.error('[CODMPanda] frame save failed',err);button.disabled=false;if(typeof toast==='function')toast('Frame could not be saved. Please try again.','error');}
+        };
+        grid.appendChild(button);
+      }
+      panel.appendChild(grid);
+      const note=document.createElement('p');note.textContent='Free users can equip 10 frames. Pro unlocks all 20.';note.style.cssText='font-size:11px;color:#999;margin:14px 2px 0;';panel.appendChild(note);
+      overlay.appendChild(panel);overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});
+      document.body.appendChild(overlay);
+    } catch(error) {
+      console.error('[CODMPanda] Avatar Frame picker failed',error);
+      if(typeof toast==='function')toast('Could not open frames. Please refresh and try again.','error');
+    }
+  };
+
+  // The older YOU-tab button has a direct onclick reference to the legacy ring picker. Capture it
+  // before that handler runs, so the real Frames tab always opens the artwork catalog above.
+  // Keep both the module-local legacy function name and window API pointed at the real catalog.
+  openAvatarFramePicker = window.openAvatarFramePicker;
+  document.addEventListener('click', function(event){
+    const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const frameTrigger = target?.closest('#open-frame-btn, [data-open-frames], .open-avatar-frames, [data-cp-open-frame-picker]');
+    if (!frameTrigger || frameTrigger.classList.contains('cp-frame-choice')) return;
+    event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
+    try { window.openAvatarFramePicker(); }
+    catch (error) { console.error('[CODMPanda] War Artifact picker failed to open', error); if (typeof toast === 'function') toast('Frames could not open. Please try again.', 'error'); }
+  }, true);
+
+  // Make profile theme selection affect the owner's full YOU card, and keep verification admin-managed.
+  const oldCheck=window.checkVerifiedStatus;
+  window.checkVerifiedStatus=async function(){if(!State.user)return;try{const snap=await getDoc(doc(db,'users',State.user.uid));if(snap.exists()){const data=snap.data();State.profile={...(State.profile||{}),verified:data.verified===true};}}catch(e){console.warn('[CODMPanda] verification refresh failed',e?.code||e?.message||e);}if(typeof oldCheck==='function'&&oldCheck!==window.checkVerifiedStatus){try{await oldCheck();}catch(_){}}};
+  const originalYou=window.renderYouTab;
+  if(typeof originalYou==='function'&&!originalYou.__cpProfileCosmeticWrapped){
+    const wrapped=function(){
+      const out=originalYou.apply(this,arguments);
+      // Mark the legacy frame wrapper as handled before its delayed callback can replace the profile image.
+      setTimeout(()=>{const content=document.getElementById('content');const avatar=content?.querySelector('.w-16.h-16');if(avatar)avatar.dataset.framed='1';},35);
+      setTimeout(()=>{
+        try{
+          const content=document.getElementById('content');
+          const frameButton=content?.querySelector('#open-frame-btn, [data-open-frames], .open-avatar-frames, [data-cp-open-frame-picker]');
+          if(frameButton){
+            frameButton.onclick=(event)=>{event.preventDefault();event.stopPropagation();window.openAvatarFramePicker();};
+            frameButton.setAttribute('aria-label','Open War Artifact Frames');
+            frameButton.textContent='🛡️ War Artifact Frames';
+          }
+          if(!content||State.currentTab!=='you')return;
+          const card=content.querySelector('.bg-card.border.rounded-2xl');
+          const themes=window.PROFILE_THEMES||{};const t=themes[State.profile?.themeStyle]||themes.dark;
+          if(card&&t){card.style.background=t.gradient;card.style.borderColor=t.border;card.style.boxShadow=t.glow;card.classList.add('cp-theme-profile');}
+          const avatar=content.querySelector('.w-16.h-16');
+          if(avatar&&window.CODMRenderFramedAvatar){
+            const u={...(State.profile||{}),avatar:State.profile?.avatar||State.profile?.photoURL||State.profile?.photoUrl||'',ign:State.profile?.ign||'Operator'};
+            // Keep the frame host neutral: no leftover gradient disc, border, shadow or clipping.
+            avatar.classList.remove('overflow-hidden','rounded-full','border','border-2','shadow','shadow-sm','ring-1','ring-2');
+            Object.assign(avatar.style,{position:'relative',display:'flex',alignItems:'center',justifyContent:'center',overflow:'visible',background:'transparent',border:'0',outline:'0',boxShadow:'none',borderRadius:'0',padding:'0',margin:'0',flexShrink:'0'});
+            avatar.classList.add('cp-avatar-profile-frame-host');
+            avatar.innerHTML=window.CODMRenderFramedAvatar(u,64);
+            avatar.dataset.cpFrameApplied=State.profile?.avatarFrame||'none';
+          }
+          const ign=content.querySelector('.text-base.font-black.truncate');
+          if(ign&&State.profile?.verified&&!ign.parentElement.querySelector('.verified-badge')&&typeof renderVerifiedBadge==='function')ign.insertAdjacentHTML('afterend',renderVerifiedBadge(State.profile));
+          refreshPublicNamesAndAvatars();
+        }catch(e){console.warn('[CODMPanda] profile cosmetic render failed',e);}
+      },100);
+      return out;
+    };
+    wrapped.__cpProfileCosmeticWrapped=true;window.renderYouTab=wrapped;
+  }
+
+  // Final mention wiring: apply autocomplete to dynamically mounted inputs and wrap the
+  // actual post-comment sender so mentions notify the tagged friend on every comments entry path.
+  try {
+    const previousOpenPostComments = openPostComments;
+    if (typeof previousOpenPostComments === 'function' && !previousOpenPostComments.__cpMentionsFixed) {
+      const fixedOpenPostComments = async function(postId) {
+        const result = await previousOpenPostComments.apply(this, arguments);
+        setTimeout(() => {
+          const input = document.getElementById('comment-input');
+          const sendBtn = document.getElementById('comment-send');
+          if (input && typeof window.setupMentionListener === 'function') window.setupMentionListener(input);
+          if (!input || !sendBtn || sendBtn.dataset.cpMentionNotifyBound) return;
+          sendBtn.dataset.cpMentionNotifyBound = '1';
+          const originalSend = sendBtn.onclick;
+          sendBtn.onclick = async function(event) {
+            const text = input.value.trim();
+            if (text && typeof window.notifyMentions === 'function') window.notifyMentions(text, 'post', postId).catch(() => {});
+            if (typeof originalSend === 'function') return await originalSend.call(this, event);
+            return sendPostComment(postId);
+          };
+          input.onkeydown = event => {
+            if (event.key === 'Enter') { event.preventDefault(); sendBtn.click(); }
+          };
+        }, 40);
+        return result;
+      };
+      fixedOpenPostComments.__cpMentionsFixed = true;
+      openPostComments = fixedOpenPostComments;
+      window.openPostComments = fixedOpenPostComments;
+    }
+    if (!window.__cpMentionInputObserver && document.documentElement) {
+      window.__cpMentionInputObserver = new MutationObserver(() => {
+        ['comment-input', 'dm-input'].forEach(id => {
+          const input = document.getElementById(id);
+          if (input && !input.dataset.mentionSetup && typeof window.setupMentionListener === 'function') window.setupMentionListener(input);
+        });
+      });
+      window.__cpMentionInputObserver.observe(document.documentElement, { childList: true, subtree: true });
+    }
+  } catch (mentionError) { console.warn('[CODMPanda] final mention wiring failed', mentionError); }
+
+  // Keep ad injection idempotent across repeated feed renders.
+  const adStyle=document.createElement('style');adStyle.id='cp-integration-repair-style';adStyle.textContent=`.cp-avatar-framed-host{position:relative!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;overflow:visible!important;isolation:isolate;flex-shrink:0;line-height:0!important;box-shadow:none!important;outline:0!important;border:0!important;background:transparent!important;padding:0!important;margin:0!important}.cp-avatar-profile-frame-host{position:relative!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:visible!important;flex-shrink:0;line-height:0!important;background:transparent!important;border:0!important;outline:0!important;box-shadow:none!important;border-radius:0!important;padding:0!important;margin:0!important}.cp-avatar-framed-host>.cp-avatar-shell{width:100%;height:100%;position:relative!important}.cp-avatar-shell>.cp-avatar-core{position:absolute!important;inset:22%!important;width:56%!important;height:56%!important;overflow:hidden!important;border-radius:50%!important;z-index:8!important;background:#171719!important;border:0!important;outline:0!important;box-shadow:none!important}.cp-avatar-core img{display:block!important;width:100%!important;height:100%!important;object-fit:cover!important;position:relative!important;z-index:9!important}.cp-avatar-shell>.cp-war-artifact-frame{position:absolute!important;inset:-10%!important;width:120%!important;height:120%!important;object-fit:contain!important;pointer-events:none!important;z-index:10!important;border:0!important;outline:0!important;box-shadow:none!important;filter:none!important}.cp-avatar-shell>.cp-frame-art{position:absolute!important;inset:-4%!important;width:108%!important;height:108%!important;pointer-events:none!important;z-index:10!important;overflow:visible!important}.cp-post-detail-sheet{inset:0!important;width:100vw!important;height:100dvh!important;max-height:100dvh!important;border-radius:0!important}.cp-post-detail-sheet>.px-5{min-height:0!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important}.cp-reaction-emoji{line-height:1}.cp-reaction-choice:active,.cp-frame-choice:active{transform:scale(.97)}#ad-banner.cp-ad-banner{min-height:36px!important;padding:4px 8px!important}`;document.head.appendChild(adStyle);
+  setTimeout(refreshPublicNamesAndAvatars,1000);
+  console.log('[CODMPanda] integration repair loaded: unified reactions, frames, live names, themes and verification');
+})();
+
+
+// ============================================
+// CODMPanda Companion Upgrade Pack — v4
+// Adds News/Meta intelligence, map-aware squad search, clip discovery,
+// community achievements, notification preferences and a persistent weapon watchlist.
+// Existing app modules remain the source of truth; this pack enhances them in place.
+// ============================================
+(function CODMPandaCompanionUpgradePack() {
+  'use strict';
+  if (window.__codmpandaCompanionUpgradeV4) return;
+  window.__codmpandaCompanionUpgradeV4 = true;
+
+  const OFFICIAL_CODM_LINKS = [
+    { title: 'Official CODM News', detail: 'Season news, announcements and game updates', url: 'https://www.callofduty.com/blog/mobile', icon: 'newspaper' },
+    { title: 'COD Mobile Support', detail: 'Known issues, purchase help and troubleshooting', url: 'https://support.activision.com/cod-mobile', icon: 'life-buoy' },
+    { title: 'Official CODM Game Page', detail: 'Game information, maps and featured content', url: 'https://www.callofduty.com/mobile', icon: 'external-link' }
+  ];
+  // These are preference labels, not a claim about the currently active ranked rotation.
+  // Keep popular/classic MP maps available for broad recruiting; users can always choose Other.
+  const CODMPANDA_MP_MAPS = [
+    'Nuketown', 'Raid', 'Standoff', 'Firing Range', 'Crash', 'Hijacked', 'Summit', 'Crossfire',
+    'Shipment', 'Rust', 'Shoot House', 'Terminal', 'Highrise', 'Hacienda', 'Slums', 'Express',
+    'Dome', 'Scrapyard', 'Tunisia', 'Killhouse', 'Apocalypse', 'Coastal', 'Oasis', 'Meltdown',
+    'Satellite', 'Takeoff', 'Arsenal', 'Combine', 'Crossroads Strike', 'Nuketown Russia', 'Other / Rotation'
+  ];
+  const CODMPANDA_BR_MAPS = ['Isolated', 'Krai', 'Alcatraz', 'Blackout', 'Other / Rotation'];
+  const CODMPANDA_ALL_MAPS = [...new Set([...CODMPANDA_MP_MAPS, ...CODMPANDA_BR_MAPS])].sort((a, b) => a.localeCompare(b));
+  const CODMPANDA_PLAYSTYLES = ['Balanced', 'Aggressive', 'Passive', 'Objective / Support', 'Sniper', 'Beginner-friendly'];
+  const escV4 = value => typeof esc === 'function' ? esc(String(value ?? '')) : String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const cpV4Date = value => {
+    try { return typeof timeAgo === 'function' ? timeAgo(value) : ''; } catch (_) { return ''; }
+  };
+
+  // ---------- INTEL: a moderated News feed plus a Meta Tracker ----------
+  const _cpV4RenderIntelTab = renderIntelTab;
+  let cpV4MetaWatchlistBusy = false;
+
+  function cpV4IntelNav(active) {
+    const tabs = [
+      ['cp', '💎 CP Calc'], ['leaks', '🔥 Leaks'], ['tier', '📊 Tier'], ['maps', '🗺️ Maps'],
+      ['news', '📰 News'], ['meta', '🎯 Meta']
+    ];
+    return `<div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1">${tabs.map(([key, label]) => `<button class="chip cp-v4-intel-tab ${key === active ? 'active' : ''}" data-sub="${key}">${label}</button>`).join('')}</div>`;
+  }
+  function cpV4BindIntelTabs() {
+    document.querySelectorAll('.cp-v4-intel-tab').forEach(button => {
+      button.onclick = () => { intelSubTab = button.dataset.sub; renderIntelTab(); };
+    });
+  }
+  function cpV4OfficialLinks() {
+    return `<div class="grid gap-2 mb-4">${OFFICIAL_CODM_LINKS.map(item => `
+      <a href="${item.url}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 p-3 rounded-xl bg-card border border-border hover:border-primary/50">
+        <span class="w-9 h-9 rounded-xl bg-primary/15 text-primary flex items-center justify-center"><i data-lucide="${item.icon}" class="w-4 h-4"></i></span>
+        <span class="min-w-0 flex-1"><strong class="block text-sm">${item.title}</strong><small class="block text-xs text-gray-500">${item.detail}</small></span>
+        <i data-lucide="arrow-up-right" class="w-4 h-4 text-gray-500"></i>
+      </a>`).join('')}</div>`;
+  }
+  function cpV4IntelShell(tab, title, subtitle, body) {
+    const content = document.getElementById('content');
+    if (!content) return;
+    content.innerHTML = `<div class="px-4 pt-4 pb-24"><div class="mb-4"><h1 class="text-2xl font-black">${escV4(title || 'Intel')}</h1><p class="text-xs text-gray-500">${escV4(subtitle || '')}</p></div>${cpV4IntelNav(tab)}<div id="cp-v4-intel-body">${body}</div></div>`;
+    cpV4BindIntelTabs();
+    if (window.lucide) window.lucide.createIcons();
+  }
+  async function cpV4RenderIntelNews() {
+    const admin = State.user?.uid === ADMIN_UID;
+    cpV4IntelShell('news', 'News', 'Official sources plus curated CODMPanda updates', `
+      <div class="bg-gradient-to-br from-primary/15 to-transparent border border-primary/20 rounded-2xl p-4 mb-4">
+        <div class="text-[10px] font-black uppercase tracking-widest text-primary mb-1">CODM Intel Briefing</div>
+        <p class="text-sm text-gray-300">Use the source links below for official announcements. Community summaries are labelled and link back to their source.</p>
+      </div>
+      ${admin ? '<button id="cp-v4-publish-intel" class="btn-press w-full py-3 rounded-xl bg-primary text-sm font-bold mb-4">＋ Publish Intel Update</button>' : ''}
+      ${cpV4OfficialLinks()}
+      <div class="flex items-center justify-between mb-3"><h2 class="font-black">CODMPanda Briefings</h2><button id="cp-v4-refresh-intel" class="text-xs text-primary font-bold">Refresh</button></div>
+      <div id="cp-v4-intel-articles" class="space-y-3"><div class="text-center py-6 text-xs text-gray-500">Loading intel…</div></div>
+      <p class="text-[10px] text-gray-600 mt-4">News and balance details can change. Always check the linked official source for final confirmation.</p>
+    `);
+    if (admin) document.getElementById('cp-v4-publish-intel').onclick = cpV4OpenPublishIntel;
+    document.getElementById('cp-v4-refresh-intel').onclick = cpV4LoadIntelArticles;
+    await cpV4LoadIntelArticles();
+  }
+  async function cpV4LoadIntelArticles() {
+    const host = document.getElementById('cp-v4-intel-articles');
+    if (!host) return;
+    host.innerHTML = '<div class="text-center py-6 text-xs text-gray-500">Loading intel…</div>';
+    try {
+      const snap = await getDocs(query(collection(db, 'intelArticles'), orderBy('createdAt', 'desc'), limit(50)));
+      if (!document.getElementById('cp-v4-intel-articles')) return;
+      const articles = [];
+      snap.forEach(d => articles.push({ id: d.id, ...d.data() }));
+      if (!articles.length) {
+        host.innerHTML = `<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="text-3xl mb-2">📰</div><div class="font-bold mb-1">No curated briefings yet</div><p class="text-xs text-gray-500">Official source links are ready above. CODMPanda summaries will appear here when published.</p></div>`;
+        return;
+      }
+      const saved = new Set(State.profile?.savedIntelIds || []);
+      host.innerHTML = articles.map(article => {
+        const category = ['News','Patch Notes','Events','Ranked','Meta','Notice'].includes(article.category) ? article.category : 'News';
+        const isSaved = saved.has(article.id);
+        const weapons = Array.isArray(article.weapons) ? article.weapons : [];
+        const source = /^https?:\/\//i.test(article.sourceURL || '') ? article.sourceURL : '';
+        return `<article class="bg-card border border-border rounded-2xl overflow-hidden">
+          <div class="p-4">
+            <div class="flex items-center justify-between gap-2 mb-2"><span class="text-[9px] uppercase font-black tracking-widest px-2 py-1 rounded-full bg-primary/15 text-primary">${escV4(category)}</span><span class="text-[10px] text-gray-500">${escV4(cpV4Date(article.createdAt))}</span></div>
+            <h3 class="font-black text-base mb-2">${escV4(article.title || 'CODM Update')}</h3>
+            <p class="text-sm text-gray-300 whitespace-pre-wrap break-words">${escV4(article.summary || article.body || '')}</p>
+            ${weapons.length ? `<div class="flex flex-wrap gap-1.5 mt-3">${weapons.slice(0,8).map(w => `<span class="text-[10px] bg-cardAlt border border-border rounded-full px-2 py-1">${escV4(w)}</span>`).join('')}</div>` : ''}
+            <div class="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-border">
+              <span class="text-[10px] text-gray-500">${article.authorIgn ? `By ${escV4(article.authorIgn)}` : 'CODMPanda Intel'}</span>
+              <div class="flex items-center gap-3">${source ? `<a href="${escV4(source)}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-primary">Open source ↗</a>` : ''}<button class="cp-v4-save-intel text-xs font-bold ${isSaved ? 'text-gold' : 'text-gray-400'}" data-id="${escV4(article.id)}">${isSaved ? '★ Saved' : '☆ Save'}</button></div>
+            </div>
+          </div>
+        </article>`;
+      }).join('');
+      host.querySelectorAll('.cp-v4-save-intel').forEach(button => button.onclick = async () => {
+        if (!State.user) { if (typeof showAuthGate === 'function') showAuthGate(); return; }
+        const id = button.dataset.id;
+        const currentlySaved = (State.profile?.savedIntelIds || []).includes(id);
+        try {
+          await updateDoc(doc(db, 'users', State.user.uid), { savedIntelIds: currentlySaved ? arrayRemove(id) : arrayUnion(id) });
+          const current = new Set(State.profile?.savedIntelIds || []);
+          currentlySaved ? current.delete(id) : current.add(id);
+          State.profile = { ...(State.profile || {}), savedIntelIds: Array.from(current) };
+          button.textContent = currentlySaved ? '☆ Save' : '★ Saved';
+          button.classList.toggle('text-gold', !currentlySaved);
+          button.classList.toggle('text-gray-400', currentlySaved);
+        } catch (e) { console.warn('[CODMPanda] intel bookmark failed', e); toast('Could not save this briefing', 'error'); }
+      });
+    } catch (error) {
+      console.error('[CODMPanda] Intel feed failed', error);
+      host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-4 text-sm text-red-300">Could not load CODMPanda briefings. You can still use the official source links above.</div>';
+    }
+  }
+  function cpV4OpenPublishIntel() {
+    if (State.user?.uid !== ADMIN_UID) { toast('Only the CODMPanda admin can publish Intel updates.', 'error'); return; }
+    openSheet(`<div class="space-y-3">
+      <div><label class="block text-xs text-gray-400 font-bold mb-1">Headline</label><input id="cp-v4-news-title" maxlength="120" placeholder="What changed?" /></div>
+      <div><label class="block text-xs text-gray-400 font-bold mb-1">Category</label><select id="cp-v4-news-category"><option>News</option><option>Patch Notes</option><option>Events</option><option>Ranked</option><option>Meta</option><option>Notice</option></select></div>
+      <div><label class="block text-xs text-gray-400 font-bold mb-1">Summary</label><textarea id="cp-v4-news-summary" rows="5" maxlength="1600" placeholder="Summarise the update in your own words. Do not present rumours as confirmed facts."></textarea></div>
+      <div><label class="block text-xs text-gray-400 font-bold mb-1">Source URL (recommended)</label><input id="cp-v4-news-source" type="url" placeholder="https://www.callofduty.com/blog/mobile" /></div>
+      <div><label class="block text-xs text-gray-400 font-bold mb-1">Related weapons (comma-separated, optional)</label><input id="cp-v4-news-weapons" maxlength="240" placeholder="AK117, Kilo 141" /></div>
+      <button id="cp-v4-news-submit" class="btn-press w-full py-3 rounded-xl bg-primary font-bold">Publish Briefing</button>
+    </div>`, 'Publish CODM Intel');
+    document.getElementById('cp-v4-news-submit').onclick = async () => {
+      const title = document.getElementById('cp-v4-news-title')?.value.trim();
+      const summary = document.getElementById('cp-v4-news-summary')?.value.trim();
+      const category = document.getElementById('cp-v4-news-category')?.value || 'News';
+      const sourceURL = document.getElementById('cp-v4-news-source')?.value.trim() || '';
+      const weapons = (document.getElementById('cp-v4-news-weapons')?.value || '').split(',').map(v => v.trim()).filter(Boolean).slice(0,12);
+      if (!title || title.length < 5 || !summary || summary.length < 12) { toast('Add a clear headline and a useful summary.', 'error'); return; }
+      if (sourceURL) { try { const u = new URL(sourceURL); if (!['https:', 'http:'].includes(u.protocol)) throw new Error(); } catch (_) { toast('Enter a valid source URL.', 'error'); return; } }
+      const button = document.getElementById('cp-v4-news-submit'); if (button) { button.disabled = true; button.textContent = 'Publishing…'; }
+      try {
+        await addDoc(collection(db, 'intelArticles'), { title, summary, category, sourceURL, weapons, authorUid: State.user.uid, authorIgn: State.profile?.ign || 'CODMPanda Admin', createdAt: serverTimestamp(), publishedAt: serverTimestamp() });
+        closeSheet(); toast('CODM Intel published', 'success'); await cpV4LoadIntelArticles();
+        if (typeof broadcastNotification === 'function') Promise.resolve(broadcastNotification('New CODM Intel', title, { type: 'meta_update', category, title })).catch(() => {});
+      } catch (e) { console.error('[CODMPanda] publish intel failed', e); toast('Could not publish Intel. Check your Firestore rules.', 'error'); if (button) { button.disabled = false; button.textContent = 'Publish Briefing'; } }
+    };
+  }
+  async function cpV4RenderMeta() {
+    cpV4IntelShell('meta', 'Meta Tracker', 'Track community builds, tier votes and weapons you care about', `
+      <div class="bg-gradient-to-br from-primary/15 to-transparent border border-primary/20 rounded-2xl p-4 mb-4"><div class="font-black mb-1">Community Meta</div><p class="text-xs text-gray-400">Rankings are based on community submissions and votes, not official weapon statistics.</p></div>
+      <section class="bg-card border border-border rounded-2xl p-4 mb-4"><div class="flex items-center justify-between gap-3 mb-2"><div><h2 class="font-black">Weapon Watchlist</h2><p class="text-[10px] text-gray-500">Free: 3 weapons · Pro: up to 100</p></div><button id="cp-v4-watch-add" class="btn-press rounded-xl px-3 py-2 bg-primary text-xs font-bold">＋ Add</button></div><div id="cp-v4-watchlist" class="flex flex-wrap gap-2"><span class="text-xs text-gray-500">Loading…</span></div><div id="cp-v4-watch-matches" class="mt-3"></div></section>
+      <section class="bg-card border border-border rounded-2xl p-4 mb-4"><div class="flex items-center justify-between mb-3"><h2 class="font-black">Community tier votes</h2><button id="cp-v4-tier-vote" class="text-xs text-primary font-bold">Vote</button></div><div id="cp-v4-tier-snapshot" class="space-y-2"><span class="text-xs text-gray-500">Loading votes…</span></div></section>
+      <section class="mb-4"><div class="flex items-center justify-between mb-3"><h2 class="font-black">Popular Loadouts</h2><button id="cp-v4-open-lab" class="text-xs text-primary font-bold">Open Lab ↗</button></div><div id="cp-v4-meta-builds" class="space-y-2"><span class="text-xs text-gray-500">Loading builds…</span></div></section>
+      ${cpV4OfficialLinks()}
+    `);
+    const add = document.getElementById('cp-v4-watch-add');
+    if (add) add.onclick = cpV4AddWatchWeapon;
+    document.getElementById('cp-v4-tier-vote').onclick = () => openTierVoteSheet();
+    document.getElementById('cp-v4-open-lab').onclick = () => switchTab('lab');
+    await Promise.all([cpV4RenderWatchlist(), cpV4RenderTierSnapshot(), cpV4RenderPopularBuilds(), cpV4RenderWatchMatches()]);
+  }
+  async function cpV4RenderWatchlist() {
+    const host = document.getElementById('cp-v4-watchlist'); if (!host) return;
+    const list = Array.isArray(State.profile?.metaWatchlist) ? State.profile.metaWatchlist : [];
+    if (!list.length) { host.innerHTML = '<span class="text-xs text-gray-500">No weapons saved yet. Free can watch up to 3 weapons; Pro can watch up to 100.</span>'; return; }
+    host.innerHTML = list.map(gun => `<button class="cp-v4-watch-item px-2.5 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-xs font-bold" data-gun="${escV4(gun)}">${escV4(gun)} <span class="text-gray-400">×</span></button>`).join('');
+    host.querySelectorAll('.cp-v4-watch-item').forEach(button => button.onclick = async () => {
+      const gun = button.dataset.gun; if (cpV4MetaWatchlistBusy) return; cpV4MetaWatchlistBusy = true;
+      try { await updateDoc(doc(db, 'users', State.user.uid), { metaWatchlist: arrayRemove(gun) }); State.profile.metaWatchlist = list.filter(x => x !== gun); await cpV4RenderWatchlist(); await cpV4RenderWatchMatches(); }
+      catch (e) { toast('Could not remove weapon', 'error'); } finally { cpV4MetaWatchlistBusy = false; }
+    });
+  }
+  function cpV4AddWatchWeapon() {
+    if (!State.user) { if (typeof showAuthGate === 'function') showAuthGate(); return; }
+    const list = Array.isArray(State.profile?.metaWatchlist) ? State.profile.metaWatchlist : [];
+    const isPro = State.profile?.isPro === true || State.profile?.pro === true || State.profile?.subscription === 'pro' || State.profile?.proStatus === 'active';
+    if (!isPro && list.length >= 3) { showProPaywall('Free accounts can watch 3 weapons. CODMPanda Pro unlocks a watchlist of up to 100 weapons.'); return; }
+    if (isPro && list.length >= 100) { toast('Your Pro watchlist is full (100 weapons). Remove one before adding another.', 'info'); return; }
+    const guns = Array.isArray(ALL_GUNS) ? ALL_GUNS : [];
+    openSheet(`<div class="space-y-3"><p class="text-xs text-gray-400">Save a weapon here to highlight related CODMPanda intel briefings on this device/account.</p><select id="cp-v4-watch-gun">${guns.map(g => `<option value="${escV4(g)}" ${list.includes(g) ? 'disabled' : ''}>${escV4(g)}${list.includes(g) ? ' (already saved)' : ''}</option>`).join('')}</select><button id="cp-v4-watch-save" class="btn-press w-full py-3 rounded-xl bg-primary font-bold">Add to Watchlist</button></div>`, 'Watch a Weapon');
+    document.getElementById('cp-v4-watch-save').onclick = async () => {
+      const gun = document.getElementById('cp-v4-watch-gun')?.value;
+      if (!gun || list.includes(gun)) { toast('Choose a weapon you have not saved yet.', 'warning'); return; }
+      const proNow = State.profile?.isPro === true || State.profile?.pro === true || State.profile?.subscription === 'pro' || State.profile?.proStatus === 'active';
+      if (!proNow && list.length >= 3) { closeSheet(); showProPaywall('CODMPanda Pro unlocks a watchlist of up to 100 weapons.'); return; }
+      if (proNow && list.length >= 100) { closeSheet(); toast('Your Pro watchlist is full (100 weapons).', 'info'); return; }
+      try { await updateDoc(doc(db, 'users', State.user.uid), { metaWatchlist: arrayUnion(gun) }); State.profile = { ...(State.profile || {}), metaWatchlist: [...list, gun] }; closeSheet(); await cpV4RenderWatchlist(); await cpV4RenderWatchMatches(); toast(`${gun} added to watchlist`, 'success'); }
+      catch (e) { console.error('[CODMPanda] watchlist save failed', e); toast('Could not save this weapon', 'error'); }
+    };
+  }
+  async function cpV4RenderWatchMatches() {
+    const host = document.getElementById('cp-v4-watch-matches'); if (!host) return;
+    const list = Array.isArray(State.profile?.metaWatchlist) ? State.profile.metaWatchlist : [];
+    if (!list.length) { host.innerHTML = ''; return; }
+    try {
+      const snap = await getDocs(query(collection(db, 'intelArticles'), orderBy('createdAt', 'desc'), limit(25)));
+      const matches = [];
+      snap.forEach(d => { const a = d.data(); const haystack = `${a.title || ''} ${a.summary || a.body || ''} ${(a.weapons || []).join(' ')}`.toLowerCase(); if (list.some(g => haystack.includes(g.toLowerCase()))) matches.push({ id: d.id, title: a.title, category: a.category || 'Intel', sourceURL: a.sourceURL || '' }); });
+      if (!matches.length) { host.innerHTML = '<p class="text-[10px] text-gray-500">No recent intel matches your watched weapons yet. New matching briefings will appear here when published.</p>'; return; }
+      host.innerHTML = `<div class="text-[10px] uppercase tracking-widest font-black text-gold mb-2">Watchlist matches</div>${matches.slice(0,3).map(a => `<div class="text-xs py-1.5 flex items-start gap-2"><span>🎯</span><span class="flex-1">${escV4(a.title)} <span class="text-gray-500">· ${escV4(a.category)}</span></span>${a.sourceURL && /^https?:\/\//i.test(a.sourceURL) ? `<a class="text-primary" target="_blank" rel="noopener noreferrer" href="${escV4(a.sourceURL)}">↗</a>` : ''}</div>`).join('')}`;
+    } catch (_) { host.innerHTML = '<p class="text-[10px] text-gray-500">Watchlist is saved. Intel matching will appear as briefings become available.</p>'; }
+  }
+  async function cpV4RenderTierSnapshot() {
+    const host = document.getElementById('cp-v4-tier-snapshot'); if (!host) return;
+    try {
+      const snap = await getDocs(query(collection(db, 'tierVotes'), limit(200)));
+      const totals = {};
+      snap.forEach(d => Object.entries(d.data() || {}).forEach(([gun, tier]) => {
+        if (!['S','A','B','C'].includes(tier)) return;
+        if (!totals[gun]) totals[gun] = { S:0, A:0, B:0, C:0, total:0 };
+        totals[gun][tier]++; totals[gun].total++;
+      }));
+      const ranked = Object.entries(totals).sort((a,b) => b[1].total-a[1].total).slice(0,8);
+      if (!ranked.length) { host.innerHTML = '<div class="text-xs text-gray-500">No community tier votes yet. Be the first to rate a weapon.</div>'; return; }
+      host.innerHTML = ranked.map(([gun,v]) => { const tier = ['S','A','B','C'].sort((a,b) => v[b]-v[a])[0]; return `<div class="flex items-center gap-3"><span class="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black ${tier==='S'?'bg-red-500':tier==='A'?'bg-orange-500':tier==='B'?'bg-yellow-400 text-black':'bg-gray-600'}">${tier}</span><span class="text-xs font-bold flex-1">${escV4(gun)}</span><span class="text-[10px] text-gray-500">${v.total} vote${v.total===1?'':'s'}</span></div>`; }).join('');
+    } catch (e) { host.innerHTML = '<div class="text-xs text-gray-500">Community tier votes are temporarily unavailable.</div>'; }
+  }
+  async function cpV4RenderPopularBuilds() {
+    const host = document.getElementById('cp-v4-meta-builds'); if (!host) return;
+    try {
+      const snap = await getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(60)));
+      const builds = []; snap.forEach(d => { const v = { id:d.id, ...d.data() }; if (!v.type || v.type === 'gunsmith') builds.push(v); });
+      builds.sort((a,b) => (Number(b.likes)||0)-(Number(a.likes)||0));
+      if (!builds.length) { host.innerHTML = '<div class="bg-card border border-border rounded-xl p-4 text-xs text-gray-500">No community gunsmith builds yet. Create one in Loadout Lab to start the collection.</div>'; return; }
+      host.innerHTML = builds.slice(0,6).map(v => `<button class="cp-v4-meta-build bg-card border border-border rounded-xl p-3 w-full text-left flex items-center gap-3" data-gun="${escV4(v.gunName || '')}"><span class="w-9 h-9 rounded-xl bg-primary/15 text-primary flex items-center justify-center">🔧</span><span class="min-w-0 flex-1"><strong class="block text-xs truncate">${escV4(v.gunName || 'Unknown weapon')}</strong><small class="block text-[10px] text-gray-500">${escV4(v.ign || 'Community')} · ♥ ${Number(v.likes)||0}</small></span><span class="text-[10px] text-primary font-bold">View</span></button>`).join('');
+      host.querySelectorAll('.cp-v4-meta-build').forEach(button => button.onclick = () => { State.filters.vaults.search = button.dataset.gun || ''; State.filters.vaults.type = 'gunsmith'; vaultTypeFilter = 'gunsmith'; labSubTab = 'vault'; if (typeof switchTab === 'function') switchTab('lab'); });
+    } catch (e) { console.warn('[CODMPanda] popular builds failed', e); host.innerHTML = '<div class="text-xs text-gray-500">Could not load builds.</div>'; }
+  }
+  renderIntelTab = function() {
+    if (intelSubTab === 'news') { cpV4RenderIntelNews(); return; }
+    if (intelSubTab === 'meta') { cpV4RenderMeta(); return; }
+    _cpV4RenderIntelTab();
+    const row = document.querySelector('#content .intel-sub')?.parentElement;
+    if (row && !row.querySelector('[data-sub="news"]')) {
+      [['news','📰 News'],['meta','🎯 Meta']].forEach(([key,label]) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'intel-sub chip'; b.dataset.sub = key; b.textContent = label; b.onclick = () => { intelSubTab = key; renderIntelTab(); }; row.appendChild(b);
+      });
+    }
+  };
+  window.renderIntelTab = renderIntelTab;
+
+  // ---------- FIND SQUAD: map preferences in posts + map filter ----------
+  State.filters.lobbies.map = State.filters.lobbies.map || 'all';
+  function cpV4MapsForMode(mode) {
+    if (String(mode || '').toLowerCase().includes('br')) return CODMPANDA_BR_MAPS;
+    if (String(mode || '').toLowerCase() === 'any') return [...new Set([...CODMPANDA_MP_MAPS, ...CODMPANDA_BR_MAPS])];
+    return CODMPANDA_MP_MAPS;
+  }
+  function cpV4MapPreferenceUI(mode, selected = []) {
+    const maps = cpV4MapsForMode(mode);
+    return `<div id="cp-v4-map-options" class="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
+      <button type="button" class="cp-v4-map-choice col-span-2 rounded-xl border ${selected.length ? 'border-border bg-cardAlt' : 'border-primary bg-primary/10'} px-3 py-2 text-xs font-bold text-left" data-map="__ANY__">${selected.length ? '○ Any map' : '✓ Any map'}</button>
+      ${maps.map(map => `<button type="button" class="cp-v4-map-choice rounded-xl border ${selected.includes(map) ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-cardAlt text-gray-300'} px-3 py-2 text-xs font-semibold text-left" data-map="${escV4(map)}">${selected.includes(map) ? '✓ ' : ''}${escV4(map)}</button>`).join('')}
+    </div>`;
+  }
+  function cpV4OpenMapFilter() {
+    const current = State.filters.lobbies.map || 'all';
+    openSheet(`<p class="text-xs text-gray-400 mb-3">Filter recruitment posts by map. Posts without map preferences remain visible when All Maps is selected.</p><div class="grid grid-cols-2 gap-2" id="cp-v4-map-filter-list">${['all',...CODMPANDA_ALL_MAPS].map(map => `<button type="button" class="cp-v4-map-filter rounded-xl border ${current===map?'border-primary bg-primary/10 text-primary':'border-border bg-cardAlt text-gray-300'} px-3 py-2 text-xs font-bold" data-map="${escV4(map)}">${current===map?'✓ ':''}${map==='all'?'All Maps':escV4(map)}</button>`).join('')}</div>`, 'Filter by Map');
+    document.querySelectorAll('.cp-v4-map-filter').forEach(button => button.onclick = () => { State.filters.lobbies.map = button.dataset.map; closeSheet(); renderLobbies(); const f = document.getElementById('cp-v4-map-filter-btn'); if (f) f.textContent = `🗺️ ${button.dataset.map === 'all' ? 'All Maps' : button.dataset.map}`; });
+  }
+  const _cpV4RenderPlayTab = renderPlayTab;
+  renderPlayTab = function() {
+    const result = _cpV4RenderPlayTab.apply(this, arguments);
+    setTimeout(() => {
+      const row = document.querySelector('#content .filter-mode')?.parentElement;
+      if (row && !document.getElementById('cp-v4-map-filter-btn')) {
+        const button = document.createElement('button'); button.id = 'cp-v4-map-filter-btn'; button.className = 'chip'; button.type = 'button';
+        const selected = State.filters.lobbies.map || 'all'; button.textContent = `🗺️ ${selected === 'all' ? 'All Maps' : selected}`; button.onclick = cpV4OpenMapFilter; row.appendChild(button);
+      }
+    }, 40);
+    return result;
+  };
+  window.renderPlayTab = renderPlayTab;
+
+  // Rebuild the posting sheet once with map selection included in the actual saved Firestore record.
+  openPostLobbySheet = function() {
+    if (!State.user) { if (typeof showAuthGate === 'function') showAuthGate(); return; }
+    openSheet(`<div class="space-y-4">
+      <div><label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Rank</label><select id="pl-rank" data-dropdown-title="Rank">${RANKS.map(r => `<option ${State.profile?.rank===r?'selected':''}>${escV4(r)}</option>`).join('')}</select></div>
+      <div><label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Mode</label><select id="pl-mode" data-dropdown-title="Mode">${MODES.map(m => `<option ${((State.profile?.defaultMode || 'Any')===m)?'selected':''}>${escV4(m)}</option>`).join('')}</select></div>
+      <div><label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Region</label><select id="pl-region" data-dropdown-title="Region">${REGIONS.map(r => `<option ${State.profile?.region===r?'selected':''}>${escV4(r)}</option>`).join('')}</select></div>
+      <div><label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Role</label><select id="pl-role" data-dropdown-title="Role">${ROLES.map(r => `<option>${escV4(r)}</option>`).join('')}</select></div>
+      <div><label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Map preferences (optional)</label><p class="text-[10px] text-gray-500 mb-2">Choose one or more. Clear all selections for Any Map. The list is a preference list, not a guarantee of the current rotation.</p><div id="cp-v4-lobby-map-picker">${cpV4MapPreferenceUI(State.profile?.defaultMode || 'Any', [])}</div></div>
+      <div class="flex items-center justify-between p-3 rounded-xl bg-card border border-border"><div><div class="text-sm font-semibold">Voice Chat</div><div class="text-xs text-gray-500">Enable mic on join</div></div><div id="pl-mic" class="toggle on"></div></div>
+      <div><label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Note (optional)</label><textarea id="pl-note" rows="3" maxlength="300" placeholder="e.g. Need 2 more for Ranked MP; map callouts welcome…"></textarea></div>
+      <button id="pl-submit" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold text-base glow-primary">Post Lobby</button>
+    </div>`, 'Create Lobby');
+    let selectedMaps = [];
+    const paintMapUI = () => {
+      const slot = document.getElementById('cp-v4-lobby-map-picker'); if (!slot) return;
+      slot.innerHTML = cpV4MapPreferenceUI(document.getElementById('pl-mode')?.value || 'Any', selectedMaps);
+      slot.querySelectorAll('.cp-v4-map-choice').forEach(button => button.onclick = () => {
+        const map = button.dataset.map;
+        if (map === '__ANY__') selectedMaps = [];
+        else selectedMaps = selectedMaps.includes(map) ? selectedMaps.filter(x => x !== map) : [...selectedMaps.filter(x => x !== '__ANY__'), map].slice(0,5);
+        paintMapUI();
+      });
+    };
+    paintMapUI();
+    document.getElementById('pl-mode')?.addEventListener('change', () => { selectedMaps = selectedMaps.filter(map => cpV4MapsForMode(document.getElementById('pl-mode').value).includes(map)); paintMapUI(); });
+    document.getElementById('pl-mic').onclick = function() { this.classList.toggle('on'); };
+    document.getElementById('pl-submit').onclick = async () => {
+      const rank = document.getElementById('pl-rank').value;
+      const mode = document.getElementById('pl-mode').value;
+      const region = document.getElementById('pl-region').value;
+      const role = document.getElementById('pl-role').value;
+      const mic = document.getElementById('pl-mic').classList.contains('on');
+      const note = document.getElementById('pl-note').value.trim();
+      const btn = document.getElementById('pl-submit'); btn.disabled = true; btn.innerHTML = '<div class="spinner mx-auto"></div>';
+      try {
+        const expiryHours = typeof LOBBY_EXPIRY_HOURS === 'number' ? LOBBY_EXPIRY_HOURS : 24;
+        const expiresAt = Timestamp.fromMillis(Date.now() + expiryHours * 60 * 60 * 1000);
+        const jitsiLink = `https://meet.jit.si/CODMPanda-${State.user.uid.slice(0,8)}-${Date.now()}`;
+        const isPro = !!State.profile?.isPro;
+        await addDoc(collection(db, 'lobbies'), { uid: State.user.uid, ign: State.profile?.ign || 'Player', rank, mode, region, role, mic, note, maps: selectedMaps, mapPreference: selectedMaps.length ? selectedMaps.join(', ') : 'Any map', avatar: State.profile?.avatar || '', isPro, players: 1, jitsiLink, createdAt: serverTimestamp(), expiresAt, status: 'active' });
+        closeSheet(); toast('Lobby posted with map preferences', 'success');
+      } catch (e) { console.error('[CODMPanda] lobby post failed', e); toast('Could not post lobby: ' + (e.message || 'Please try again'), 'error'); btn.disabled = false; btn.textContent = 'Post Lobby'; }
+    };
+  };
+  window.openPostLobbySheet = openPostLobbySheet;
+
+  const _cpV4RenderLobbies = renderLobbies;
+  const _cpV4WindowRenderLobbies = window.renderLobbies;
+  renderLobbies = function() {
+    const all = State.cache.lobbies || [];
+    const mapFilter = State.filters?.lobbies?.map || 'all';
+    const visible = mapFilter === 'all' ? all : all.filter(l => {
+      const maps = Array.isArray(l.maps) ? l.maps : (l.mapPreference && l.mapPreference !== 'Any map' ? String(l.mapPreference).split(',').map(x => x.trim()) : []);
+      return maps.includes(mapFilter) || (!maps.length && String(l.note || '').toLowerCase().includes(mapFilter.toLowerCase()));
+    });
+    State.cache.lobbies = visible;
+    try {
+      // Use the consolidated V3 renderer so join, report, moderation, Pro priority and rating actions survive.
+      if (typeof _cpV4WindowRenderLobbies === 'function') _cpV4WindowRenderLobbies.apply(this, arguments);
+      else _cpV4RenderLobbies.apply(this, arguments);
+    } finally { State.cache.lobbies = all; }
+    const feed = document.getElementById('lobbies-feed'); if (!feed) return;
+    feed.querySelectorAll('.join-btn,.share-lobby,.delete-lobby,.report-lobby,.rate-teammate-btn').forEach(button => {
+      const lobby = all.find(l => l.id === button.dataset.id); if (!lobby) return;
+      const card = button.closest('.bg-card'); if (!card) return;
+      const avatar = card.querySelector('.w-12.h-12.rounded-full');
+      if (avatar && lobby.uid) { avatar.dataset.uid = lobby.uid; avatar.style.overflow = 'visible'; }
+      let label = card.querySelector('.cp-v4-lobby-maps');
+      const selectedMaps = Array.isArray(lobby.maps) ? lobby.maps : (lobby.mapPreference && lobby.mapPreference !== 'Any map' ? String(lobby.mapPreference).split(',').map(x => x.trim()) : []);
+      if (!label && selectedMaps.length) {
+        label = document.createElement('div'); label.className = 'cp-v4-lobby-maps flex flex-wrap gap-1.5 mb-3';
+        label.innerHTML = selectedMaps.map(m => `<span class="text-[10px] rounded-full px-2 py-1 bg-blue-500/10 border border-blue-500/20 text-blue-300">🗺️ ${escV4(m)}</span>`).join('');
+        const note = card.querySelector('p.text-xs'); const actions = button.closest('.flex.gap-2');
+        if (note) note.parentNode.insertBefore(label, note); else if (actions) card.insertBefore(label, actions);
+      }
+    });
+    if (typeof window.__codmpandaRefreshNamesAndAvatars === 'function') setTimeout(window.__codmpandaRefreshNamesAndAvatars, 40);
+  };
+  window.renderLobbies = renderLobbies;
+
+  // ---------- LOADOUT LAB: add mode/playstyle labels and fast sort choices ----------
+  State.filters.vaults.sort = State.filters.vaults.sort || 'recent';
+  const _cpV4RenderVaultSub = renderVaultSub;
+  renderVaultSub = function() {
+    const result = _cpV4RenderVaultSub.apply(this, arguments);
+    setTimeout(() => {
+      const feed = document.getElementById('vault-feed'); if (!feed || document.getElementById('cp-v4-vault-sort')) return;
+      const bar = document.createElement('div'); bar.id = 'cp-v4-vault-sort'; bar.className = 'flex gap-2 mb-3';
+      bar.innerHTML = `<button class="chip ${State.filters.vaults.sort==='recent'?'active':''}" data-sort="recent">Recent</button><button class="chip ${State.filters.vaults.sort==='popular'?'active':''}" data-sort="popular">Most liked</button>`;
+      feed.parentNode.insertBefore(bar, feed);
+      bar.querySelectorAll('button').forEach(button => button.onclick = () => { State.filters.vaults.sort = button.dataset.sort; bar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b===button)); renderVaults(); });
+    }, 60);
+    return result;
+  };
+  window.renderVaultSub = renderVaultSub;
+  const _cpV4RenderVaults = renderVaults;
+  const _cpV4WindowRenderVaults = window.renderVaults;
+  renderVaults = function() {
+    const original = State.cache.vaults || [];
+    const sorted = [...original];
+    if (State.filters.vaults.sort === 'popular') sorted.sort((a,b) => (Number(b.likes)||0)-(Number(a.likes)||0));
+    State.cache.vaults = sorted;
+    try {
+      // Render with V3's merged vault card so likes, details, shares and delete controls are retained.
+      if (typeof _cpV4WindowRenderVaults === 'function') _cpV4WindowRenderVaults.apply(this, arguments);
+      else _cpV4RenderVaults.apply(this, arguments);
+    } finally { State.cache.vaults = original; }
+    const feed = document.getElementById('vault-feed'); if (!feed) return;
+    feed.querySelectorAll('.like-btn,.share-vault-btn,.vault-menu-btn,.delete-vault,.vault-detail-btn').forEach(button => {
+      const item = original.find(v => v.id === button.dataset.id); if (!item) return;
+      const card = button.closest('.bg-card'); if (!card) return;
+      const meta = Array.from(card.querySelectorAll('div,span,p')).find(el => el.classList.contains('text-gray-500') && (el.classList.contains('text-[10px]') || el.classList.contains('text-xs')));
+      if (item.gameMode || item.playstyle) {
+        if (!card.querySelector('.cp-v4-build-meta')) { const details = document.createElement('div'); details.className='cp-v4-build-meta text-[9px] text-gray-400 mb-2'; details.textContent = [item.gameMode, item.playstyle].filter(Boolean).join(' · '); if (meta) meta.insertAdjacentElement('afterend', details); }
+      }
+    });
+  };
+  window.renderVaults = renderVaults;
+
+  // ---------- CLIPS: searchable, gun-filtered discovery and lazy author frames ----------
+  let cpV4ClipSearch = '';
+  let cpV4ClipGun = 'all';
+  const _cpV4RenderClips = renderClips;
+  const _cpV4WindowRenderClips = window.renderClips;
+  renderClips = function() {
+    const all = State.cache.clips || [];
+    const visible = all.filter(c => {
+      const search = cpV4ClipSearch.trim().toLowerCase();
+      const searchMatch = !search || `${c.ign||''} ${c.submittedByIgn||''} ${c.gunTag||''} ${c.caption||''} ${c.title||''}`.toLowerCase().includes(search);
+      const gunMatch = cpV4ClipGun === 'all' || (c.gunTag || 'CODM') === cpV4ClipGun;
+      return searchMatch && gunMatch;
+    });
+    State.cache.clips = visible;
+    try {
+      // Preserve V3's queued like/unlike handling and any merged clip interactions.
+      if (typeof _cpV4WindowRenderClips === 'function') _cpV4WindowRenderClips.apply(this, arguments);
+      else _cpV4RenderClips.apply(this, arguments);
+    } finally { State.cache.clips = all; }
+    const feed = document.getElementById('clips-feed'); if (!feed) return;
+    let toolbar = document.getElementById('cp-v4-clip-tools');
+    if (!toolbar) {
+      toolbar = document.createElement('div'); toolbar.id = 'cp-v4-clip-tools'; toolbar.className = 'bg-card border border-border rounded-2xl p-3 mb-3 space-y-2';
+      toolbar.innerHTML = `<input id="cp-v4-clip-search" type="search" placeholder="Search creator, caption or weapon…" maxlength="80" class="w-full" /><select id="cp-v4-clip-gun" data-dropdown-title="Filter clips"><option value="all">All weapons</option></select><p class="text-[10px] text-gray-500">Clips load as needed. Use Recent or Trending above to change sort order.</p>`;
+      feed.parentNode.insertBefore(toolbar, feed);
+      const input = document.getElementById('cp-v4-clip-search'); input.value = cpV4ClipSearch; input.oninput = () => { cpV4ClipSearch = input.value; renderClips(); };
+      const select = document.getElementById('cp-v4-clip-gun'); select.onchange = () => { cpV4ClipGun = select.value; renderClips(); };
+    }
+    const select = document.getElementById('cp-v4-clip-gun');
+    if (select) {
+      const tags = [...new Set(all.map(c => c.gunTag || 'CODM'))].sort();
+      const desired = cpV4ClipGun;
+      select.innerHTML = `<option value="all">All weapons</option>${tags.map(tag => `<option value="${escV4(tag)}">${escV4(tag)}</option>`).join('')}`;
+      select.value = tags.includes(desired) || desired === 'all' ? desired : 'all';
+      if (select.value !== desired) cpV4ClipGun = select.value;
+    }
+    feed.querySelectorAll('.like-clip, .share-clip').forEach(action => {
+      const clip = all.find(item => item.id === action.dataset.id);
+      const card = action.closest('.bg-card');
+      if (!clip || !card) return;
+      if (!card.querySelector('.cp-v4-clip-author')) {
+        const author = document.createElement('div');
+        author.className = 'cp-v4-clip-author p-3 flex items-center gap-3 border-b border-border';
+        const avatarFallback = clip.avatar || clip.submittedByAvatar || '';
+        const who = clip.submittedByIgn || clip.ign || 'CODMPanda Player';
+        author.innerHTML = `<div data-uid="${escV4(clip.uid || '')}" class="cp-v4-clip-avatar w-9 h-9 rounded-full bg-cardAlt flex items-center justify-center text-xs font-black overflow-hidden flex-shrink-0">${avatarFallback ? `<img src="${escV4(avatarFallback)}" alt="" class="w-full h-full object-cover">` : escV4((typeof getInitials === 'function' ? getInitials(who) : String(who).slice(0,2)).toString())}</div><div class="min-w-0 flex-1"><div class="text-xs font-bold truncate">${escV4(who)}</div><div class="text-[10px] text-gray-500 truncate">${escV4(clip.gunTag || 'CODM')} · ${escV4(cpV4Date(clip.createdAt))}</div>${clip.caption ? `<p class="text-xs text-gray-300 mt-1 break-words">${escV4(clip.caption)}</p>` : ''}</div>`;
+        card.insertBefore(author, card.firstChild);
+      }
+    });
+    if (typeof window.__codmpandaRefreshNamesAndAvatars === 'function') setTimeout(window.__codmpandaRefreshNamesAndAvatars, 80);
+  };
+  window.renderClips = renderClips;
+
+  // ---------- COMMUNITY ACHIEVEMENTS: useful milestones, not fake in-game XP ----------
+  async function cpV4InjectAchievements() {
+    const content = document.getElementById('content');
+    if (!content || State.currentTab !== 'you' || !State.user || document.getElementById('cp-v4-achievements')) return;
+    const anchor = content.querySelector('#activity-stats-card') || content.querySelector('#theme-frame-buttons') || content.querySelector('.bg-card.border.rounded-2xl');
+    if (!anchor || !anchor.parentNode) return;
+    const card = document.createElement('section'); card.id='cp-v4-achievements'; card.className='bg-card border border-border rounded-2xl p-4 mb-4';
+    card.innerHTML='<div class="flex items-center justify-between mb-3"><div><h2 class="font-black">Community Achievements</h2><p class="text-[10px] text-gray-500">Milestones from your real activity</p></div><span class="text-2xl">🏅</span></div><div class="text-xs text-gray-500">Checking contributions…</div>';
+    anchor.insertAdjacentElement('afterend', card);
+    try {
+      const uid = State.user.uid;
+      const safeQuery = name => getDocs(query(collection(db, name), where('uid','==',uid), limit(200))).catch(() => null);
+      const [vaults, clips, posts, lobbies] = await Promise.all([safeQuery('vaults'), safeQuery('clips'), safeQuery('posts'), safeQuery('lobbies')]);
+      const count = snap => snap?.size || 0;
+      const metrics = { builds: count(vaults), clips: count(clips), posts: count(posts), squads: count(lobbies), approved: Number(State.profile?.approvedCount)||0, wins: Number(State.profile?.tournamentWins)||0 };
+      const achievements = [
+        ['🔧','Loadout Creator','Publish a build',metrics.builds>0,metrics.builds],
+        ['🎬','Clip Creator','Share a CODM clip',metrics.clips>0,metrics.clips],
+        ['💬','Conversation Starter','Publish a community post',metrics.posts>0,metrics.posts],
+        ['🎮','Squad Organizer','Post an LFG lobby',metrics.squads>0,metrics.squads],
+        ['✅','Approved Contributor','Have a submission approved',metrics.approved>0,metrics.approved],
+        ['🏆','Tournament Winner','Record a tournament win',metrics.wins>0,metrics.wins]
+      ];
+      const isPro = !!State.profile?.isPro;
+      const visibleAchievements = isPro ? achievements : achievements.slice(0,4);
+      card.innerHTML=`<div class="flex items-center justify-between mb-3"><div><h2 class="font-black">Community Achievements</h2><p class="text-[10px] text-gray-500">Milestones from your real CODMPanda activity</p></div><span class="text-2xl">🏅</span></div><div class="grid grid-cols-2 gap-2">${visibleAchievements.map(([icon,title,detail,earned,value])=>`<div class="rounded-xl border ${earned?'border-primary/30 bg-primary/5':'border-border bg-cardAlt opacity-65'} p-3"><div class="flex items-center gap-2 mb-1"><span class="text-lg">${icon}</span><span class="text-xs font-bold">${title}</span></div><p class="text-[10px] text-gray-500">${detail}</p><div class="text-[10px] mt-2 ${earned?'text-green-400':'text-gray-600'}">${earned?`UNLOCKED${value>1?` · ${value}`:''}`:'NOT YET'}</div></div>`).join('')}</div>${!isPro?'<button type="button" id="cp-v4-achievements-pro" class="w-full mt-3 rounded-xl border border-gold/30 bg-gold/5 p-3 text-left"><span class="text-xs font-bold text-gold">Unlock the full achievement showcase with Pro ↗</span><span class="block text-[10px] text-gray-500 mt-1">The remaining profile milestones stay earned; Pro expands how many you showcase here.</span></button>':''}<p class="text-[10px] text-gray-600 mt-3">These are community milestones, not CODM in-game XP or currency. No arbitrary points are awarded for spam.</p>`;
+      card.querySelector('#cp-v4-achievements-pro')?.addEventListener('click', () => { if (typeof showProPaywall === 'function') showProPaywall('CODMPanda Pro unlocks the full profile achievement showcase.'); else if (typeof openUpgradeSheet === 'function') openUpgradeSheet(); });
+    } catch (e) { console.warn('[CODMPanda] achievement summary failed', e); card.querySelector('div.text-xs')?.replaceWith(document.createTextNode('Achievements will appear when activity data is available.')); }
+  }
+  const _cpV4RenderYouTab = renderYouTab;
+  renderYouTab = function() { const result = _cpV4RenderYouTab.apply(this, arguments); setTimeout(cpV4InjectAchievements, 320); return result; };
+  // Preserve the V3 window-level profile cosmetics wrapper, and add achievements after it renders.
+  const _cpV4WindowRenderYouTab = window.renderYouTab;
+  if (typeof _cpV4WindowRenderYouTab === 'function' && !_cpV4WindowRenderYouTab.__cpV4AchievementsWrapped) {
+    const wrappedYou = function() { const result = _cpV4WindowRenderYouTab.apply(this, arguments); setTimeout(cpV4InjectAchievements, 360); return result; };
+    wrappedYou.__cpV4AchievementsWrapped = true; window.renderYouTab = wrappedYou;
+  }
+
+  // Public profile: preserve the existing V3 frame/theme wrapper and append contribution counts only.
+  async function cpV4InjectPublicContributions(uid) {
+    if (!uid || uid === State.user?.uid) return;
+    await new Promise(resolve => setTimeout(resolve, 220));
+    const host = document.querySelector('#sheet-container .px-5'); if (!host || !document.getElementById('sheet-container')) return;
+    try {
+      const existingUser = host.querySelector('#cp-v4-public-contributions'); if (existingUser) return;
+      const [vaults, clips, posts] = await Promise.all([
+        getDocs(query(collection(db,'vaults'),where('uid','==',uid),limit(100))).catch(()=>null),
+        getDocs(query(collection(db,'clips'),where('uid','==',uid),limit(100))).catch(()=>null),
+        getDocs(query(collection(db,'posts'),where('uid','==',uid),limit(100))).catch(()=>null)
+      ]);
+      // The original profile renderer already inserts the correct avatar frame and cosmetics.
+      const section = document.createElement('section'); section.id='cp-v4-public-contributions'; section.className='bg-card border border-border rounded-2xl p-3';
+      section.innerHTML=`<div class="text-[10px] font-bold text-gray-400 uppercase mb-2">Community Contributions</div><div class="grid grid-cols-3 gap-2"><div class="rounded-xl bg-cardAlt p-2 text-center"><strong class="block text-base text-primary">${vaults?.size||0}</strong><small class="text-[9px] text-gray-500">BUILDS</small></div><div class="rounded-xl bg-cardAlt p-2 text-center"><strong class="block text-base text-primary">${clips?.size||0}</strong><small class="text-[9px] text-gray-500">CLIPS</small></div><div class="rounded-xl bg-cardAlt p-2 text-center"><strong class="block text-base text-primary">${posts?.size||0}</strong><small class="text-[9px] text-gray-500">POSTS</small></div></div><p class="text-[9px] text-gray-600 mt-2">Counts reflect content currently available in CODMPanda.</p>`;
+      const target = host.querySelector('.grid.grid-cols-4.gap-2') || host.querySelector('.space-y-4') || host.firstElementChild;
+      if (target?.parentNode) target.insertAdjacentElement('afterend', section); else host.appendChild(section);
+    } catch (e) { console.warn('[CODMPanda] public profile contributions unavailable', e); }
+  }
+  const _cpV4OpenUserProfile = openUserProfile;
+  openUserProfile = async function(uid) { const result = await _cpV4OpenUserProfile.apply(this, arguments); cpV4InjectPublicContributions(uid); return result; };
+  // Public profile taps commonly route through window.openUserProfile, which has its own V3 wrapper.
+  const _cpV4WindowOpenUserProfile = window.openUserProfile;
+  if (typeof _cpV4WindowOpenUserProfile === 'function' && !_cpV4WindowOpenUserProfile.__cpV4ContributionsWrapped) {
+    const wrappedProfile = async function(uid) { const result = await _cpV4WindowOpenUserProfile.apply(this, arguments); cpV4InjectPublicContributions(uid); return result; };
+    wrappedProfile.__cpV4ContributionsWrapped = true; window.openUserProfile = wrappedProfile;
+  }
+
+  // ---------- TOURNAMENTS: searchable discovery on top of the existing tournament engine ----------
+  try {
+    const _cpV4RenderTournamentCard = renderTournamentCard;
+    renderTournamentCard = function(t) {
+      const html = _cpV4RenderTournamentCard.apply(this, arguments);
+      return html.replace(/data-id="[^"]+"/, `data-id="${escV4(t.id)}" data-status="${escV4(t.status || 'open')}" data-mode="${escV4(t.mode || '')}" data-region="${escV4(t.region || '')}"`);
+    };
+    const _cpV4RenderTournaments = renderTournamentsSub;
+    renderTournamentsSub = async function() {
+      const result = await _cpV4RenderTournaments.apply(this, arguments);
+      setTimeout(() => {
+        const body = document.getElementById('squad-body');
+        const list = body?.querySelector('#tournaments-list');
+        if (!body || !list) return;
+        let tools = body.querySelector('#cp-v4-tournament-tools');
+        if (!tools) {
+          tools = document.createElement('div'); tools.id='cp-v4-tournament-tools'; tools.className='bg-card border border-border rounded-xl p-3 mb-3 space-y-2';
+          tools.innerHTML='<input id="cp-v4-tournament-search" type="search" maxlength="80" placeholder="Search tournament, mode, region or host…" class="w-full"/><p class="text-[10px] text-gray-500">Searches the current Active or History list. Open a tournament to view its existing bracket, teams and results.</p>';
+          list.parentNode.insertBefore(tools,list);
+        }
+        const input = tools.querySelector('#cp-v4-tournament-search');
+        if (input && !input.dataset.bound) {
+          input.dataset.bound='1';
+          input.addEventListener('input', () => {
+            const term = input.value.trim().toLowerCase();
+            list.querySelectorAll('.tournament-card').forEach(card => { card.hidden = !!term && !card.textContent.toLowerCase().includes(term); });
+          });
+        }
+        if (input) input.dispatchEvent(new Event('input'));
+      }, 100);
+      return result;
+    };
+    } catch (e) { console.warn('[CODMPanda] tournament discovery enhancement skipped', e); }
+  window.renderTournamentsSub = renderTournamentsSub;
+
+  // ---------- NOTIFICATIONS: category controls plus preference-aware delivery ----------
+  showNotifications = function() {
+    const options = [
+      ['notifLfg','users','LFG & squad matches','Recruitment matches and lobby activity'],
+      ['notifLeaks','zap','Leaks & community intel','CODM news, notices and intel briefings'],
+      ['notifMeta','target','Meta Tracker','Updates matching your watched weapons'],
+      ['notifSquad','users-round','Friends & squad','Friend requests, clan and squad activity'],
+      ['notifClips','clapperboard','Clips','Clip highlights and creator activity'],
+      ['notifTournaments','trophy','Tournaments','Registrations, matches and results'],
+      ['notifReplies','message-circle','Replies & mentions','Comments, replies and mentions']
+    ];
+    openSheet(`<div class="space-y-2">${options.map(([key,icon,title,desc])=>`<div class="flex items-center gap-3 p-3 rounded-xl bg-card border border-border"><div class="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center"><i data-lucide="${icon}" class="w-5 h-5 text-primary"></i></div><div class="flex-1 min-w-0"><div class="text-sm font-semibold">${title}</div><div class="text-[10px] text-gray-500">${desc}</div></div><button type="button" aria-label="Toggle ${title}" class="toggle ${State.profile?.[key] !== false ? 'on' : ''}" onclick="toggleNotif('${key}', this)"></button></div>`).join('')}<p class="text-[10px] text-gray-600 px-1 pt-1">A category is on by default for existing accounts. Turn off only the alerts you don't need.</p></div>`, 'Notification Preferences');
+    if (window.lucide) window.lucide.createIcons();
+  };
+  window.showNotifications = showNotifications;
+  async function cpV4NotificationAllowed(uid, data) {
+    const type = String(data?.type || '').toLowerCase();
+    const category = String(data?.category || '').toLowerCase();
+    const pref = type.includes('lfg') || type.includes('lobby') || type.includes('match') ? 'notifLfg'
+      : (type.includes('meta') && (category === 'meta' || type.includes('watchlist'))) ? 'notifMeta'
+      : type.includes('leak') || type.includes('intel') || type.includes('meta_update') || type.includes('news') ? 'notifLeaks'
+      : type.includes('tournament') || type.includes('bracket') ? 'notifTournaments'
+      : type.includes('clip') ? 'notifClips'
+      : type.includes('squad') || type.includes('clan') || type.includes('friend') ? 'notifSquad'
+      : type.includes('comment') || type.includes('reply') || type.includes('mention') ? 'notifReplies' : '';
+    if (!pref || type === 'dm') return true;
+    try { const recipient = await getDoc(doc(db,'users',uid)); return !(recipient.exists() && recipient.data()[pref] === false); }
+    catch (e) { console.warn('[CODMPanda] preference check failed; letting notification continue', e); return true; }
+  }
+  const _cpV4SendNotification = sendNotificationToUser;
+  sendNotificationToUser = async function(uid, title, body, data) {
+    if (!(await cpV4NotificationAllowed(uid, data))) return { skipped: true, reason: 'notification preference disabled' };
+    return _cpV4SendNotification.call(this, uid, title, body, data);
+  };
+  // Keep the final V3 logging/push-delivery sender intact and wrap it instead of replacing it.
+  const _cpV4WindowSendNotification = window.sendNotificationToUser;
+  if (typeof _cpV4WindowSendNotification === 'function' && !_cpV4WindowSendNotification.__cpV4PreferenceWrapped) {
+    const wrappedSendNotification = async function(uid, title, body, data) {
+      if (!(await cpV4NotificationAllowed(uid, data))) return { skipped: true, reason: 'notification preference disabled' };
+      return _cpV4WindowSendNotification.apply(this, arguments);
+    };
+    wrappedSendNotification.__cpV4PreferenceWrapped = true;
+    window.sendNotificationToUser = wrappedSendNotification;
+  }
+
+  // ---------- PRO: add real, implemented perks (watchlist + frames) to existing copy ----------
+  try {
+    if (typeof openUpgradeSheet === 'function') {
+      const _cpV4OpenUpgradeSheet = openUpgradeSheet;
+      openUpgradeSheet = function() {
+        _cpV4OpenUpgradeSheet.apply(this, arguments);
+        setTimeout(() => {
+          const sheet = document.querySelector('#sheet-container .px-5'); if (!sheet) return;
+          const perks = sheet.querySelector('.text-xs.text-gray-300.space-y-2');
+          if (perks && !perks.querySelector('[data-cp-v4-pro-perk]')) {
+            const extras = document.createElement('div'); extras.dataset.cpV4ProPerk='1';
+            extras.innerHTML='<div class="flex items-center gap-2"><span class="text-gold">✦</span> All 20 War Artifact avatar frames</div><div class="flex items-center gap-2"><span class="text-gold">✦</span> Meta Tracker watchlist with up to 100 weapons</div><div class="flex items-center gap-2"><span class="text-gold">✦</span> Full profile achievement showcase</div>';
+            perks.appendChild(extras);
+          }
+        }, 80);
+      };
+    }
+    const _cpV4RenderProUpsell = renderProUpsell;
+    renderProUpsell = function() {
+      let html = _cpV4RenderProUpsell.apply(this, arguments);
+      html = html.replace('<li>✦ Gold crown badge 👑</li>', '<li>✦ Gold crown badge 👑</li><li>✦ All 20 War Artifact frames</li><li>✦ Meta Tracker watchlist (up to 100 weapons)</li><li>✦ Full profile achievement showcase</li>');
+      return html;
+    };
+    window.renderProUpsell = renderProUpsell;
+    window.openUpgradeSheet = openUpgradeSheet;
+  } catch (e) { console.warn('[CODMPanda] Pro copy enhancement skipped', e); }
+
+  // ---------- HOME: small daily briefing shortcuts, without fake XP ----------
+  function cpV4InjectDailyBrief() {
+    setTimeout(() => {
+      const content = document.getElementById('content');
+      if (!content || State.currentTab !== 'home' || content.querySelector('#cp-v4-daily-brief')) return;
+      const anchor = content.querySelector('.home-filter-btn')?.parentElement;
+      if (!anchor) return;
+      const brief = document.createElement('section'); brief.id='cp-v4-daily-brief'; brief.className='bg-gradient-to-br from-primary/10 to-transparent border border-primary/20 rounded-2xl p-3 mb-4';
+      brief.innerHTML='<div class="flex items-center justify-between gap-2 mb-2"><div><div class="text-[10px] font-black uppercase tracking-widest text-primary">Daily Companion Brief</div><div class="text-xs text-gray-400">Three useful things to check before your next match</div></div><span class="text-xl">🎯</span></div><div class="grid grid-cols-3 gap-2"><button data-go="intel" class="cp-v4-daily-go rounded-xl bg-card border border-border p-2 text-[10px] font-bold">📰 CODM Intel</button><button data-go="meta" class="cp-v4-daily-go rounded-xl bg-card border border-border p-2 text-[10px] font-bold">🎯 Weapon Meta</button><button data-go="play" class="cp-v4-daily-go rounded-xl bg-card border border-border p-2 text-[10px] font-bold">👥 Find Squad</button></div>';
+      anchor.insertAdjacentElement('afterend', brief);
+      brief.querySelectorAll('.cp-v4-daily-go').forEach(button => button.onclick = () => { if (button.dataset.go === 'meta') { intelSubTab='meta'; switchTab('intel'); } else if (button.dataset.go === 'intel') { intelSubTab='news'; switchTab('intel'); } else switchTab('play'); });
+    }, 120);
+  }
+  const _cpV4RenderHomeTab = renderHomeTab;
+  renderHomeTab = async function() { const result = await _cpV4RenderHomeTab.apply(this, arguments); cpV4InjectDailyBrief(); return result; };
+  const _cpV4WindowRenderHomeTab = window.renderHomeTab;
+  if (typeof _cpV4WindowRenderHomeTab === 'function' && !_cpV4WindowRenderHomeTab.__cpV4DailyBriefWrapped) {
+    const wrappedHome = async function() { const result = await _cpV4WindowRenderHomeTab.apply(this, arguments); cpV4InjectDailyBrief(); return result; };
+    wrappedHome.__cpV4DailyBriefWrapped = true; window.renderHomeTab = wrappedHome;
+  }
+
+  // Preserve the consolidated window-level clip renderer from the existing app. The local
+  // Clips-tab renderer is enhanced above; do not replace the merged renderer with an older one.
+  console.log('[CODMPanda] Companion Upgrade Pack v4 loaded: Intel, Meta Tracker, map-aware LFG, upgraded loadouts/clips, achievements, notification preferences, profile contributions and Pro watchlist.');
+})();
