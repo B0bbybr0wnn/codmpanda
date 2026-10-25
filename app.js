@@ -3053,6 +3053,8 @@ function renderMapsSub() {
 // ============================================
 // YOU TAB (UI)
 // ============================================
+let youSubTab = 'profile';
+
 function renderYouTab() {
   const content = document.getElementById('content');
   const p = State.profile || {};
@@ -3060,6 +3062,12 @@ function renderYouTab() {
 
   content.innerHTML = `
     <div class="px-4 pt-4 pb-24">
+
+      <div class="grid grid-cols-2 gap-2 p-1 rounded-xl bg-card border border-border mb-4" role="tablist" aria-label="You sections">
+        <button type="button" role="tab" data-you-subtab="profile" aria-selected="${youSubTab === 'profile'}" class="btn-press rounded-lg py-2.5 text-sm font-bold ${youSubTab === 'profile' ? 'bg-primary text-white' : 'text-gray-400'}">Profile</button>
+        <button type="button" role="tab" data-you-subtab="settings" aria-selected="${youSubTab === 'settings'}" class="btn-press rounded-lg py-2.5 text-sm font-bold ${youSubTab === 'settings' ? 'bg-primary text-white' : 'text-gray-400'}">Settings</button>
+      </div>
+      ${youSubTab === 'profile' ? `
       <div class="bg-card border ${isPro ? 'border-gold glow-gold' : 'border-border'} rounded-2xl p-4 mb-4">
         <div class="flex items-center gap-3 mb-3">
           <div class="relative">
@@ -3101,6 +3109,8 @@ function renderYouTab() {
 
       ${isPro ? renderProActive(p) : renderProUpsell()}
 
+
+      ` : `
       <div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">
         <div class="px-4 py-3 border-b border-border">
           <div class="text-xs font-bold text-gray-400 uppercase">Settings</div>
@@ -3177,24 +3187,42 @@ function renderYouTab() {
           <button onclick="showTerms()">Terms</button>
         </div>
       </div>
+      `}
     </div>
   `;
+
+  document.querySelectorAll('[data-you-subtab]').forEach(btn => {
+    btn.onclick = () => {
+      const nextTab = btn.dataset.youSubtab;
+      if (!nextTab || nextTab === youSubTab) return;
+      youSubTab = nextTab;
+      renderYouTab();
+    };
+  });
 
   document.querySelectorAll('.settings-row').forEach(el => {
     el.onclick = () => handleSettingAction(el.dataset.action);
   });
-  document.getElementById('copy-uid-btn').onclick = () => copyText(State.user.uid, 'UID copied!');
-  document.getElementById('edit-profile-btn').onclick = openEditProfileSheet;
-  if (!isPro) {
-    const proBtn = document.getElementById('unlock-pro-btn');
-    if (proBtn) proBtn.onclick = goPro;
+
+  const copyUidBtn = document.getElementById('copy-uid-btn');
+  if (copyUidBtn) copyUidBtn.onclick = () => copyText(State.user.uid, 'UID copied!');
+  const editProfileBtn = document.getElementById('edit-profile-btn');
+  if (editProfileBtn) editProfileBtn.onclick = openEditProfileSheet;
+
+  if (youSubTab === 'profile') {
+    if (!isPro) {
+      const proBtn = document.getElementById('unlock-pro-btn');
+      if (proBtn) proBtn.onclick = goPro;
+    } else {
+      const manageBtn = document.getElementById('manage-pro-btn');
+      if (manageBtn) manageBtn.onclick = showManagePro;
+    }
+    loadStats();
+    loadClanStat();
   } else {
-    const manageBtn = document.getElementById('manage-pro-btn');
-    if (manageBtn) manageBtn.onclick = showManagePro;
+    setupPWAInstall();
   }
-  loadStats();
-  loadClanStat();
-  setupPWAInstall();
+
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -10820,6 +10848,7 @@ updateContributorStats = async function(uid) {
 async function openUserProfile(uid) {
   if (!uid) return;
   if (uid === State.user.uid) {
+    youSubTab = 'profile';
     switchTab('you');
     return;
   }
