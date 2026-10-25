@@ -64,6 +64,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const region = p.region || "Global";
     const bio = p.bio || "";
     const favourite = p.favGun || "";
+    const userId = p.uid || p.userId || currentUser()?.uid || "Loading…";
     return `
       <section class="bg-card border border-border rounded-2xl p-4 mb-3">
         <div class="flex items-center gap-3">
@@ -74,6 +75,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
             <div class="font-black text-base break-words">${esc(name)}</div>
             <div class="text-xs text-gray-500 mt-1">${esc(rank)} · ${esc(region)}</div>
             <div class="text-[10px] text-gray-600 mt-1">Your CODMPanda profile</div>
+            <div class="text-[10px] text-gray-500 mt-1 break-all">User ID: ${esc(userId)}</div>
           </div>
         </div>
         ${bio ? `<p class="text-sm text-gray-300 mt-3 whitespace-pre-wrap break-words">${esc(bio)}</p>` : ""}
@@ -123,6 +125,14 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     home.classList.toggle("hidden", which !== "home");
     profilePage.classList.toggle("hidden", which !== "profile");
     settingsPage.classList.toggle("hidden", which !== "settings");
+    const profileButton = document.getElementById("cp-open-profile");
+    const settingsButton = document.getElementById("cp-open-settings");
+    if (profileButton && settingsButton) {
+      profileButton.className = "flex-1 text-sm font-bold rounded-lg px-4 py-2.5 transition " +
+        (which === "profile" ? "bg-primary text-white" : "text-gray-400");
+      settingsButton.className = "flex-1 text-sm font-bold rounded-lg px-4 py-2.5 transition " +
+        (which === "settings" ? "bg-primary text-white" : "text-gray-400");
+    }
     if (which === "home") {
       activeProfileTab = "posts";
       const activity = document.getElementById("cp-you-activity-card");
@@ -274,16 +284,16 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
 
     const menu = document.createElement("div");
     menu.id = "cp-you-home-menu";
-    menu.className = "flex items-center gap-6 py-2";
+    menu.className = "flex items-center gap-1 p-1 mb-3 rounded-xl bg-cardAlt border border-border";
     const profileButton = document.createElement("button");
     profileButton.type = "button";
     profileButton.id = "cp-open-profile";
-    profileButton.className = "text-sm font-bold text-white py-2 border-b-2 border-primary";
+    profileButton.className = "flex-1 text-sm font-bold rounded-lg px-4 py-2.5 transition bg-primary text-white";
     profileButton.textContent = "Profile";
     const settingsButton = document.createElement("button");
     settingsButton.type = "button";
     settingsButton.id = "cp-open-settings";
-    settingsButton.className = "text-sm font-bold text-gray-400 py-2 border-b-2 border-transparent";
+    settingsButton.className = "flex-1 text-sm font-bold rounded-lg px-4 py-2.5 transition text-gray-400";
     settingsButton.textContent = "Settings";
     profileButton.addEventListener("click", () => setPage("profile"));
     settingsButton.addEventListener("click", () => setPage("settings"));
@@ -322,7 +332,15 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     activityPane.dataset.cpProfilePane = "activity";
     activityPane.className = "hidden space-y-3 mt-4";
 
-    profilePage.append(profileTabs, postsPane, achievementsPane, activityPane);
+    const profileDetails = document.createElement("div");
+    profileDetails.id = "cp-you-profile-details";
+    profileDetails.className = "mb-4";
+    profileDetails.innerHTML = profileHeaderHTML();
+    profileDetails.querySelector("#cp-profile-edit-fallback")?.addEventListener("click", () => {
+      editButton?.click();
+    });
+
+    profilePage.append(profileDetails, profileTabs, postsPane, achievementsPane, activityPane);
 
     const settingsPage = document.createElement("section");
     settingsPage.id = "cp-you-settings";
@@ -368,11 +386,17 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     if (contributor && !settingsNodes.includes(contributor)) settingsNodes.push(contributor);
     settingsNodes.forEach(node => settingsBody.appendChild(node));
 
-    // Do not append the old full YOU-tab DOM as leftovers: that would recreate
-    // duplicate Profile/Settings controls inside the new screens.
+    // Preserve every original YOU-tab section that wasn't explicitly relocated above.
+    // These include account actions, support/report-bug links, notification controls,
+    // Go Pro, admin tools, sign-out, and any future settings cards added by the app.
+    // Moving the remaining nodes avoids silently deleting functionality.
+    [...content.childNodes].forEach(node => {
+      if (node.nodeType === Node.ELEMENT_NODE && node.id === "cp-you-app") return;
+      settingsBody.appendChild(node);
+    });
 
     // Preserve the old theme/frame button's event listeners if it was injected already.
-    // Then replace the original long YOU page with the 3 clean destinations.
+    // Replace the old page only after all unhandled sections have been carried forward.
     content.replaceChildren(app);
     app.append(home, profilePage, settingsPage);
 
