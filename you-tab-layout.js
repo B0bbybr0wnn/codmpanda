@@ -31,7 +31,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
   const isYouTab = () => state().currentTab === "you";
 
   function elementWithHeader(root, title) {
-    const header = [...root.querySelectorAll(".text-xs.font-bold.text-gray-400.uppercase")]
+    const header = [...root.querySelectorAll(".uppercase")]
       .find(el => el.textContent.trim().toLowerCase() === title.toLowerCase());
     return header ? header.closest(".bg-card") : null;
   }
