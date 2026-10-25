@@ -1,0 +1,5016 @@
+'Terms');
+};
+
+window.deleteLobby = deleteLobby;
+window.deleteScrim = deleteScrim;
+window.deleteVault = deleteVault;
+window.deleteClip = deleteClip;
+window.cleanupExpiredContent = cleanupExpiredContent;
+window.showTerms = showTerms;
+
+/* END OF CHUNK 36 */
+// ============================================
+// Chunk 37: Enhanced Empty States with CTAs
+// ============================================
+
+// Upgrade the emptyState function with better design
+const _origEmptyState = emptyState;
+window.emptyState = function(icon, title, subtitle, ctaLabel, ctaFn) {
+  const ctaHTML = (ctaLabel && ctaFn) ? `
+    <button id="empty-cta-btn-${Date.now()}" class="empty-cta-btn btn-press mt-5 px-6 py-3.5 rounded-2xl bg-primary font-black text-sm glow-primary flex items-center justify-center gap-2 mx-auto">
+      ${esc(ctaLabel)}
+    </button>
+  ` : '';
+
+  setTimeout(() => {
+    document.querySelectorAll('.empty-cta-btn').forEach(b => {
+      if (!b.dataset.bound) {
+        b.dataset.bound = '1';
+        if (ctaFn) b.onclick = ctaFn;
+      }
+    });
+  }, 0);
+
+  return `
+    <div class="flex flex-col items-center justify-center py-16 px-6 text-center fade-in">
+      <div class="relative mb-5">
+        <div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-gold/10 rounded-full blur-2xl"></div>
+        <div class="relative w-24 h-24 rounded-full bg-card border border-border flex items-center justify-center">
+          <i data-lucide="${icon}" class="w-10 h-10 text-primary/70"></i>
+        </div>
+      </div>
+      <div class="text-lg font-black mb-2">${esc(title)}</div>
+      <div class="text-xs text-gray-500 max-w-[260px] leading-relaxed">${esc(subtitle || '')}</div>
+      ${ctaHTML}
+    </div>
+  `;
+};
+
+// ============================================
+// SPECIFIC EMPTY STATE UPGRADES PER SCREEN
+// ============================================
+
+// PLAY tab — Lobbies empty
+const _origRenderLobbiesEmpty = renderLobbies;
+renderLobbies = function() {
+  const feed = document.getElementById('lobbies-feed');
+  if (!feed) return;
+  let lobbies = State.cache.lobbies;
+
+  const f = State.filters.lobbies;
+  if (f.rank && f.rank !== 'all') lobbies = lobbies.filter(l => l.rank === f.rank);
+  if (f.mode && f.mode !== 'all') lobbies = lobbies.filter(l => l.mode === f.mode);
+  if (f.region && f.region !== 'all') lobbies = lobbies.filter(l => l.region === f.region);
+  if (f.mic) lobbies = lobbies.filter(l => l.mic === true);
+  if (f.search) {
+    lobbies = lobbies.filter(l =>
+      (l.ign || '').toLowerCase().includes(f.search) ||
+      (l.note || '').toLowerCase().includes(f.search)
+    );
+  }
+
+  if (lobbies.length === 0) {
+    // Only show empty state if there are NO lobbies at all (not just filtered)
+    if (State.cache.lobbies.length === 0) {
+      feed.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+          <div class="relative mb-6">
+            <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+            <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-primary/30 flex items-center justify-center">
+              <span class="text-5xl">🎮</span>
+            </div>
+          </div>
+          <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">⚡ Be the first</div>
+          <div class="text-xl font-black mb-3">No lobbies yet</div>
+          <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+            Post a lobby in under 30 seconds. Squad up with players who match your rank, mode, and region.
+          </div>
+          <button id="empty-post-lobby" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark font-black text-sm text-white glow-primary flex items-center justify-center gap-2">
+            <i data-lucide="plus" class="w-4 h-4"></i> Post First Lobby
+          </button>
+          <div class="text-[10px] text-gray-600 mt-4">Takes 10 seconds — no signup required</div>
+        </div>
+      `;
+      const btn = document.getElementById('empty-post-lobby');
+      if (btn) btn.onclick = openPostLobbySheet;
+      if (window.lucide) window.lucide.createIcons();
+      return;
+    }
+    // Filtered empty
+    feed.innerHTML = emptyState('search', 'No lobbies match', 'Try different filters or clear them', 'Post Lobby', openPostLobbySheet);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  // Continue with normal render
+  _origRenderLobbiesEmpty();
+};
+
+// LAB Vault — Empty state
+const _origRenderVaultsEmpty = renderVaults;
+renderVaults = function() {
+  const feed = document.getElementById('vault-feed');
+  if (!feed) return;
+
+  if (State.cache.vaults.length === 0 && !State.filters.vaults.search) {
+    feed.className = '';
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-gold/30 to-primary/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-gold/30 flex items-center justify-center">
+            <span class="text-5xl">🔧</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-gold uppercase tracking-widest mb-2">⭐ Featured builds</div>
+        <div class="text-xl font-black mb-3">Your Vault is empty</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Build your first gunsmith with our visual tool. 90+ guns, 9 attachment slots, live stat calculator.
+        </div>
+        <button id="empty-build-gun" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold flex items-center justify-center gap-2">
+          <i data-lucide="wrench" class="w-4 h-4"></i> Build Gunsmith
+        </button>
+        <div class="text-[10px] text-gray-600 mt-4">Or browse community builds below</div>
+      </div>
+    `;
+    const btn = document.getElementById('empty-build-gun');
+    if (btn) btn.onclick = () => openGunsmithBuilder();
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderVaultsEmpty();
+};
+
+// SQUAD Clans — Empty state
+const _origRenderClansEmpty = renderClans;
+renderClans = function() {
+  const feed = document.getElementById('clans-feed');
+  if (!feed) return;
+
+  if (State.cache.clans.length === 0) {
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-primary/30 flex items-center justify-center">
+            <span class="text-5xl">🛡️</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">👑 Pro feature</div>
+        <div class="text-xl font-black mb-3">No clans yet</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Create your own clan, recruit members, compete in Clan Wars, and earn badges.
+        </div>
+        <button id="empty-create-clan" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark font-black text-sm text-white glow-primary flex items-center justify-center gap-2">
+          <i data-lucide="plus" class="w-4 h-4"></i> Create First Clan
+        </button>
+        <div class="text-[10px] text-gray-600 mt-4">Free to try — Pro required to keep</div>
+      </div>
+    `;
+    const btn = document.getElementById('empty-create-clan');
+    if (btn) btn.onclick = openCreateClanSheet;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderClansEmpty();
+};
+
+// SQUAD Scrims — Empty state
+const _origRenderScrimsEmpty = renderScrims;
+renderScrims = function() {
+  const feed = document.getElementById('scrims-feed');
+  if (!feed) return;
+
+  if (State.cache.scrims.length === 0) {
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-primary/30 flex items-center justify-center">
+            <span class="text-5xl">⚔️</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">🏆 Competitive play</div>
+        <div class="text-xl font-black mb-3">No scrims posted</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Looking for a 5v5 SnD practice match? Post a scrim and find an opponent team.
+        </div>
+        <button id="empty-post-scrim" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark font-black text-sm text-white glow-primary flex items-center justify-center gap-2">
+          <i data-lucide="plus" class="w-4 h-4"></i> Post First Scrim
+        </button>
+        <div class="text-[10px] text-gray-600 mt-4">Active for 12 hours</div>
+      </div>
+    `;
+    const btn = document.getElementById('empty-post-scrim');
+    if (btn) btn.onclick = openPostScrimSheet;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderScrimsEmpty();
+};
+
+// SQUAD Clips — Empty state
+const _origRenderClipsEmpty = renderClips;
+renderClips = function() {
+  const feed = document.getElementById('clips-feed');
+  if (!feed) return;
+
+  if (State.cache.clips.length === 0) {
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-primary/30 flex items-center justify-center">
+            <span class="text-5xl">🎬</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">🔥 Get featured</div>
+        <div class="text-xl font-black mb-3">No clips yet</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Share your best plays. Clips get approved by moderators and featured on the feed.
+        </div>
+        <button id="empty-post-clip" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark font-black text-sm text-white glow-primary flex items-center justify-center gap-2">
+          <i data-lucide="video" class="w-4 h-4"></i> Submit First Clip
+        </button>
+        <div class="text-[10px] text-gray-600 mt-4">YouTube or TikTok links supported</div>
+      </div>
+    `;
+    const btn = document.getElementById('empty-post-clip');
+    if (btn) btn.onclick = openSubmitClipSheet;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderClipsEmpty();
+};
+
+// INTEL Leaks — Empty state
+const _origRenderLeaksEmpty = renderLeaks;
+renderLeaks = function() {
+  const feed = document.getElementById('leaks-feed');
+  if (!feed) return;
+
+  if (State.cache.leaks.length === 0) {
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-gold/30 to-primary/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-gold/30 flex items-center justify-center">
+            <span class="text-5xl">🔥</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-gold uppercase tracking-widest mb-2">📡 Intel incoming</div>
+        <div class="text-xl font-black mb-3">No leaks yet</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Got intel? Submit a leak — screenshots, rumors, unreleased content. Approved ones get published here.
+        </div>
+        <button id="empty-submit-leak" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold flex items-center justify-center gap-2">
+          <i data-lucide="zap" class="w-4 h-4"></i> Submit First Leak
+        </button>
+        <div class="text-[10px] text-gray-600 mt-4">Anonymous submission — admin review</div>
+      </div>
+    `;
+    const btn = document.getElementById('empty-submit-leak');
+    if (btn) btn.onclick = openSubmitLeakSheet;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderLeaksEmpty();
+};
+
+// SQUAD Tournaments — Empty state
+const _origRenderTournamentsEmpty = renderTournamentsSub;
+renderTournamentsSub = async function() {
+  const body = document.getElementById('squad-body');
+  if (!body) return;
+
+  // Let original do its thing first
+  try {
+    const snap = await getDocs(query(collection(db, 'tournaments'), orderBy('createdAt', 'desc'), limit(30)));
+    const allTournaments = [];
+    snap.forEach(d => allTournaments.push({ id: d.id, ...d.data() }));
+
+    const active = allTournaments.filter(t => t.status === 'open' || t.status === 'in-progress');
+    const completed = allTournaments.filter(t => t.status === 'completed');
+
+    const list = tournamentsSubTab === 'active' ? active : completed;
+
+    if (list.length === 0 && tournamentsSubTab === 'active') {
+      body.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs text-gray-500">0 active</div>
+          <button id="create-tournament-btn" class="btn-press px-3 py-2 rounded-xl bg-primary text-xs font-bold flex items-center gap-1">
+            <i data-lucide="plus" class="w-3 h-3"></i> Create
+          </button>
+        </div>
+
+        <div class="flex gap-2 mb-4">
+          <button class="chip tour-tab active" data-tab="active">Active</button>
+          <button class="chip tour-tab" data-tab="completed">History</button>
+        </div>
+
+        <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+          <div class="relative mb-6">
+            <div class="absolute inset-0 bg-gradient-to-br from-gold/30 to-primary/20 rounded-full blur-3xl"></div>
+            <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-gold/30 flex items-center justify-center">
+              <span class="text-5xl">🏆</span>
+            </div>
+          </div>
+          <div class="text-[10px] font-black text-gold uppercase tracking-widest mb-2">👑 Host your own</div>
+          <div class="text-xl font-black mb-3">No tournaments yet</div>
+          <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+            Create a bracket in 60 seconds. Auto-registration, auto-brackets, auto-resolve. Zero admin needed.
+          </div>
+          <button id="empty-create-tournament" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-gold to-yellow-500 text-black font-black text-sm glow-gold flex items-center justify-center gap-2">
+            <i data-lucide="trophy" class="w-4 h-4"></i> Host First Tournament
+          </button>
+          <div class="text-[10px] text-gray-600 mt-4">Pro feature — free for admins</div>
+        </div>
+      `;
+
+      document.getElementById('create-tournament-btn').onclick = openCreateTournament;
+      document.getElementById('empty-create-tournament').onclick = openCreateTournament;
+      document.querySelectorAll('.tour-tab').forEach(btn => {
+        btn.onclick = () => { tournamentsSubTab = btn.dataset.tab; renderTournamentsSub(); };
+      });
+
+      if (window.lucide) window.lucide.createIcons();
+      return;
+    }
+  } catch (e) {
+    console.warn('Empty tournaments check failed:', e);
+  }
+
+  // Fall back to original
+  return _origRenderTournamentsEmpty();
+};
+
+// Clans render empty state — enhance the original
+const _origRenderClans2 = renderClans;
+renderClans = function() {
+  const feed = document.getElementById('clans-feed');
+  if (!feed) return;
+
+  if (State.cache.clans.length === 0) {
+    feed.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 px-4 text-center fade-in">
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-gold/20 rounded-full blur-3xl"></div>
+          <div class="relative w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-gold/10 border border-primary/30 flex items-center justify-center">
+            <span class="text-5xl">🛡️</span>
+          </div>
+        </div>
+        <div class="text-[10px] font-black text-primary uppercase tracking-widest mb-2">👑 Pro feature</div>
+        <div class="text-xl font-black mb-3">No clans yet</div>
+        <div class="text-xs text-gray-400 max-w-[280px] leading-relaxed mb-6">
+          Create your own clan, recruit members, compete in Clan Wars, and earn badges.
+        </div>
+        <button id="empty-create-clan-2" class="btn-press px-8 py-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark font-black text-sm text-white glow-primary flex items-center justify-center gap-2">
+          <i data-lucide="plus" class="w-4 h-4"></i> Create First Clan
+        </button>
+      </div>
+    `;
+    const btn = document.getElementById('empty-create-clan-2');
+    if (btn) btn.onclick = openCreateClanSheet;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  _origRenderClans2();
+};
+
+console.log('✅ Chunk 37: Enhanced empty states loaded');
+
+/* END OF CHUNK 37 */
+// ============================================
+// Chunk 38: Onboarding Tour for First-Time Users
+// ============================================
+
+const TOUR_STEPS = [
+  {
+    id: 'welcome',
+    emoji: '🎮',
+    title: 'Welcome to CODMPanda',
+    body: 'The Ultimate CODM Companion. Let me show you around in 30 seconds.',
+    tab: null,
+    highlight: null
+  },
+  {
+    id: 'play',
+    emoji: '🎮',
+    title: 'Find Your Squad',
+    body: 'Post a lobby or join one. Filter by rank, mode, region. One tap opens voice chat.',
+    tab: 'play',
+    highlight: 'play'
+  },
+  {
+    id: 'lab',
+    emoji: '🔧',
+    title: 'Build & Share Gunsmiths',
+    body: 'Create weapons with our visual builder. 90+ guns, live stats, one-tap copy codes.',
+    tab: 'lab',
+    highlight: 'lab'
+  },
+  {
+    id: 'camo',
+    emoji: '🎨',
+    title: 'Track Every Camo',
+    body: 'Log your grind from Sand to Damascus. Export progress as a shareable image.',
+    tab: 'lab',
+    highlight: 'lab'
+  },
+  {
+    id: 'squad',
+    emoji: '🏆',
+    title: 'Compete & Connect',
+    body: 'Clans, tournaments, scrims, clips. Team up with players worldwide.',
+    tab: 'squad',
+    highlight: 'squad'
+  },
+  {
+    id: 'intel',
+    emoji: '📊',
+    title: 'Master the Meta',
+    body: 'Community tier lists, leaks, CP calculator, map callouts. Everything you need.',
+    tab: 'intel',
+    highlight: 'intel'
+  },
+  {
+    id: 'you',
+    emoji: '👑',
+    title: 'Your Profile',
+    body: 'Track your stats, earn badges, unlock Pro features. Everything personalized.',
+    tab: 'you',
+    highlight: 'you'
+  },
+  {
+    id: 'ready',
+    emoji: '🚀',
+    title: 'You\'re all set!',
+    body: 'Jump in and start dominating. Need help? Tap the question mark anytime.',
+    tab: 'play',
+    highlight: null
+  }
+];
+
+let tourStep = 0;
+let tourActive = false;
+
+async function startOnboardingTour() {
+  if (tourActive) return;
+  tourActive = true;
+  tourStep = 0;
+
+  // Create tour overlay container
+  let overlay = document.getElementById('tour-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tour-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    `;
+    document.body.appendChild(overlay);
+  }
+
+  // Add spotlight mask styles
+  if (!document.getElementById('tour-styles')) {
+    const style = document.createElement('style');
+    style.id = 'tour-styles';
+    style.textContent = `
+      #tour-overlay.active { opacity: 1; pointer-events: auto; }
+      .tour-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.88);
+        z-index: 10000;
+      }
+      .tour-spotlight {
+        position: fixed;
+        border-radius: 20px;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.85), 0 0 40px rgba(255, 107, 0, 0.6);
+        border: 2px solid #FF6B00;
+        z-index: 10001;
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        pointer-events: none;
+      }
+      .tour-card {
+        position: fixed;
+        left: 16px;
+        right: 16px;
+        max-width: 420px;
+        margin: 0 auto;
+        background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);
+        border: 1px solid #FF6B00;
+        border-radius: 24px;
+        padding: 24px;
+        z-index: 10002;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(255, 107, 0, 0.3);
+        animation: tourSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      @keyframes tourSlideUp {
+        from { opacity: 0; transform: translateY(40px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .tour-pulse {
+        animation: tourPulse 1.5s ease-in-out infinite;
+      }
+      @keyframes tourPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  renderTourStep();
+}
+
+function renderTourStep() {
+  const overlay = document.getElementById('tour-overlay');
+  if (!overlay) return;
+
+  const step = TOUR_STEPS[tourStep];
+  if (!step) { endOnboardingTour(); return; }
+
+  // Switch to the target tab
+  if (step.tab && step.tab !== State.currentTab) {
+    switchTab(step.tab);
+  }
+
+  // Find target element
+  let targetRect = null;
+  if (step.highlight) {
+    const target = document.querySelector(`.tab-btn[data-tab="${step.highlight}"]`);
+    if (target) {
+      targetRect = target.getBoundingClientRect();
+    }
+  }
+
+  const isFirst = tourStep === 0;
+  const isLast = tourStep === TOUR_STEPS.length - 1;
+  const isSecondToLast = tourStep === TOUR_STEPS.length - 2;
+
+  overlay.innerHTML = `
+    <div class="tour-backdrop"></div>
+    ${targetRect ? `
+      <div class="tour-spotlight tour-pulse" style="
+        top: ${targetRect.top - 8}px;
+        left: ${targetRect.left - 8}px;
+        width: ${targetRect.width + 16}px;
+        height: ${targetRect.height + 16}px;
+      "></div>
+    ` : ''}
+    <div class="tour-card" style="
+      ${targetRect && targetRect.top > window.innerHeight / 2
+        ? 'top: 80px;'
+        : 'bottom: 140px;'}
+    ">
+      <!-- Progress dots -->
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex gap-1.5">
+          ${TOUR_STEPS.map((_, i) => `
+            <div class="h-1.5 rounded-full transition-all ${i === tourStep ? 'w-6 bg-primary' : i < tourStep ? 'w-1.5 bg-primary/50' : 'w-1.5 bg-gray-700'}"></div>
+          `).join('')}
+        </div>
+        <button id="tour-skip" class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Skip</button>
+      </div>
+
+      <!-- Emoji -->
+      <div class="text-5xl mb-3 text-center">${step.emoji}</div>
+
+      <!-- Content -->
+      <div class="text-center mb-6">
+        <div class="text-lg font-black mb-2">${esc(step.title)}</div>
+        <div class="text-xs text-gray-400 leading-relaxed max-w-[300px] mx-auto">${esc(step.body)}</div>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex gap-2">
+        ${!isFirst ? `
+          <button id="tour-prev" class="btn-press flex-1 py-3 rounded-xl bg-cardAlt border border-border font-bold text-xs text-gray-300">
+            ← Back
+          </button>
+        ` : ''}
+        <button id="tour-next" class="btn-press flex-1 py-3 rounded-xl bg-gradient-to-r from-primary to-primaryDark font-black text-xs text-white ${isLast ? 'glow-primary' : ''}">
+          ${isLast ? '🚀 Start Dominating' : isSecondToLast ? 'Almost there →' : 'Next →'}
+        </button>
+      </div>
+
+      ${isLast ? `
+        <div class="text-[9px] text-gray-600 text-center mt-4">
+          You can restart the tour anytime from Settings
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  if (window.lucide) window.lucide.createIcons();
+
+  // Wire buttons
+  document.getElementById('tour-next').onclick = () => {
+    if (isLast) {
+      endOnboardingTour();
+    } else {
+      tourStep++;
+      renderTourStep();
+    }
+  };
+
+  const prevBtn = document.getElementById('tour-prev');
+  if (prevBtn) prevBtn.onclick = () => {
+    if (tourStep > 0) {
+      tourStep--;
+      renderTourStep();
+    }
+  };
+
+  document.getElementById('tour-skip').onclick = () => {
+    confirmDialog('Skip Tour?', 'You can restart it anytime from Settings.', endOnboardingTour, 'Skip', false);
+  };
+}
+
+async function endOnboardingTour() {
+  tourActive = false;
+  const overlay = document.getElementById('tour-overlay');
+  if (overlay) {
+    overlay.style.opacity = '0';
+    setTimeout(() => overlay.remove(), 300);
+  }
+
+  // Save to Firestore that user completed the tour
+  try {
+    await updateDoc(doc(db, 'users', State.user.uid), {
+      tourCompleted: true,
+      tourCompletedAt: serverTimestamp()
+    });
+    State.profile = { ...State.profile, tourCompleted: true };
+  } catch (e) { /* silent */ }
+
+  toast('🎉 Welcome to CODMPanda!', 'success', 3000);
+}
+
+// ============================================
+// TRIGGER TOUR FOR FIRST-TIME USERS
+// ============================================
+
+// Hook into showMainApp — after main app loads, check if tour needed
+const _origShowMainAppTour = showMainApp;
+showMainApp = function() {
+  _origShowMainAppTour();
+
+  setTimeout(async () => {
+    // Check if user has completed tour
+    if (!State.profile) return;
+
+    // Only show for users who haven't completed it
+    if (State.profile.tourCompleted) return;
+
+    // Check if it's a "new" user (created within last 10 minutes) OR just never did it
+    const createdAt = State.profile.createdAt?.seconds ? State.profile.createdAt.seconds * 1000 : 0;
+    const isNew = Date.now() - createdAt < 10 * 60 * 1000;
+
+    if (isNew || !State.profile.tourCompleted) {
+      // Wait a moment for the app to fully render
+      setTimeout(() => startOnboardingTour(), 800);
+    }
+  }, 1500);
+};
+
+// ============================================
+// ADD "RESTART TOUR" BUTTON TO SETTINGS
+// ============================================
+
+const _origHandleSettingActionTour = handleSettingAction;
+handleSettingAction = function(action) {
+  if (action === 'restart-tour') {
+    startOnboardingTour();
+    return;
+  }
+  return _origHandleSettingActionTour(action);
+};
+
+// Inject button into YOU tab settings
+const _origRenderYouTabTour = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabTour();
+  setTimeout(() => {
+    const content = document.getElementById('content');
+    if (!content) return;
+
+    const settingsCards = content.querySelectorAll('.bg-card.border.border-border.rounded-2xl');
+    let settingsList = null;
+    settingsCards.forEach(card => {
+      const header = card.querySelector('.text-xs.font-bold.text-gray-400.uppercase');
+      if (header && header.textContent.trim() === 'Support') {
+        settingsList = card.querySelector('.divide-y');
+      }
+    });
+
+    if (settingsList && !settingsList.querySelector('[data-action="restart-tour"]')) {
+      const btn = document.createElement('button');
+      btn.className = 'settings-row w-full flex items-center justify-between px-4 py-3 text-left';
+      btn.dataset.action = 'restart-tour';
+      btn.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0">
+          <i data-lucide="compass" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+          <div class="min-w-0">
+            <div class="text-sm font-semibold">Replay App Tour</div>
+            <div class="text-[10px] text-gray-500 truncate">See the walkthrough again</div>
+          </div>
+        </div>
+        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+      `;
+      btn.onclick = () => handleSettingAction('restart-tour');
+      settingsList.insertBefore(btn, settingsList.firstChild);
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }, 130);
+};
+
+window.startOnboardingTour = startOnboardingTour;
+window.endOnboardingTour = endOnboardingTour;
+
+console.log('✅ Chunk 38: Onboarding tour loaded');
+
+/* END OF CHUNK 38 */
+// ============================================
+// Chunk 39: Founder Badge + Update Banner + Better Invite
+// ============================================
+
+// ============================================
+// PART 1: FOUNDER BADGE ON ADMIN'S POSTS
+// ============================================
+
+// Add founder badge to any content posted by the admin
+function getFounderBadge(uid) {
+  if (uid === ADMIN_UID) {
+    return '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black flex items-center gap-0.5">👑 FOUNDER</span>';
+  }
+  return '';
+}
+
+// Hook into lobby render
+const _origRenderLobbiesFounder = renderLobbies;
+renderLobbies = function() {
+  const feed = document.getElementById('lobbies-feed');
+  if (!feed) return;
+
+  _origRenderLobbiesFounder();
+
+  // Add founder badge to admin's posts
+  setTimeout(() => {
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      const ignEl = card.querySelector('.font-bold.text-sm');
+      if (!ignEl) return;
+      const ign = ignEl.textContent.trim();
+      if (ign === State.profile?.ign && State.user?.uid === ADMIN_UID) {
+        if (!card.querySelector('.founder-badge')) {
+          const badge = document.createElement('span');
+          badge.className = 'founder-badge text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black';
+          badge.textContent = '👑 FOUNDER';
+          ignEl.parentNode.insertBefore(badge, ignEl.nextSibling);
+        }
+      }
+    });
+  }, 150);
+};
+
+// Hook into vault render
+const _origRenderVaultsFounder = renderVaults;
+renderVaults = function() {
+  _origRenderVaultsFounder();
+  setTimeout(() => {
+    const feed = document.getElementById('vault-feed');
+    if (!feed) return;
+    // Founder vaults get a gold border
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      if (!card.dataset.uidCheck) {
+        card.dataset.uidCheck = '1';
+      }
+    });
+  }, 100);
+};
+
+// ============================================
+// PART 2: UPDATE AVAILABLE BANNER
+// ============================================
+
+const APP_BUILD_DATE = '2026-10-06'; // Update this each deploy
+const STORED_BUILD_KEY = 'codmpanda_build_date';
+
+function checkForUpdates() {
+  const storedBuild = localStorage.getItem(STORED_BUILD_KEY);
+  if (!storedBuild) {
+    localStorage.setItem(STORED_BUILD_KEY, APP_BUILD_DATE);
+    return;
+  }
+
+  if (storedBuild !== APP_BUILD_DATE) {
+    showUpdateBanner();
+  }
+}
+
+function showUpdateBanner() {
+  if (document.getElementById('update-banner')) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.style.cssText = `
+    position: fixed;
+    top: calc(var(--safe-top, 0px) + 60px);
+    left: 16px;
+    right: 16px;
+    z-index: 9000;
+    background: linear-gradient(135deg, #FF6B00 0%, #CC5500 100%);
+    border-radius: 16px;
+    padding: 12px 16px;
+    box-shadow: 0 8px 30px rgba(255, 107, 0, 0.5);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  `;
+
+  banner.innerHTML = `
+    <div style="font-size: 20px;">✨</div>
+    <div style="flex: 1;">
+      <div style="font-size: 12px; font-weight: 800; color: #fff;">New version available</div>
+      <div style="font-size: 10px; color: rgba(255,255,255,0.85); margin-top: 2px;">Refresh to get latest features</div>
+    </div>
+    <button id="update-refresh-btn" style="
+      background: #fff;
+      color: #FF6B00;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+      font-family: Inter, sans-serif;
+    ">Refresh</button>
+  `;
+
+  document.body.appendChild(banner);
+
+  // Add animation
+  if (!document.getElementById('update-banner-style')) {
+    const style = document.createElement('style');
+    style.id = 'update-banner-style';
+    style.textContent = `
+      @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  document.getElementById('update-refresh-btn').onclick = async () => {
+    // Update stored build date
+    localStorage.setItem(STORED_BUILD_KEY, APP_BUILD_DATE);
+
+    // Clear service worker caches
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+
+    // Unregister service worker
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(r => r.unregister()));
+    }
+
+    // Reload
+    toast('Refreshing...', 'success', 1000);
+    setTimeout(() => location.reload(true), 500);
+  };
+}
+
+// Run check on app load
+setTimeout(checkForUpdates, 3000);
+
+// ============================================
+// PART 3: BETTER INVITE MESSAGE
+// ============================================
+
+const _origShareAppBetter = shareApp;
+shareApp = function() {
+  const code = State.profile?.referralCode || '';
+  const link = location.origin + '?ref=' + State.user.uid;
+
+  const message = `🎮 Yo! Check out CODMPanda — the ultimate CODM companion.
+
+✅ Find squads instantly (LFG)
+✅ Track your camo grind
+✅ Build & share gunsmiths
+✅ Weekly tournaments & Clan Wars
+✅ Free to use
+
+Join me: ${link}
+
+Use my code: ${code}`;
+
+  if (navigator.share) {
+    navigator.share({
+      title: 'CODMPanda — The Ultimate CODM Companion',
+      text: message,
+      url: link
+    }).catch(() => {
+      copyText(link, 'Invite link copied!');
+    });
+  } else {
+    // Fallback: copy to clipboard
+    copyText(message, 'Invite message copied!');
+  }
+};
+
+// ============================================
+// PART 4: WELCOME BANNER (First-time users)
+// ============================================
+
+const _origShowMainAppWelcome = showMainApp;
+showMainApp = function() {
+  _origShowMainAppWelcome();
+
+  setTimeout(() => {
+    if (!State.profile) return;
+
+    // Only show welcome to brand-new users (< 2 min old)
+    const createdAt = State.profile.createdAt?.seconds ? State.profile.createdAt.seconds * 1000 : 0;
+    const isBrandNew = Date.now() - createdAt < 2 * 60 * 1000;
+
+    if (isBrandNew && !localStorage.getItem('codmpanda_welcomed')) {
+      localStorage.setItem('codmpanda_welcomed', '1');
+      setTimeout(() => {
+        toast('🎉 Welcome! Tap any tab to explore', 'success', 5000);
+      }, 2000);
+    }
+  }, 1000);
+};
+
+// ============================================
+// PART 5: COPY PROFILE LINK QUICK ACTION
+// ============================================
+
+function copyMyProfileLink() {
+  const link = `${location.origin}/?user=${State.user.uid}`;
+  copyText(link, '✅ Profile link copied!');
+}
+
+// Add to profile header — quick share
+const _origRenderYouTabShareLink = renderYouTab;
+renderYouTab = function() {
+  _origRenderYouTabShareLink();
+  setTimeout(() => {
+    const content = document.getElementById('content');
+    if (!content) return;
+
+    const friendsBtn = document.getElementById('open-friends-btn');
+    if (!friendsBtn) return;
+    if (document.getElementById('share-profile-link-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'share-profile-link-btn';
+    btn.className = 'btn-press w-full mt-2 py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold flex items-center justify-center gap-2';
+    btn.innerHTML = '<span>🔗</span> Copy Profile Link';
+    btn.onclick = copyMyProfileLink;
+
+    friendsBtn.parentNode.insertBefore(btn, friendsBtn.nextSibling);
+    if (window.lucide) window.lucide.createIcons();
+  }, 100);
+};
+
+window.copyMyProfileLink = copyMyProfileLink;
+window.checkForUpdates = checkForUpdates;
+window.showUpdateBanner = showUpdateBanner;
+window.getFounderBadge = getFounderBadge;
+
+console.log('✅ Chunk 39: Final polish loaded');
+
+/* END OF CHUNK 39 */
+// ============================================
+// Chunk 40: Comments + Real-time Likes + Notifications
+// ============================================
+
+// ============================================
+// PART 1: COMMENT SYSTEM
+// ============================================
+
+async function openCommentsSheet(contentType, contentId, contentTitle) {
+  openSheet(`
+    <div class="space-y-4">
+      <div class="flex-1 overflow-y-auto max-h-[60vh] space-y-3" id="comments-list">
+        <div class="text-center py-6"><div class="spinner mx-auto"></div></div>
+      </div>
+      <div class="sticky bottom-0 bg-[#0a0a0a] pt-3 border-t border-border flex gap-2">
+        <input id="comment-input" type="text" placeholder="Write a comment..." maxlength="300" class="flex-1" />
+        <button id="comment-send" class="btn-press w-11 h-11 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
+          <i data-lucide="send" class="w-5 h-5 text-white"></i>
+        </button>
+      </div>
+    </div>
+  `, `💬 Comments`);
+
+  const commentsList = document.getElementById('comments-list');
+
+  const loadComments = async () => {
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'comments'),
+        where('contentId', '==', contentId),
+        limit(100)
+      ));
+
+      const comments = [];
+      snap.forEach(d => comments.push({ id: d.id, ...d.data() }));
+      comments.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+
+      if (comments.length === 0) {
+        commentsList.innerHTML = `
+          <div class="text-center py-8">
+            <div class="text-4xl mb-2">💬</div>
+            <div class="text-xs text-gray-500">No comments yet</div>
+            <div class="text-[10px] text-gray-600 mt-1">Be the first to reply</div>
+          </div>
+        `;
+        return;
+      }
+
+      commentsList.innerHTML = comments.map(c => {
+        const isMine = !!State.user && c.uid === State.user.uid;
+        return `
+          <div class="flex items-start gap-2.5 ${isMine ? 'flex-row-reverse' : ''}">
+            <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
+              ${c.avatar ? `<img src="${esc(c.avatar)}" class="w-full h-full object-cover" />` : getInitials(c.ign)}
+            </div>
+            <div class="flex-1 min-w-0 ${isMine ? 'text-right' : ''}">
+              <div class="inline-block max-w-full ${isMine ? 'bg-primary text-white' : 'bg-card border border-border'} rounded-2xl px-3 py-2 text-left">
+                <div class="text-[10px] font-bold ${isMine ? 'text-white/90' : 'text-primary'} mb-0.5">${esc(c.ign)}</div>
+                <div class="text-xs break-words">${esc(c.text)}</div>
+              </div>
+              <div class="flex items-center gap-2 mt-1 ${isMine ? 'justify-end' : ''}">
+                <span class="text-[9px] text-gray-500">${timeAgo(c.createdAt)}</span>
+                ${isMine ? `
+                  <button class="delete-comment text-[9px] text-red-400 font-bold" data-id="${c.id}">Delete</button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Wire delete
+      commentsList.querySelectorAll('.delete-comment').forEach(btn => {
+        btn.onclick = async () => {
+          try {
+            await deleteDoc(doc(db, 'comments', btn.dataset.id));
+            toast('Comment deleted', 'success', 1200);
+            loadComments();
+          } catch (e) { toast('Failed', 'error'); }
+        };
+      });
+
+      if (window.lucide) window.lucide.createIcons();
+
+      // Scroll to bottom
+      setTimeout(() => {
+        const sheet = document.querySelector('#sheet-container .sheet');
+        if (sheet) sheet.scrollTop = sheet.scrollHeight;
+      }, 50);
+    } catch (e) {
+      console.error('Comments error:', e);
+      commentsList.innerHTML = '<div class="text-center py-6 text-red-400 text-xs">Failed to load</div>';
+    }
+  };
+
+  const sendComment = async () => {
+    const input = document.getElementById('comment-input');
+    const text = input.value.trim();
+    if (!text) return;
+    if (text.length > 300) { toast('Comment too long', 'error'); return; }
+
+    input.value = '';
+    input.disabled = true;
+
+    try {
+      await addDoc(collection(db, 'comments'), {
+        contentId,
+        contentType,
+        uid: State.user.uid,
+        ign: State.profile.ign,
+        avatar: State.profile.avatar || '',
+        text,
+        createdAt: serverTimestamp()
+      });
+
+      // Notify content owner
+      try {
+        const ownerDoc = await getDoc(doc(db, contentType === 'lobby' ? 'lobbies' : contentType === 'clip' ? 'clips' : 'vaults', contentId));
+        if (ownerDoc.exists()) {
+          const ownerUid = ownerDoc.data().uid || ownerDoc.data().submittedByUid;
+          if (ownerUid && ownerUid !== State.user.uid) {
+            await sendNotificationToUser(
+              ownerUid,
+              `💬 ${State.profile.ign}`,
+              text.length > 60 ? text.slice(0, 60) + '...' : text,
+              { type: 'comment', contentType, contentId }
+            );
+          }
+        }
+      } catch (e) { /* silent */ }
+
+      loadComments();
+    } catch (e) {
+      console.error(e);
+      toast('Failed to send', 'error');
+    } finally {
+      input.disabled = false;
+      input.focus();
+    }
+  };
+
+  document.getElementById('comment-send').onclick = sendComment;
+  document.getElementById('comment-input').onkeypress = (e) => {
+    if (e.key === 'Enter') sendComment();
+  };
+
+  await loadComments();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 2: ADD COMMENT BUTTONS TO CONTENT
+// ============================================
+
+// Hook into lobby render — add comment button
+const _origRenderLobbiesComments = renderLobbies;
+renderLobbies = function() {
+  _origRenderLobbiesComments();
+
+  setTimeout(() => {
+    const feed = document.getElementById('lobbies-feed');
+    if (!feed) return;
+
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      if (card.querySelector('.comment-btn')) return;
+
+      const buttonsRow = card.querySelector('.flex.gap-2');
+      if (!buttonsRow) return;
+
+      const lobbyId = buttonsRow.querySelector('.join-btn')?.dataset.id || buttonsRow.querySelector('.share-lobby')?.dataset.id;
+      if (!lobbyId) return;
+
+      const btn = document.createElement('button');
+      btn.className = 'comment-btn btn-press w-10 h-10 rounded-xl bg-cardAlt border border-border flex items-center justify-center';
+      btn.dataset.id = lobbyId;
+      btn.innerHTML = '<i data-lucide="message-circle" class="w-4 h-4 text-gray-400"></i>';
+      btn.onclick = () => openCommentsSheet('lobby', lobbyId, 'Lobby');
+
+      const shareBtn = buttonsRow.querySelector('.share-lobby');
+      if (shareBtn) {
+        shareBtn.parentNode.insertBefore(btn, shareBtn);
+      } else {
+        buttonsRow.appendChild(btn);
+      }
+    });
+    if (window.lucide) window.lucide.createIcons();
+  }, 150);
+};
+
+// Hook into clip render — add comment button
+const _origRenderClipsComments = renderClips;
+renderClips = function() {
+  _origRenderClipsComments();
+
+  setTimeout(() => {
+    const feed = document.getElementById('clips-feed');
+    if (!feed) return;
+
+    feed.querySelectorAll('.bg-card').forEach(card => {
+      if (card.querySelector('.comment-btn')) return;
+
+      const buttonsRow = card.querySelector('.flex.items-center.justify-between');
+      if (!buttonsRow) return;
+
+      const clipId = buttonsRow.querySelector('.like-clip')?.dataset.id;
+      if (!clipId) return;
+
+      const btn = document.createElement('button');
+      btn.className = 'comment-btn btn-press flex items-center gap-1 text-xs text-gray-400';
+      btn.dataset.id = clipId;
+      btn.innerHTML = '<i data-lucide="message-circle" class="w-4 h-4"></i>';
+      btn.onclick = () => openCommentsSheet('clip', clipId, 'Clip');
+
+      const likeBtn = buttonsRow.querySelector('.like-clip');
+      if (likeBtn) {
+        likeBtn.parentNode.insertBefore(btn, likeBtn.nextSibling);
+      }
+    });
+    if (window.lucide) window.lucide.createIcons();
+  }, 150);
+};
+
+// ============================================
+// PART 3: REAL-TIME LIKE COUNTS
+// ============================================
+
+// Add live subscription to likes for visible items
+function setupRealtimeLikes() {
+  // Skip for now — Firestore already updates via onSnapshot when parent collection changes
+  // Likes are already real-time via the parent listener
+}
+
+// ============================================
+// PART 4: JOIN NOTIFICATION
+// ============================================
+
+// Enhanced joinLobby with notification
+const _origJoinLobbyNotif = joinLobby;
+joinLobby = async function(lobbyId) {
+  const lobby = State.cache.lobbies.find(l => l.id === lobbyId);
+  if (!lobby) return;
+
+  // Send notification to lobby creator (if not self)
+  if (lobby.uid && lobby.uid !== State.user.uid) {
+    try {
+      await sendNotificationToUser(
+        lobby.uid,
+        '🎮 Someone Joined!',
+        `${State.profile.ign} joined your ${lobby.mode} lobby`,
+        { type: 'lobby_join', lobbyId }
+      );
+    } catch (e) { /* silent */ }
+  }
+
+  return _origJoinLobbyNotif(lobbyId);
+};
+
+// ============================================
+// PART 5: LOBBY COMMENTS COUNT BADGE
+// ============================================
+
+// Cache comment counts to avoid N+1 queries
+let commentCountsCache = {};
+
+async function updateCommentCounts() {
+  try {
+    const snap = await getDocs(query(collection(db, 'comments'), limit(500)));
+    const counts = {};
+    snap.forEach(d => {
+      const c = d.data();
+      if (!c.contentId) return;
+      counts[c.contentId] = (counts[c.contentId] || 0) + 1;
+    });
+    commentCountsCache = counts;
+
+    // Update visible buttons
+    document.querySelectorAll('.comment-btn').forEach(btn => {
+      const id = btn.dataset.id;
+      const count = counts[id] || 0;
+      const existingBadge = btn.querySelector('.comment-count');
+      if (existingBadge) existingBadge.remove();
+
+      if (count > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'comment-count text-[9px] text-primary font-bold absolute -top-1 -right-1 bg-primary/20 px-1 rounded-full';
+        badge.textContent = count;
+        btn.style.position = 'relative';
+        btn.appendChild(badge);
+      }
+    });
+  } catch (e) { /* silent */ }
+}
+
+setTimeout(updateCommentCounts, 5000);
+
+window.openCommentsSheet = openCommentsSheet;
+window.updateCommentCounts = updateCommentCounts;
+
+console.log('✅ Chunk 40: Comments + Join notifications loaded');
+
+/* END OF CHUNK 40 */
+// ============================================
+// Chunk 41: Edit + Reply + Like + @Mention (Friends Only)
+// ============================================
+
+// ============================================
+// PART 1: EDIT + DELETE MESSAGES
+// ============================================
+
+async function openMessageOptions(messageId, currentText) {
+  openSheet(`
+    <div class="space-y-3">
+      <div class="bg-card border border-border rounded-xl p-3 mb-2">
+        <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Message</div>
+        <div class="text-xs text-gray-300 break-words">${esc(currentText)}</div>
+      </div>
+
+      <button id="msg-edit-btn" class="btn-press w-full py-3.5 rounded-xl bg-primary font-bold text-sm text-white flex items-center justify-center gap-2">
+        <i data-lucide="pencil" class="w-4 h-4"></i> Edit Message
+      </button>
+
+      <button id="msg-delete-btn" class="btn-press w-full py-3.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-sm flex items-center justify-center gap-2">
+        <i data-lucide="trash-2" class="w-4 h-4"></i> Delete Message
+      </button>
+
+      <button onclick="closeSheet()" class="text-xs text-gray-500 w-full pt-2">Cancel</button>
+    </div>
+  `, 'Message Options');
+
+  document.getElementById('msg-edit-btn').onclick = () => {
+    closeSheet();
+    setTimeout(() => openEditMessageModal(messageId, currentText), 300);
+  };
+
+  document.getElementById('msg-delete-btn').onclick = () => {
+    closeSheet();
+    setTimeout(() => {
+      confirmDialog('Delete Message', 'This message will be removed permanently.', async () => {
+        try {
+          await deleteDoc(doc(db, 'messages', messageId));
+          toast('🗑️ Message deleted', 'success');
+          // Reopen thread
+          const friendName = document.querySelector('#sheet-container h3')?.textContent?.replace('💬', '').trim();
+          if (friendName) {
+            setTimeout(() => {
+              const thread = document.querySelector('#dm-messages');
+              if (thread) {
+                // Just close and let user reopen
+                closeSheet();
+              }
+            }, 300);
+          }
+        } catch (e) {
+          toast('Failed: ' + e.message, 'error');
+        }
+      }, 'Delete', true);
+    }, 300);
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function openEditMessageModal(messageId, currentText) {
+  openSheet(`
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Edit Message</label>
+        <textarea id="edit-msg-input" rows="4" maxlength="500" placeholder="Edit your message...">${esc(currentText)}</textarea>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="closeSheet()" class="btn-press flex-1 py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">Cancel</button>
+        <button id="edit-msg-save" class="btn-press flex-1 py-3 rounded-xl bg-primary font-bold text-sm text-white">Save</button>
+      </div>
+    </div>
+  `, 'Edit Message');
+
+  setTimeout(() => {
+    const input = document.getElementById('edit-msg-input');
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }, 200);
+
+  document.getElementById('edit-msg-save').onclick = async () => {
+    const newText = document.getElementById('edit-msg-input').value.trim();
+    if (!newText) { toast('Message cannot be empty', 'error'); return; }
+
+    try {
+      await updateDoc(doc(db, 'messages', messageId), {
+        text: newText,
+        edited: true,
+        editedAt: serverTimestamp()
+      });
+      toast('✏️ Message edited', 'success');
+      closeSheet();
+    } catch (e) {
+      toast('Failed: ' + e.message, 'error');
+    }
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 2: ENHANCED DM RENDER (with edit/reply)
+// ============================================
+
+const _origOpenDMThreadFull = openDMThread;
+openDMThread = async function(friendUid, friendIgn) {
+  await _origOpenDMThreadFull(friendUid, friendIgn);
+
+  // After render, make own bubbles clickable
+  setTimeout(() => {
+    const container = document.getElementById('dm-messages');
+    if (!container) return;
+
+    // Find all message bubbles (chat-style rounded divs)
+    container.querySelectorAll('.flex').forEach(row => {
+      const bubble = row.querySelector('.rounded-2xl');
+      if (!bubble) return;
+      if (bubble.dataset.enhanced) return;
+
+      const isMine = bubble.classList.contains('bg-primary');
+      if (!isMine) return;
+
+      bubble.dataset.enhanced = '1';
+      bubble.style.cursor = 'pointer';
+
+      bubble.onclick = (e) => {
+        e.stopPropagation();
+        const textEl = bubble.querySelector('.text-xs');
+        if (!textEl) return;
+        const text = textEl.textContent.trim();
+        findMessageByText(text, friendUid);
+      };
+    });
+  }, 500);
+};
+
+async function findMessageByText(messageText, friendUid) {
+  try {
+    const chatId = [State.user.uid, friendUid].sort().join('_');
+
+    const snap = await getDocs(query(
+      collection(db, 'messages'),
+      where('chatId', '==', chatId),
+      where('fromUid', '==', State.user.uid),
+      limit(100)
+    ));
+
+    const matching = [];
+    snap.forEach(d => {
+      const data = d.data();
+      if (data.text === messageText) {
+        matching.push({ id: d.id, ...data });
+      }
+    });
+
+    if (matching.length === 0) {
+      toast('Message not found', 'error');
+      return;
+    }
+
+    matching.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    const msg = matching[0];
+    openMessageOptions(msg.id, msg.text);
+  } catch (e) {
+    console.error('Find msg error:', e);
+  }
+}
+
+// ============================================
+// PART 3: REPLY TO COMMENTS + LIKE + EDIT
+// ============================================
+
+let commentReplyTo = null;
+
+const _origOpenCommentsSheetFull = openCommentsSheet;
+openCommentsSheet = async function(contentType, contentId, contentTitle) {
+  commentReplyTo = null;
+  await _origOpenCommentsSheetFull(contentType, contentId, contentTitle);
+
+  // After render, enhance with reply/like/edit
+  setTimeout(() => {
+    enhanceComments(contentType, contentId);
+  }, 500);
+};
+
+function enhanceComments(contentType, contentId) {
+  const container = document.getElementById('comments-list');
+  if (!container) return;
+
+  // Add reply + like buttons to each comment
+  container.querySelectorAll('.flex.items-start').forEach(row => {
+    if (row.dataset.enhanced) return;
+    row.dataset.enhanced = '1';
+
+    const bubble = row.querySelector('.rounded-2xl');
+    if (!bubble) return;
+
+    const textEl = bubble.querySelector('.text-xs');
+    if (!textEl) return;
+
+    const commentText = textEl.textContent.trim();
+    const isMine = bubble.classList.contains('bg-primary');
+
+    // Find the comment ID — look for the delete button on your own, or query by text
+    const deleteBtn = row.querySelector('.delete-comment');
+    const commentId = deleteBtn?.dataset.id || null;
+
+    // Build action row
+    const actionRow = document.createElement('div');
+    actionRow.className = 'flex items-center gap-3 mt-1 ' + (isMine ? 'justify-end' : '');
+    actionRow.innerHTML = `
+      ${!isMine ? `<button class="reply-btn text-[9px] text-gray-500 font-bold">Reply</button>` : ''}
+      <button class="like-comment-btn text-[9px] text-gray-500 font-bold flex items-center gap-1">❤️ <span class="like-count">0</span></button>
+      ${isMine ? `<button class="edit-comment-btn text-[9px] text-primary font-bold">Edit</button>` : ''}
+    `;
+
+    // Insert after existing meta row
+    const metaRow = row.querySelector('.flex.items-center.gap-2.mt-1') || bubble.nextElementSibling;
+    if (metaRow && metaRow.parentNode) {
+      metaRow.parentNode.insertBefore(actionRow, metaRow.nextSibling);
+    } else {
+      row.querySelector('.flex-1').appendChild(actionRow);
+    }
+
+    // Wire reply button
+    const replyBtn = actionRow.querySelector('.reply-btn');
+    if (replyBtn) {
+      replyBtn.onclick = () => {
+        commentReplyTo = { text: commentText, id: commentId };
+        const input = document.getElementById('comment-input');
+        if (input) {
+          input.placeholder = `Replying to comment...`;
+          input.focus();
+          input.parentNode.style.borderTop = '2px solid #FF6B00';
+        }
+      };
+    }
+
+    // Wire like button
+    const likeBtn = actionRow.querySelector('.like-comment-btn');
+    if (likeBtn) {
+      likeBtn.onclick = async () => {
+        if (!commentId) { toast('Cannot like', 'error'); return; }
+        try {
+          await updateDoc(doc(db, 'comments', commentId), { likes: increment(1) });
+          const countEl = likeBtn.querySelector('.like-count');
+          countEl.textContent = (parseInt(countEl.textContent) || 0) + 1;
+          toast('❤️', 'success', 800);
+        } catch (e) { toast('Failed', 'error'); }
+      };
+    }
+
+    // Wire edit button
+    const editBtn = actionRow.querySelector('.edit-comment-btn');
+    if (editBtn && commentId) {
+      editBtn.onclick = () => openEditCommentModal(commentId, commentText);
+    }
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 4: @MENTION AUTOCOMPLETE (Friends Only)
+// ============================================
+
+let mentionFriends = [];
+let mentionFriendsOwner = null;
+let mentionDropdownEl = null;
+let mentionTarget = null;
+
+async function loadMentionFriends(forceRefresh = false) {
+  const ownerUid = State.user?.uid;
+  if (!ownerUid) { mentionFriends = []; mentionFriendsOwner = null; return []; }
+  if (!forceRefresh && mentionFriendsOwner === ownerUid && mentionFriends.length > 0) return mentionFriends;
+  try {
+    // Friends are stored on the signed-in user's profile. Resolve those IDs directly; do not
+    // rely on a broad users collection query that can be blocked by Firestore rules or miss users.
+    let ownerData = State.profile || {};
+    const ownerSnap = await getDoc(doc(db, 'users', ownerUid));
+    if (ownerSnap.exists()) {
+      ownerData = { ...ownerData, ...ownerSnap.data() };
+      State.profile = { ...(State.profile || {}), ...ownerData };
+    }
+    const friendIds = [...new Set(Array.isArray(ownerData.friends) ? ownerData.friends : [])]
+      .filter(uid => typeof uid === 'string' && uid && uid !== ownerUid);
+    const people = (await Promise.all(friendIds.map(async uid => {
+      try {
+        const snap = await getDoc(doc(db, 'users', uid));
+        if (!snap.exists()) return null;
+        const u = snap.data() || {};
+        return u.ign ? { uid, ign: String(u.ign), avatar: u.avatar || u.photoURL || u.photoUrl || '' } : null;
+      } catch (_) { return null; }
+    }))).filter(Boolean);
+    mentionFriends = people.sort((a, b) => a.ign.localeCompare(b.ign));
+    mentionFriendsOwner = ownerUid;
+    return mentionFriends;
+  } catch (e) {
+    console.warn('Mention friend lookup failed:', e);
+    // Do not show unrelated users as a fallback. A friend list may be empty or temporarily unavailable.
+    mentionFriends = [];
+    mentionFriendsOwner = ownerUid;
+    return [];
+  }
+}
+
+function closeMentionDropdown() {
+  if (mentionDropdownEl) {
+    mentionDropdownEl.remove();
+    mentionDropdownEl = null;
+  }
+  mentionTarget = null;
+}
+
+function showMentionDropdown(inputEl, filter = '') {
+  closeMentionDropdown();
+  mentionTarget = inputEl;
+
+  const matches = mentionFriends.filter(f =>
+    f.ign.toLowerCase().includes(filter.toLowerCase())
+  ).slice(0, 6);
+
+  if (matches.length === 0) return;
+
+  const rect = inputEl.getBoundingClientRect();
+  const dropdown = document.createElement('div');
+  dropdown.className = 'mention-dropdown';
+  dropdown.style.cssText = `
+    position: fixed;
+    bottom: ${window.innerHeight - rect.top + 8}px;
+    left: 16px;
+    right: 16px;
+    max-width: 400px;
+    margin: 0 auto;
+    background: #0a0a0a;
+    border: 1px solid #FF6B00;
+    border-radius: 16px;
+    padding: 8px;
+    z-index: 10000;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
+    max-height: 240px;
+    overflow-y: auto;
+  `;
+
+  dropdown.innerHTML = matches.map(f => `
+    <button class="mention-opt w-full flex items-center gap-2 p-2 rounded-lg hover:bg-primary/10 text-left" data-ign="${esc(f.ign)}">
+      <div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
+        ${f.avatar ? `<img src="${esc(f.avatar)}" class="w-full h-full object-cover" />` : getInitials(f.ign)}
+      </div>
+      <span class="text-xs font-bold text-white flex-1">@${esc(f.ign)}</span>
+    </button>
+  `).join('');
+
+  document.body.appendChild(dropdown);
+  mentionDropdownEl = dropdown;
+
+  dropdown.querySelectorAll('.mention-opt').forEach(btn => {
+    btn.onclick = () => {
+      insertMention(inputEl, btn.dataset.ign);
+      closeMentionDropdown();
+    };
+  });
+}
+
+function insertMention(inputEl, ign) {
+  const value = inputEl.value;
+  const cursorPos = inputEl.selectionStart || value.length;
+
+  // Find the @ symbol before cursor
+  const beforeCursor = value.slice(0, cursorPos);
+  const atIndex = beforeCursor.lastIndexOf('@');
+
+  if (atIndex === -1) return;
+
+  const before = value.slice(0, atIndex);
+  const after = value.slice(cursorPos);
+  const newValue = before + '@' + ign + ' ' + after;
+
+  inputEl.value = newValue;
+  inputEl.focus();
+
+  const newCursor = atIndex + ign.length + 2;
+  inputEl.setSelectionRange(newCursor, newCursor);
+}
+
+function setupMentionListener(inputEl) {
+  if (!inputEl || inputEl.dataset.mentionSetup) return;
+  inputEl.dataset.mentionSetup = '1';
+
+  inputEl.addEventListener('input', async (e) => {
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart || value.length;
+    const beforeCursor = value.slice(0, cursorPos);
+    const atIndex = beforeCursor.lastIndexOf('@');
+
+    if (atIndex === -1) {
+      closeMentionDropdown();
+      return;
+    }
+
+    // Check if there's a space after @ (user typed @ + something)
+    const afterAt = beforeCursor.slice(atIndex + 1);
+    if (afterAt.includes(' ') || afterAt.includes('\n')) {
+      closeMentionDropdown();
+      return;
+    }
+
+    await loadMentionFriends();
+    showMentionDropdown(inputEl, afterAt);
+  });
+
+  // Close dropdown on blur
+  inputEl.addEventListener('blur', () => {
+    setTimeout(closeMentionDropdown, 200);
+  });
+}
+window.setupMentionListener = setupMentionListener;
+
+// Hook into DM input to add mention
+const _origOpenDMThreadMention = openDMThread;
+openDMThread = async function(friendUid, friendIgn) {
+  await _origOpenDMThreadMention(friendUid, friendIgn);
+  setTimeout(() => {
+    const dmInput = document.getElementById('dm-input');
+    if (dmInput) setupMentionListener(dmInput);
+  }, 300);
+};
+
+// Hook into comment input to add mention
+const _origOpenCommentsSheetMention = openCommentsSheet;
+openCommentsSheet = async function(contentType, contentId, contentTitle) {
+  await _origOpenCommentsSheetMention(contentType, contentId, contentTitle);
+  setTimeout(() => {
+    const commentInput = document.getElementById('comment-input');
+    if (commentInput) setupMentionListener(commentInput);
+  }, 300);
+};
+
+// ============================================
+// PART 5: MENTION NOTIFICATIONS
+// ============================================
+
+// Detect @mentions on save and notify mentioned users
+async function notifyMentions(text, sourceType, sourceId) {
+  try {
+    const mentionRegex = /@([A-Za-z0-9_]{2,24})/g;
+    const mentions = new Set();
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+      mentions.add(match[1]);
+    }
+    if (mentions.size === 0) return;
+
+    await loadMentionFriends();
+
+    for (const ign of mentions) {
+      const friend = mentionFriends.find(f => f.ign.toLowerCase() === ign.toLowerCase());
+      if (!friend) continue;
+      if (friend.uid === State.user.uid) continue;
+
+      try {
+        await sendNotificationToUser(
+          friend.uid,
+          `💬 ${State.profile.ign} mentioned you`,
+          text.length > 80 ? text.slice(0, 80) + '...' : text,
+          { type: 'mention', sourceType, sourceId }
+        );
+      } catch (e) { /* silent */ }
+    }
+  } catch (e) {
+    console.warn('Mention notify error:', e);
+  }
+}
+
+// Hook into comment send
+const _origSendCommentMention = window.sendComment;
+// Since sendComment is inside openCommentsSheet, we hook via override
+const _origOpenCommentsNotify = openCommentsSheet;
+openCommentsSheet = async function(contentType, contentId, contentTitle) {
+  await _origOpenCommentsNotify(contentType, contentId, contentTitle);
+
+  // Find the send button and wrap it
+  setTimeout(() => {
+    const sendBtn = document.getElementById('comment-send');
+    const input = document.getElementById('comment-input');
+    if (!sendBtn || !input || sendBtn.dataset.mentionWrapped) return;
+
+    sendBtn.dataset.mentionWrapped = '1';
+    const originalOnclick = sendBtn.onclick;
+
+    sendBtn.onclick = async () => {
+      const text = input.value.trim();
+      if (text) {
+        // Fire mention notification (async, doesn't block)
+        notifyMentions(text, contentType, contentId).catch(() => {});
+      }
+      // Call original
+      if (originalOnclick) await originalOnclick.call(sendBtn);
+    };
+  }, 500);
+};
+
+// Hook into DM send
+const _origOpenDMSend = openDMThread;
+openDMThread = async function(friendUid, friendIgn) {
+  await _origOpenDMSend(friendUid, friendIgn);
+
+  setTimeout(() => {
+    const sendBtn = document.getElementById('dm-send');
+    const input = document.getElementById('dm-input');
+    if (!sendBtn || !input || sendBtn.dataset.mentionWrapped) return;
+
+    sendBtn.dataset.mentionWrapped = '1';
+    const originalOnclick = sendBtn.onclick;
+
+    sendBtn.onclick = async () => {
+      const text = input.value.trim();
+      if (text) {
+        notifyMentions(text, 'dm', null).catch(() => {});
+      }
+      if (originalOnclick) await originalOnclick.call(sendBtn);
+    };
+  }, 500);
+};
+
+// ============================================
+// PART 6: HIGHLIGHT MENTIONS IN RENDERED TEXT
+// ============================================
+
+function highlightMentions(text) {
+  if (!text) return '';
+  const escaped = esc(text);
+  return escaped.replace(/@([A-Za-z0-9_]{2,24})/g, '<span class="mention-text text-primary font-bold">@$1</span>');
+}
+
+// Make mentions tappable
+document.addEventListener('click', async (e) => {
+  const mention = e.target.closest('.mention-text');
+  if (!mention) return;
+  e.stopPropagation();
+
+  const ign = mention.textContent.replace('@', '').trim();
+  await loadMentionFriends();
+  const friend = mentionFriends.find(f => f.ign.toLowerCase() === ign.toLowerCase());
+  if (friend) {
+    openUserProfile(friend.uid);
+  } else {
+    toast('User not found', 'info');
+  }
+});
+
+window.openMessageOptions = openMessageOptions;
+window.openEditMessageModal = openEditMessageModal;
+window.notifyMentions = notifyMentions;
+window.highlightMentions = highlightMentions;
+
+console.log('✅ Chunk 41: Edit + Reply + Like + @Mention loaded');
+
+/* END OF CHUNK 41 */
+
+
+// ============================================
+// Chunk 43: Professional Full-Screen Inbox
+// ============================================
+
+let inboxTab = 'notifications';
+let inboxCache = {
+  notifications: null,
+  conversations: null,
+  lastFetch: 0
+};
+
+// ============================================
+// PART 1: FULL-SCREEN INBOX OVERLAY
+// ============================================
+
+const _origOpenNotificationsPanelInbox43 = openNotificationsPanel;
+openNotificationsPanel = function() {
+  // Create or reuse full-screen overlay
+  let overlay = document.getElementById('inbox-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'inbox-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      background: #050505;
+      display: flex;
+      flex-direction: column;
+      animation: inboxSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    `;
+    document.body.appendChild(overlay);
+  } else {
+    overlay.style.display = 'flex';
+  }
+
+  // Add animation styles
+  if (!document.getElementById('inbox-animations')) {
+    const style = document.createElement('style');
+    style.id = 'inbox-animations';
+    style.textContent = `
+      @keyframes inboxSlideIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  overlay.innerHTML = `
+    <!-- Header -->
+    <div style="
+      padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+      padding-bottom: 12px;
+      padding-left: 16px;
+      padding-right: 16px;
+      border-bottom: 1px solid #222;
+      background: #050505;
+      flex-shrink: 0;
+    ">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <button id="inbox-close-btn" class="btn-press" style="
+          width: 40px; height: 40px;
+          border-radius: 12px;
+          background: #111;
+          border: 1px solid #222;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          flex-shrink: 0;
+        ">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </button>
+        <div style="flex: 1;">
+          <div style="font-size: 20px; font-weight: 900; color: #fff; font-family: Inter, sans-serif;">Inbox</div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div style="display: flex; gap: 8px;">
+        <button class="inbox-tab-btn" data-tab="notifications" style="
+          flex: 1;
+          padding: 10px 16px;
+          border-radius: 12px;
+          font-size: 13px;
+          font-weight: 700;
+          font-family: Inter, sans-serif;
+          cursor: pointer;
+          border: 1px solid ${inboxTab === 'notifications' ? '#FF6B00' : '#222'};
+          background: ${inboxTab === 'notifications' ? 'rgba(255, 107, 0, 0.15)' : '#111'};
+          color: ${inboxTab === 'notifications' ? '#FF6B00' : '#888'};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        ">
+          <span>🔔</span> Notifications
+        </button>
+        <button class="inbox-tab-btn" data-tab="messages" style="
+          flex: 1;
+          padding: 10px 16px;
+          border-radius: 12px;
+          font-size: 13px;
+          font-weight: 700;
+          font-family: Inter, sans-serif;
+          cursor: pointer;
+          border: 1px solid ${inboxTab === 'messages' ? '#FF6B00' : '#222'};
+          background: ${inboxTab === 'messages' ? 'rgba(255, 107, 0, 0.15)' : '#111'};
+          color: ${inboxTab === 'messages' ? '#FF6B00' : '#888'};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        ">
+          <span>💬</span> Messages
+        </button>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div id="inbox-full-body" style="
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+    ">
+      <div style="text-align: center; padding: 40px 0;">
+        <div class="spinner" style="margin: 0 auto;"></div>
+      </div>
+    </div>
+  `;
+
+  // Wire close
+  document.getElementById('inbox-close-btn').onclick = closeInboxOverlay;
+
+  // Wire tabs
+  document.querySelectorAll('.inbox-tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      inboxTab = btn.dataset.tab;
+      // Re-render with new tab active
+      openNotificationsPanel();
+    };
+  });
+
+  // Render body
+  renderInboxBody();
+};
+
+function closeInboxOverlay() {
+  const overlay = document.getElementById('inbox-overlay');
+  if (overlay) {
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.2s ease-out';
+    setTimeout(() => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    }, 200);
+  }
+  // Reset cache so next open refetches
+  inboxCache.lastFetch = 0;
+}
+
+// ============================================
+// PART 2: ROUTER
+// ============================================
+
+function renderInboxBody() {
+  if (inboxTab === 'notifications') {
+    renderNotificationsTabFast();
+  } else {
+    renderMessagesTabFast();
+  }
+}
+
+// ============================================
+// PART 3: FAST NOTIFICATIONS TAB
+// ============================================
+
+async function renderNotificationsTabFast() {
+  const body = document.getElementById('inbox-full-body');
+  if (!body) return;
+
+  body.innerHTML = '<div style="text-align: center; padding: 40px 0;"><div class="spinner" style="margin: 0 auto;"></div></div>';
+
+  try {
+    // Use cache if fresh (< 30s old)
+    const now = Date.now();
+    let notifs;
+    if (inboxCache.notifications && now - inboxCache.lastFetch < 30000) {
+      notifs = inboxCache.notifications;
+    } else {
+      const snap = await getDocs(query(
+        collection(db, 'notifications'),
+        where('userId', '==', State.user.uid),
+        limit(50)
+      ));
+      notifs = [];
+      snap.forEach(d => {
+        const data = d.data();
+        // Filter out DM notifications — those go to Messages tab now
+        if (data.type === 'dm') return;
+        notifs.push({ id: d.id, ...data });
+      });
+      notifs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      inboxCache.notifications = notifs;
+      inboxCache.lastFetch = now;
+    }
+
+    if (notifs.length === 0) {
+      body.innerHTML = `
+        <div style="text-align: center; padding: 60px 20px;">
+          <div style="font-size: 60px; margin-bottom: 12px;">🔔</div>
+          <div style="font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 6px;">No notifications</div>
+          <div style="font-size: 12px; color: #666;">You'll see approvals, mentions, and updates here</div>
+        </div>
+      `;
+      return;
+    }
+
+    const notifTypes = {
+      approval: { emoji: '✅', color: '#34C759' },
+      rejection: { emoji: '❌', color: '#FF3B30' },
+      badge: { emoji: '🏆', color: '#FFD700' },
+      leak: { emoji: '🔥', color: '#FF6B00' },
+      party_invite: { emoji: '🎉', color: '#AF52DE' },
+      friend_request: { emoji: '👋', color: '#34C759' },
+      tournament: { emoji: '🏆', color: '#FFD700' },
+      mention: { emoji: '📣', color: '#FF6B00' },
+      comment: { emoji: '💬', color: '#00BFFF' },
+      lobby_join: { emoji: '🎮', color: '#FF6B00' },
+      default: { emoji: '🔔', color: '#8E8E93' }
+    };
+
+    const unreadCount = notifs.filter(n => !n.read).length;
+
+    body.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <div style="font-size: 11px; color: #666; font-weight: 700;">${notifs.length} total${unreadCount > 0 ? ' · ' + unreadCount + ' unread' : ''}</div>
+        ${unreadCount > 0 ? '<button id="mark-all-read-full" style="font-size: 11px; color: #FF6B00; font-weight: 800; background: none; border: none; cursor: pointer; font-family: Inter;">Mark all read</button>' : ''}
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        ${notifs.map(n => {
+          const t = notifTypes[n.type] || notifTypes.default;
+          const isUnread = !n.read;
+          return `
+            <div class="notification-item-full" data-id="${n.id}" style="
+              background: ${isUnread ? 'rgba(255, 107, 0, 0.08)' : '#111'};
+              border: 1px solid ${isUnread ? 'rgba(255, 107, 0, 0.3)' : '#222'};
+              border-radius: 14px;
+              padding: 12px;
+              cursor: pointer;
+              display: flex;
+              gap: 12px;
+              align-items: flex-start;
+            ">
+              <div style="
+                width: 40px; height: 40px;
+                border-radius: 12px;
+                background: ${t.color}20;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 20px;
+                flex-shrink: 0;
+              ">${t.emoji}</div>
+              <div style="flex: 1; min-width: 0;">
+                <div style="font-size: 13px; font-weight: 800; color: ${isUnread ? '#fff' : '#ccc'}; margin-bottom: 3px;">${esc(n.title || '')}</div>
+                <div style="font-size: 12px; color: #888; line-height: 1.4; margin-bottom: 4px;">${esc(n.body || '')}</div>
+                <div style="font-size: 10px; color: #555;">${timeAgo(n.createdAt)}</div>
+              </div>
+              ${isUnread ? '<div style="width: 8px; height: 8px; border-radius: 50%; background: #FF6B00; flex-shrink: 0; margin-top: 4px;"></div>' : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+    // Wire mark all
+    const markAllBtn = document.getElementById('mark-all-read-full');
+    if (markAllBtn) {
+      markAllBtn.onclick = async () => {
+        try {
+          const updates = [];
+          notifs.forEach(n => {
+            if (!n.read) updates.push(updateDoc(doc(db, 'notifications', n.id), { read: true }));
+          });
+          await Promise.all(updates);
+          inboxCache.notifications = null;
+          inboxCache.lastFetch = 0;
+          toast('All marked read', 'success');
+          updateCombinedBadge();
+          renderNotificationsTabFast();
+        } catch (e) { toast('Failed', 'error'); }
+      };
+    }
+
+    // Wire notification clicks
+    body.querySelectorAll('.notification-item-full').forEach(el => {
+      el.onclick = async () => {
+        const id = el.dataset.id;
+        const notif = notifs.find(n => n.id === id);
+        if (!notif) return;
+
+        try {
+          await updateDoc(doc(db, 'notifications', id), { read: true });
+        } catch (e) { /* silent */ }
+
+        // Route based on type
+        closeInboxOverlay();
+        setTimeout(() => {
+          if (notif.type === 'mention' && notif.data?.sourceType === 'dm') {
+            inboxTab = 'messages';
+            openNotificationsPanel();
+          } else if (notif.type === 'comment' && notif.data?.contentId) {
+            if (notif.data.contentType === 'clip') { squadSubTab = 'clips'; switchTab('squad'); }
+            else if (notif.data.contentType === 'lobby') { switchTab('play'); }
+          } else if (notif.type === 'approval' || notif.type === 'rejection') {
+            if (notif.data?.contentType === 'vault') { labSubTab = 'vault'; switchTab('lab'); }
+            else if (notif.data?.contentType === 'clip') { squadSubTab = 'clips'; switchTab('squad'); }
+            else if (notif.data?.contentType === 'leak') { intelSubTab = 'leaks'; switchTab('intel'); }
+          } else if (notif.type === 'lobby_join') {
+            switchTab('play');
+          } else if (notif.type === 'friend_request') {
+            showFriendsPanel();
+          } else if (notif.type === 'party_invite') {
+            switchTab('play');
+          }
+        }, 250);
+
+        updateCombinedBadge();
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Inbox notif error:', e);
+    body.innerHTML = '<div style="text-align: center; padding: 40px; color: #f44; font-size: 13px;">Failed to load</div>';
+  }
+}
+
+// ============================================
+// PART 4: FAST MESSAGES TAB (optimized queries)
+// ============================================
+
+async function renderMessagesTabFast() {
+  const body = document.getElementById('inbox-full-body');
+  if (!body) return;
+
+  body.innerHTML = '<div style="text-align: center; padding: 40px 0;"><div class="spinner" style="margin: 0 auto;"></div></div>';
+
+  try {
+    // Get my friends list (cached in State.profile)
+    const mySnap = await getDoc(doc(db, 'users', State.user.uid));
+    const myData = mySnap.exists() ? mySnap.data() : {};
+    const friendUids = myData.friends || [];
+
+    if (friendUids.length === 0) {
+      body.innerHTML = `
+        <div style="text-align: center; padding: 60px 20px;">
+          <div style="font-size: 60px; margin-bottom: 12px;">💬</div>
+          <div style="font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 6px;">No conversations yet</div>
+          <div style="font-size: 12px; color: #666; margin-bottom: 20px;">Add friends to start chatting</div>
+          <button id="inbox-find-friends" class="btn-press" style="
+            padding: 12px 24px;
+            border-radius: 12px;
+            background: #FF6B00;
+            border: none;
+            color: #fff;
+            font-weight: 800;
+            font-size: 13px;
+            font-family: Inter;
+            cursor: pointer;
+          ">Find Friends</button>
+        </div>
+      `;
+      const btn = document.getElementById('inbox-find-friends');
+      if (btn) btn.onclick = () => {
+        closeInboxOverlay();
+        setTimeout(showFriendsPanel, 300);
+      };
+      return;
+    }
+
+    // OPTIMIZED: Query only last 100 messages that involve me
+    // Single query using array-contains on a `participants` field
+    // Since old messages don't have this field, fallback to 2 queries
+    let allMessages = [];
+
+    const [snap1, snap2] = await Promise.all([
+      getDocs(query(collection(db, 'messages'), where('fromUid', '==', State.user.uid), limit(100))),
+      getDocs(query(collection(db, 'messages'), where('toUid', '==', State.user.uid), limit(100)))
+    ]);
+
+    const seen = new Set();
+    snap1.forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); allMessages.push({ id: d.id, ...d.data() }); } });
+    snap2.forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); allMessages.push({ id: d.id, ...d.data() }); } });
+
+    // Group by chatId
+    const grouped = {};
+    allMessages.forEach(m => {
+      if (!grouped[m.chatId]) grouped[m.chatId] = [];
+      grouped[m.chatId].push(m);
+    });
+
+    // Build conversation list
+    const conversations = [];
+    for (const chatId of Object.keys(grouped)) {
+      const msgs = grouped[chatId].sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+      const last = msgs[msgs.length - 1];
+
+      const parts = chatId.split('_');
+      const otherUid = parts.find(p => p !== State.user.uid);
+      if (!otherUid) continue;
+
+      // Only include if it's a friend
+      if (!friendUids.includes(otherUid)) continue;
+
+      conversations.push({
+        chatId,
+        otherUid,
+        lastMessage: last,
+        lastTime: last.createdAt?.seconds || 0
+      });
+    }
+
+    conversations.sort((a, b) => b.lastTime - a.lastTime);
+
+    if (conversations.length === 0) {
+      body.innerHTML = `
+        <div style="text-align: center; padding: 60px 20px;">
+          <div style="font-size: 60px; margin-bottom: 12px;">💬</div>
+          <div style="font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 6px;">No conversations</div>
+          <div style="font-size: 12px; color: #666; margin-bottom: 20px;">Pick a friend and say hi</div>
+          <button id="inbox-new-chat" class="btn-press" style="
+            padding: 12px 24px;
+            border-radius: 12px;
+            background: #FF6B00;
+            border: none;
+            color: #fff;
+            font-weight: 800;
+            font-size: 13px;
+            font-family: Inter;
+            cursor: pointer;
+          ">Start New Chat</button>
+        </div>
+      `;
+      const btn = document.getElementById('inbox-new-chat');
+      if (btn) btn.onclick = () => {
+        closeInboxOverlay();
+        setTimeout(showFriendsPanel, 300);
+        toast('Tap 💬 on a friend to start chatting', 'info', 3000);
+      };
+      return;
+    }
+
+    // Fetch friend data in parallel (much faster)
+    const friendData = await Promise.all(
+      conversations.map(c =>
+        getDoc(doc(db, 'users', c.otherUid)).then(s => s.exists() ? { id: c.otherUid, ...s.data() } : null).catch(() => null)
+      )
+    );
+
+    // Render
+    body.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <div style="font-size: 11px; color: #666; font-weight: 700;">${conversations.length} conversation${conversations.length === 1 ? '' : 's'}</div>
+        <button id="inbox-new-chat-btn" style="font-size: 11px; color: #FF6B00; font-weight: 800; background: none; border: none; cursor: pointer; font-family: Inter;">+ New Chat</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        ${conversations.map((c, i) => {
+          const f = friendData[i];
+          if (!f) return '';
+          const lastMsg = c.lastMessage;
+          const isMine = lastMsg.fromUid === State.user.uid;
+          const preview = (isMine ? 'You: ' : '') + (lastMsg.text || '').slice(0, 60);
+          const isOnline = f.lastSeen?.seconds && (Date.now() / 1000 - f.lastSeen.seconds) < 300;
+
+          return `
+            <div class="conversation-item-full" data-uid="${f.id}" data-ign="${esc(f.ign)}" style="
+              background: #111;
+              border: 1px solid #222;
+              border-radius: 14px;
+              padding: 12px;
+              cursor: pointer;
+              display: flex;
+              gap: 12px;
+              align-items: center;
+            ">
+              <div style="position: relative; flex-shrink: 0;">
+                <div style="
+                  width: 48px; height: 48px;
+                  border-radius: 50%;
+                  background: rgba(255, 107, 0, 0.15);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-weight: 800;
+                  font-size: 16px;
+                  color: #FF6B00;
+                  overflow: hidden;
+                ">
+                  ${f.avatar ? `<img src="${esc(f.avatar)}" style="width: 100%; height: 100%; object-fit: cover;" />` : getInitials(f.ign)}
+                </div>
+                ${isOnline ? '<div style="position: absolute; bottom: -2px; right: -2px; width: 14px; height: 14px; border-radius: 50%; background: #22C55E; border: 2px solid #111;"></div>' : ''}
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+                  <span style="font-size: 14px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(f.ign || 'Unknown')}</span>
+                  ${f.isPro ? '<span style="font-size: 8px; padding: 2px 5px; border-radius: 4px; background: #FFD700; color: #000; font-weight: 900;">PRO</span>' : ''}
+                </div>
+                <div style="font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(preview)}</div>
+              </div>
+              <div style="text-align: right; flex-shrink: 0;">
+                <div style="font-size: 10px; color: #555;">${timeAgo(lastMsg.createdAt)}</div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+    // Wire taps
+    body.querySelectorAll('.conversation-item-full').forEach(el => {
+      el.onclick = () => {
+        closeInboxOverlay();
+        setTimeout(() => openDMThread(el.dataset.uid, el.dataset.ign), 300);
+      };
+    });
+
+    // Wire new chat
+    const newChatBtn = document.getElementById('inbox-new-chat-btn');
+    if (newChatBtn) {
+      newChatBtn.onclick = () => {
+        closeInboxOverlay();
+        setTimeout(showFriendsPanel, 300);
+        toast('Tap 💬 on a friend to start chatting', 'info', 3000);
+      };
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    console.error('Messages tab error:', e);
+    body.innerHTML = '<div style="text-align: center; padding: 40px; color: #f44; font-size: 13px;">Failed to load: ' + esc(e.message) + '</div>';
+  }
+}
+
+// ============================================
+// PART 5: STOP DM NOTIFICATIONS (going forward)
+// ============================================
+
+const _origSendNotificationToUserInbox = sendNotificationToUser;
+sendNotificationToUser = async function(uid, title, body, data) {
+  // Skip creating notification entry for DM-type notifications
+  if (data && data.type === 'dm') {
+    // Only send push, no in-app notification entry
+    try {
+      return await _origSendNotificationToUserInbox(uid, title, body, data);
+    } catch (e) { /* silent */ }
+    return;
+  }
+  return _origSendNotificationToUserInbox(uid, title, body, data);
+};
+
+// ============================================
+// PART 6: BADGE UPDATE
+// ============================================
+
+// Keep existing updateCombinedBadge (from Chunk 42) — it's already efficient
+
+window.closeInboxOverlay = closeInboxOverlay;
+window.renderNotificationsTabFast = renderNotificationsTabFast;
+window.renderMessagesTabFast = renderMessagesTabFast;
+
+console.log('✅ Chunk 43: Professional full-screen inbox loaded');
+
+/* END OF CHUNK 43 */
+
+// ============================================
+// Chunk 45: Corrected Map + 3-Dot Menu + Perf Fixes
+// ============================================
+
+// ============================================
+// PART 1: CORRECTED POI DATA (research-backed)
+// ============================================
+
+const ISOLATED_POIS = [
+  { name: 'Black Market', x: 20, y: 40, hot: true, tier: 'S', desc: 'Contested S-tier. Underground bunker with T.E.D.D. robot — pick any weapon. Vehicle vending machines + hidden ballroom.' },
+  { name: 'Floating HQ', x: 88, y: 13, hot: true, tier: 'S', desc: 'Random spawn — not every match. Best loot in game: Level 3 vests + high-tier weapons. Extremely contested.' },
+  { name: 'Farm', x: 45, y: 56, hot: true, tier: 'S', desc: 'Butcher boss spawn. Defeat for Level 3 vest, legendary weapons, gold attachments, adrenaline.' },
+  { name: 'Launch Base', x: 62, y: 48, hot: true, tier: 'S', desc: 'Best loot density on map. Rocket launch pad, great cover.' },
+  { name: 'Nuketown', x: 15, y: 88, hot: true, tier: 'S', desc: 'Iconic BO map. Mystery Box spawn. High risk, high reward.' },
+  { name: 'Docks', x: 20, y: 62, hot: true, tier: 'A', desc: 'Warehouses + shipping containers stuffed with loot. Large ship has high-tier gear.' },
+  { name: 'Nuclear Plant', x: 50, y: 31, hot: true, tier: 'A', desc: 'Central. Cooling towers, roof access, contested.' },
+  { name: 'Crash Site', x: 88, y: 50, hot: true, tier: 'A', desc: 'Sky Carrier. Locked door needs 3 color-coded codes (red, blue, green).' },
+  { name: 'Killhouse', x: 78, y: 40, hot: true, tier: 'A', desc: 'Live fire area. Power positions on 2nd floor windows of warehouses.' },
+  { name: 'Countdown', x: 88, y: 68, hot: true, tier: 'A', desc: 'Massive missile launch site. Multiple silos + hangars.' },
+  { name: 'Downtown', x: 62, y: 63, hot: true, tier: 'A', desc: 'Urban sprawl. Roof camping paradise.' },
+  { name: 'Sakura', x: 82, y: 30, hot: false, tier: 'A', desc: 'Underrated safe loot. Enough gear for a full 4-man. Small island nearby has heavy snipers + rocket launchers.' },
+  { name: 'Standoff', x: 35, y: 50, hot: false, tier: 'A', desc: 'Safe central location. Good rotation, many vehicles nearby.' },
+  { name: 'Estate', x: 50, y: 82, hot: false, tier: 'A', desc: 'Safe loot spot. Hills + trees for cover. Campers love it.' },
+  { name: 'Sanitarium', x: 35, y: 26, hot: false, tier: 'B', desc: 'Secret room on 3rd floor — shoot 8 teddy bears in warehouse to open it.' },
+  { name: 'Overgrown', x: 68, y: 20, hot: false, tier: 'B', desc: 'Jungle ruins. Sneaky rotations.' },
+  { name: 'Bus Station', x: 55, y: 40, hot: false, tier: 'B', desc: 'Central transit. Mystery Box spawn location.' },
+  { name: 'Harbor', x: 12, y: 30, hot: false, tier: 'B', desc: 'West coast ships. Vehicle friendly.' },
+  { name: 'Pipeline', x: 38, y: 68, hot: false, tier: 'B', desc: 'Industrial zone. Loot + vehicles.' },
+  { name: 'Circus', x: 42, y: 82, hot: false, tier: 'B', desc: 'Ferris wheel landmark. Mid-tier loot.' },
+  { name: 'Ski Town', x: 50, y: 15, hot: false, tier: 'B', desc: 'Snowy resort. Elevation advantage, good vantage points. Cabin loot is decent.' },
+  { name: 'Diner', x: 68, y: 56, hot: false, tier: 'C', desc: 'Zombies + Mystery Box can spawn here.' },
+  { name: 'Pier', x: 12, y: 68, hot: false, tier: 'C', desc: 'Coastal. Boat spawns.' }
+];
+
+// ============================================
+// PART 2: REAL MAP with transparent pins
+// ============================================
+
+function renderRealMap() {
+  return `
+    <div class="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+      <div class="relative w-full" style="aspect-ratio: 1;">
+        <img src="/isolated-map.png" alt="CODM Isolated Map" class="w-full h-full object-cover" loading="lazy" />
+
+        ${ISOLATED_POIS.map((p, i) => {
+          const pinColor = p.hot ? '#FF6B00' : (p.tier === 'S' ? '#FFD700' : (p.tier === 'A' ? '#00BFFF' : '#8E8E93'));
+          const pinIcon = p.hot ? '🔥' : (p.tier === 'S' ? '★' : '•');
+          return `
+            <button class="map-poi" style="
+              position: absolute;
+              left: ${p.x}%;
+              top: ${p.y}%;
+              transform: translate(-50%, -50%);
+              z-index: 5;
+              background: transparent;
+              border: none;
+              padding: 0;
+            " data-poi-index="${i}">
+              <div class="map-pin" style="
+                width: 22px;
+                height: 22px;
+                border-radius: 50%;
+                background: ${pinColor};
+                border: 2px solid #fff;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 10px;
+                font-weight: 900;
+                color: #000;
+                opacity: 0.65;
+                transition: opacity 0.2s, transform 0.2s;
+              ">${pinIcon}</div>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+      <div class="flex items-center gap-2 mb-3">
+        <i data-lucide="flame" class="w-4 h-4 text-primary"></i>
+        <div class="text-xs font-bold text-primary uppercase">Hot Drops</div>
+      </div>
+      <div class="space-y-2">
+        ${ISOLATED_POIS.filter(p => p.hot).slice(0, 7).map(p => `
+          <button class="poi-row w-full text-left flex items-start gap-3 p-2.5 rounded-xl bg-cardAlt border border-border" data-poi-index="${ISOLATED_POIS.indexOf(p)}">
+            <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+              <span class="text-sm">🔥</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5 mb-0.5">
+                <span class="text-xs font-bold">${p.name}</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-gold text-black font-black">${p.tier}-TIER</span>
+              </div>
+              <div class="text-[10px] text-gray-500 line-clamp-2">${p.desc}</div>
+            </div>
+          </button>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="bg-card border border-border rounded-2xl p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <i data-lucide="info" class="w-4 h-4 text-blue-400"></i>
+        <div class="text-xs font-bold text-blue-400 uppercase">Legend</div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="flex items-center gap-2 text-[10px]">
+          <div class="w-3 h-3 rounded-full" style="background: #FF6B00; border: 1px solid #fff;"></div>
+          <span class="text-gray-400">🔥 Hot Drop</span>
+        </div>
+        <div class="flex items-center gap-2 text-[10px]">
+          <div class="w-3 h-3 rounded-full" style="background: #FFD700; border: 1px solid #fff;"></div>
+          <span class="text-gray-400">★ S-Tier</span>
+        </div>
+        <div class="flex items-center gap-2 text-[10px]">
+          <div class="w-3 h-3 rounded-full" style="background: #00BFFF; border: 1px solid #fff;"></div>
+          <span class="text-gray-400">• A-Tier</span>
+        </div>
+        <div class="flex items-center gap-2 text-[10px]">
+          <div class="w-3 h-3 rounded-full" style="background: #8E8E93; border: 1px solid #fff;"></div>
+          <span class="text-gray-400">• B/C-Tier</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openPoiDetail(index) {
+  const p = ISOLATED_POIS[index];
+  if (!p) return;
+
+  openSheet(`
+    <div class="space-y-4">
+      <div class="text-center">
+        <div class="text-5xl mb-3">${p.hot ? '🔥' : (p.tier === 'S' ? '★' : '📍')}</div>
+        <div class="text-xl font-black mb-1">${esc(p.name)}</div>
+        <div class="flex items-center justify-center gap-2 mb-3">
+          <span class="text-[10px] px-2 py-0.5 rounded-full ${p.hot ? 'bg-primary text-white' : (p.tier === 'S' ? 'bg-gold text-black' : 'bg-gray-500 text-white')} font-black">
+            ${p.hot ? '🔥 HOT DROP' : p.tier + '-TIER'}
+          </span>
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="text-xs font-bold text-gray-400 uppercase mb-2">Tactical Info</div>
+        <p class="text-sm text-gray-300 leading-relaxed">${esc(p.desc)}</p>
+      </div>
+
+      <button onclick="closeSheet()" class="btn-press w-full py-3 rounded-xl bg-primary font-bold text-sm">
+        Got it
+      </button>
+    </div>
+  `, 'Location');
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// Override maps sub-tab
+const _origRenderMapsSub45 = renderMapsSub;
+renderMapsSub = function() {
+  const body = document.getElementById('intel-body');
+  if (!body) return;
+
+  body.innerHTML = renderRealMap();
+
+  // Wire pin animations (opacity on touch)
+  body.querySelectorAll('.map-poi').forEach(el => {
+    const pin = el.querySelector('.map-pin');
+    if (pin) {
+      el.addEventListener('touchstart', () => {
+        pin.style.opacity = '1';
+        pin.style.transform = 'scale(1.3)';
+      }, { passive: true });
+      el.addEventListener('touchend', () => {
+        pin.style.opacity = '0.65';
+        pin.style.transform = 'scale(1)';
+      }, { passive: true });
+    }
+    el.onclick = () => openPoiDetail(parseInt(el.dataset.poiIndex));
+  });
+
+  body.querySelectorAll('.poi-row').forEach(el => {
+    el.onclick = () => openPoiDetail(parseInt(el.dataset.poiIndex));
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 3: 3-DOT MENU on vault cards
+// ============================================
+
+const _origRenderVaultsMenu = renderVaults;
+renderVaults = function() {
+  const feed = document.getElementById('vault-feed');
+  if (!feed) return;
+  let vaults = State.cache.vaults;
+  if (State.filters.vaults.search) {
+    const s = State.filters.vaults.search;
+    vaults = vaults.filter(v =>
+      (v.gunName || '').toLowerCase().includes(s) ||
+      (v.gunsmithCode || '').toLowerCase().includes(s)
+    );
+  }
+
+  if (vaults.length === 0) {
+    feed.className = '';
+    let emptyText = 'Share your first build';
+    let emptyCta = 'Submit Build';
+    let emptyFn = openSubmitVaultSheet;
+    if (vaultTypeFilter === 'sens') { emptyText = 'Share your best sensitivity'; emptyCta = 'Share Sensitivity'; emptyFn = openSubmitSensSheet; }
+    if (vaultTypeFilter === 'hud') { emptyText = 'Share your HUD layout'; emptyCta = 'Share HUD'; emptyFn = openSubmitHudSheet; }
+    feed.innerHTML = emptyState('package-open', 'Nothing here yet', emptyText, emptyCta, emptyFn);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.className = 'grid grid-cols-2 gap-3';
+  feed.innerHTML = vaults.map(v => {
+    const isMine = v.uid === State.user.uid;
+    const isSens = v.type === 'sens';
+    const isHud = v.type === 'hud';
+
+    return `
+      <div class="bg-card border border-border rounded-2xl p-3 fade-in relative">
+        ${isMine ? `
+          <button class="vault-menu-btn absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center z-10" data-id="${v.id}">
+            <i data-lucide="more-vertical" class="w-3.5 h-3.5 text-white/70"></i>
+          </button>
+        ` : ''}
+
+        ${isHud && v.imageUrl ? `
+          <img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" loading="lazy" />
+        ` : isSens ? `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-primaryDark/20 flex items-center justify-center flex-col gap-1">
+            <span class="text-2xl">🎯</span>
+            <span class="text-[10px] text-primary font-bold">SENSITIVITY</span>
+          </div>
+        ` : isHud ? `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-gold/20 to-yellow-500/20 flex items-center justify-center flex-col gap-1">
+            <span class="text-2xl">🎮</span>
+            <span class="text-[10px] text-gold font-bold">HUD LAYOUT</span>
+          </div>
+        ` : v.imageUrl ? `
+          <img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" loading="lazy" />
+        ` : `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+            <i data-lucide="crosshair" class="w-8 h-8 text-primary/60"></i>
+          </div>
+        `}
+
+        <div class="text-xs font-bold text-gray-300 truncate">${esc(v.gunName || 'Unknown')}</div>
+        <div class="text-[10px] text-gray-500 mb-2 truncate">${esc(v.gunsmithCode || v.type || 'build')}</div>
+
+        ${!isSens && !isHud && v.gunsmithCode ? `
+          <button class="copy-code-btn w-full py-2 rounded-lg bg-primary/15 border border-primary/30 text-primary text-[11px] font-bold flex items-center justify-center gap-1 mb-2" data-code="${esc(v.gunsmithCode)}">
+            <i data-lucide="copy" class="w-3 h-3"></i> Copy Code
+          </button>
+        ` : isSens ? `
+          <div class="text-[9px] text-gray-500 mb-2 leading-relaxed line-clamp-3">${esc(v.gunsmithCode || '')}</div>
+        ` : isHud && v.notes ? `
+          <div class="text-[9px] text-gray-500 mb-2 line-clamp-2">${esc(v.notes)}</div>
+        ` : ''}
+
+        <div class="flex items-center justify-between">
+          <button class="like-btn flex items-center gap-1 text-[11px] text-gray-400" data-id="${v.id}">
+            <i data-lucide="heart" class="w-3.5 h-3.5"></i> ${v.likes || 0}
+          </button>
+          <button class="share-vault-btn text-primary" data-id="${v.id}" data-gun="${esc(v.gunName)}">
+            <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Wire buttons
+  feed.querySelectorAll('.copy-code-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); copyText(btn.dataset.code, 'Code copied!'); };
+  });
+  feed.querySelectorAll('.like-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await updateDoc(doc(db, 'vaults', btn.dataset.id), { likes: increment(1) });
+        toast('❤️ Liked!', 'success', 1500);
+      } catch (e) { toast('Failed', 'error'); }
+    };
+  });
+  feed.querySelectorAll('.share-vault-btn').forEach(btn => {
+    btn.onclick = () => {
+      openShareSheet({
+        title: `${btn.dataset.gun}`,
+        text: `Check out this ${btn.dataset.gun} on CODMPanda!`,
+        url: getVaultShareUrl(btn.dataset.id)
+      });
+    };
+  });
+  feed.querySelectorAll('.vault-menu-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openVaultMenu(btn.dataset.id);
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+
+// ============================================
+// Chunk 46: Vault Detail View + Edit Fix + Like Fix
+// ============================================
+
+// ============================================
+// PART 1: LIKE HELPERS (one per user)
+// ============================================
+
+async function hasUserLiked(itemType, itemId) {
+  try {
+    const ref = doc(db, 'likes', `${itemType}_${itemId}_${State.user.uid}`);
+    const snap = await getDoc(ref);
+    return snap.exists();
+  } catch (e) {
+    return false;
+  }
+}
+
+async function likeItem(itemType, itemId, countField) {
+  try {
+    if (!State.user) return false;
+    const likeRef = doc(db, 'likes', `${itemType}_${itemId}_${State.user.uid}`);
+    const likeSnap = await getDoc(likeRef);
+    if (likeSnap.exists()) return false;
+
+    await setDoc(likeRef, {
+      itemType, itemId,
+      userId: State.user.uid,
+      createdAt: serverTimestamp()
+    });
+
+    const collectionName = itemType === 'vault' ? 'vaults'
+      : itemType === 'clip' ? 'clips'
+      : itemType === 'comment' ? 'comments'
+      : itemType === 'leak' ? 'leaks'
+      : itemType === 'post' ? 'posts'
+      : itemType === 'lobby' ? 'lobbies'
+      : 'vaults';
+
+    await updateDoc(doc(db, collectionName, itemId), {
+      [countField || 'likes']: increment(1)
+    });
+
+    return true;
+  } catch (e) {
+    console.error('Like error:', e);
+    return false;
+  }
+}
+
+async function unlikeItem(itemType, itemId, countField) {
+  try {
+    if (!State.user) return false;
+    const likeRef = doc(db, 'likes', `${itemType}_${itemId}_${State.user.uid}`);
+    const likeSnap = await getDoc(likeRef);
+    if (!likeSnap.exists()) return false;
+
+    await deleteDoc(likeRef);
+
+    const collectionName = itemType === 'vault' ? 'vaults'
+      : itemType === 'clip' ? 'clips'
+      : itemType === 'comment' ? 'comments'
+      : itemType === 'leak' ? 'leaks'
+      : itemType === 'post' ? 'posts'
+      : itemType === 'lobby' ? 'lobbies'
+      : 'vaults';
+
+    await updateDoc(doc(db, collectionName, itemId), {
+      [countField || 'likes']: increment(-1)
+    });
+
+    return true;
+  } catch (e) {
+    console.error('Unlike error:', e);
+    return false;
+  }
+}
+
+async function toggleLike(itemType, itemId, countField) {
+  const liked = await hasUserLiked(itemType, itemId);
+  if (liked) {
+    await unlikeItem(itemType, itemId, countField);
+    return false;
+  } else {
+    await likeItem(itemType, itemId, countField);
+    return true;
+  }
+}
+
+// ============================================
+// PART 2: VAULT DETAIL VIEW
+// ============================================
+
+function openVaultDetail(vaultId) {
+  const vault = State.cache.vaults.find(v => v.id === vaultId);
+  if (!vault) { toast('Item not found', 'error'); return; }
+
+  const isMine = vault.uid === State.user.uid;
+  const isSens = vault.type === 'sens';
+  const isHud = vault.type === 'hud';
+  const isLiked = State.likedItems?.vault?.[vault.id] || false;
+
+  // Build content based on type
+  let contentHTML = '';
+
+  if (isSens) {
+    const fields = vault.attachments || {};
+    contentHTML = `
+      <div class="space-y-2">
+        ${Object.entries(fields).length > 0 ? Object.entries(fields).map(([k, v]) => {
+          const fieldName = SENS_FIELDS.find(f => f.key === k)?.label || k;
+          return `
+            <div class="flex items-center justify-between bg-card border border-border rounded-lg p-3">
+              <span class="text-xs text-gray-400">${esc(fieldName)}</span>
+              <span class="text-sm font-black text-primary">${esc(v)}</span>
+            </div>
+          `;
+        }).join('') : '<div class="text-center py-4 text-xs text-gray-500">No values saved</div>'}
+      </div>
+      ${vault.device ? `
+        <div class="bg-card border border-border rounded-lg p-3 mt-3">
+          <span class="text-xs text-gray-400">Device: </span>
+          <span class="text-xs font-bold text-white">${esc(vault.device)}</span>
+        </div>
+      ` : ''}
+      ${vault.notes ? `
+        <div class="bg-card border border-border rounded-lg p-3 mt-3">
+          <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Notes</div>
+          <p class="text-xs text-gray-300">${esc(vault.notes)}</p>
+        </div>
+      ` : ''}
+    `;
+  } else if (isHud) {
+    contentHTML = `
+      ${vault.imageUrl ? `
+        <img src="${esc(vault.imageUrl)}" class="w-full rounded-xl mb-3" />
+      ` : ''}
+      <div class="space-y-2">
+        ${vault.attachments?.style ? `
+          <div class="flex items-center justify-between bg-card border border-border rounded-lg p-3">
+            <span class="text-xs text-gray-400">Control Style</span>
+            <span class="text-sm font-black text-gold">${esc(vault.attachments.style)}</span>
+          </div>
+        ` : ''}
+        ${vault.attachments?.device ? `
+          <div class="flex items-center justify-between bg-card border border-border rounded-lg p-3">
+            <span class="text-xs text-gray-400">Device</span>
+            <span class="text-sm font-black text-white">${esc(vault.attachments.device)}</span>
+          </div>
+        ` : ''}
+      </div>
+      ${vault.notes ? `
+        <div class="bg-card border border-border rounded-lg p-3 mt-3">
+          <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Notes</div>
+          <p class="text-xs text-gray-300">${esc(vault.notes)}</p>
+        </div>
+      ` : ''}
+    `;
+  } else {
+    // Gunsmith
+    contentHTML = `
+      ${vault.imageUrl ? `
+        <img src="${esc(vault.imageUrl)}" class="w-full rounded-xl mb-3" />
+      ` : ''}
+
+      ${vault.gunsmithCode ? `
+        <div class="bg-card border border-primary/30 rounded-xl p-3 mb-3">
+          <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Gunsmith Code</div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-mono text-sm font-bold text-primary break-all">${esc(vault.gunsmithCode)}</span>
+            <button id="detail-copy-code" class="btn-press w-9 h-9 rounded-lg bg-primary flex items-center justify-center flex-shrink-0" data-code="${esc(vault.gunsmithCode)}">
+              <i data-lucide="copy" class="w-4 h-4 text-white"></i>
+            </button>
+          </div>
+        </div>
+      ` : ''}
+
+      ${vault.attachments && Object.keys(vault.attachments).length > 0 ? `
+        <div class="bg-card border border-border rounded-xl p-3">
+          <div class="text-[10px] text-gray-500 uppercase font-bold mb-2">Attachments</div>
+          <div class="space-y-2">
+            ${Object.entries(vault.attachments).map(([slot, att]) => `
+              <div class="flex items-start justify-between gap-2">
+                <span class="text-[10px] text-gray-500 uppercase font-bold flex-shrink-0">${esc(slot)}</span>
+                <span class="text-xs font-semibold text-white text-right">${esc(typeof att === 'string' ? att : att.name || 'N/A')}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  openSheet(`
+    <div class="space-y-4">
+      <!-- Header -->
+      <div class="text-center">
+        <div class="text-2xl font-black mb-1">${esc(vault.gunName || 'Unknown')}</div>
+        <div class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">${isSens ? 'SENSITIVITY' : isHud ? 'HUD LAYOUT' : 'GUNSMITH BUILD'}</div>
+      </div>
+
+      <!-- Author -->
+      <div class="flex items-center justify-center gap-2 text-xs">
+        <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
+          ${vault.avatar ? `<img src="${esc(vault.avatar)}" class="w-full h-full object-cover" />` : getInitials(vault.ign || '?')}
+        </div>
+        <span class="text-gray-400">by <span class="text-white font-bold">${esc(vault.ign || 'Unknown')}</span> · ${timeAgo(vault.createdAt)}</span>
+      </div>
+
+      <!-- Content -->
+      ${contentHTML}
+
+      <!-- Actions -->
+      <div class="flex items-center gap-2 pt-3 border-t border-border">
+        <button id="detail-like" class="btn-press flex-1 py-3 rounded-xl ${isLiked ? 'bg-primary text-white' : 'bg-cardAlt border border-border text-gray-300'} font-bold text-sm flex items-center justify-center gap-2" data-id="${vault.id}">
+          <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i>
+          <span id="detail-like-count">${vault.likes || 0}</span>
+        </button>
+        <button id="detail-share" class="btn-press flex-1 py-3 rounded-xl bg-cardAlt border border-border text-gray-300 font-bold text-sm flex items-center justify-center gap-2">
+          <i data-lucide="share-2" class="w-4 h-4"></i> Share
+        </button>
+        ${isMine ? `
+          <button id="detail-edit" class="btn-press w-12 h-12 rounded-xl bg-primary/15 border border-primary/40 flex items-center justify-center" title="Edit">
+            <i data-lucide="pencil" class="w-4 h-4 text-primary"></i>
+          </button>
+        ` : ''}
+      </div>
+    </div>
+  `, '');
+
+  // Wire actions
+  const copyBtn = document.getElementById('detail-copy-code');
+  if (copyBtn) {
+    copyBtn.onclick = () => copyText(copyBtn.dataset.code, 'Code copied!');
+  }
+
+  const likeBtn = document.getElementById('detail-like');
+  if (likeBtn) {
+    likeBtn.onclick = async () => {
+      const nowLiked = await toggleLike('vault', vault.id, 'likes');
+      vault.likes = nowLiked ? (vault.likes || 0) + 1 : Math.max(0, (vault.likes || 0) - 1);
+      State.likedItems = State.likedItems || {};
+      State.likedItems.vault = State.likedItems.vault || {};
+      State.likedItems.vault[vault.id] = nowLiked;
+
+      likeBtn.classList.toggle('bg-primary', nowLiked);
+      likeBtn.classList.toggle('text-white', nowLiked);
+      likeBtn.classList.toggle('bg-cardAlt', !nowLiked);
+      likeBtn.classList.toggle('border', !nowLiked);
+      likeBtn.classList.toggle('border-border', !nowLiked);
+      likeBtn.classList.toggle('text-gray-300', !nowLiked);
+
+      const icon = likeBtn.querySelector('i');
+      if (nowLiked) icon.classList.add('fill-current');
+      else icon.classList.remove('fill-current');
+
+      document.getElementById('detail-like-count').textContent = vault.likes;
+
+      toast(nowLiked ? '❤️ Liked!' : 'Unliked', 'success', 1000);
+    };
+  }
+
+  document.getElementById('detail-share').onclick = () => {
+    openShareSheet({
+      title: vault.gunName,
+      text: `Check out this ${vault.gunName} on CODMPanda!`,
+      url: getVaultShareUrl(vault.id)
+    });
+  };
+
+  const editBtn = document.getElementById('detail-edit');
+  if (editBtn) {
+    editBtn.onclick = () => {
+      closeSheet();
+      setTimeout(() => openEditVaultModal(vault), 300);
+    };
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 3: FIXED EDIT VAULT MODAL (all types)
+// ============================================
+
+function openEditVaultModal(vault) {
+  if (!vault) { toast('Item not found', 'error'); return; }
+
+  const type = vault.type || 'gunsmith';
+
+  if (type === 'sens') {
+    openSheet(`
+      <div class="space-y-4">
+        <div class="bg-primary/10 border border-primary/30 rounded-xl p-3 text-xs text-primary">
+          Edit your sensitivity values
+        </div>
+
+        ${SENS_FIELDS.map(f => `
+          <div>
+            <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">${f.label}</label>
+            <input id="edit-sens-${f.key}" type="number" min="0" max="300" value="${vault.attachments?.[f.key] || ''}" placeholder="${f.placeholder}" />
+          </div>
+        `).join('')}
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Device</label>
+          <select id="edit-sens-device" data-dropdown-title="Device">
+            <option value="">Select...</option>
+            <option ${vault.device === 'Phone' ? 'selected' : ''}>Phone</option>
+            <option ${vault.device === 'Tablet' ? 'selected' : ''}>Tablet</option>
+            <option ${vault.device === 'Controller' ? 'selected' : ''}>Controller</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Notes</label>
+          <textarea id="edit-sens-notes" rows="3" maxlength="200">${esc(vault.notes || '')}</textarea>
+        </div>
+
+        <button id="edit-sens-save" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+          Save Changes
+        </button>
+      </div>
+    `, 'Edit Sensitivity');
+
+    document.getElementById('edit-sens-save').onclick = async () => {
+      const values = {};
+      SENS_FIELDS.forEach(f => {
+        const val = document.getElementById('edit-sens-' + f.key).value.trim();
+        if (val) values[f.key] = parseInt(val);
+      });
+      const device = document.getElementById('edit-sens-device').value;
+      const notes = document.getElementById('edit-sens-notes').value.trim();
+
+      const summary = SENS_FIELDS
+        .filter(f => values[f.key] !== undefined)
+        .map(f => `${f.label.split(' ')[0]}: ${values[f.key]}`)
+        .join(' | ');
+
+      try {
+        await updateDoc(doc(db, 'vaults', vault.id), {
+          attachments: values,
+          gunsmithCode: summary.slice(0, 50),
+          device,
+          notes
+        });
+        toast('✏️ Updated', 'success');
+        closeSheet();
+        State.cache.vaults = State.cache.vaults.map(v => v.id === vault.id ? { ...v, attachments: values, gunsmithCode: summary.slice(0, 50), device, notes } : v);
+        renderVaults();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    };
+
+  } else if (type === 'hud') {
+    openSheet(`
+      <div class="space-y-4">
+        <div class="bg-gold/10 border border-gold/30 rounded-xl p-3 text-xs text-gold">
+          Edit HUD info
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Control Style</label>
+          <select id="edit-hud-style" data-dropdown-title="Control Style">
+            ${HUD_STYLES.map(s => `<option ${vault.attachments?.style === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Device</label>
+          <select id="edit-hud-device" data-dropdown-title="Device">
+            <option ${vault.attachments?.device === 'Phone' ? 'selected' : ''}>Phone</option>
+            <option ${vault.attachments?.device === 'Tablet' ? 'selected' : ''}>Tablet</option>
+            <option ${vault.attachments?.device === 'Controller' ? 'selected' : ''}>Controller</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">New Screenshot (optional)</label>
+          <input id="edit-hud-image" type="file" accept="image/*" class="text-xs" />
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Notes</label>
+          <textarea id="edit-hud-notes" rows="3" maxlength="200">${esc(vault.notes || '')}</textarea>
+        </div>
+
+        <button id="edit-hud-save" class="btn-press w-full py-4 rounded-2xl bg-gold text-black font-bold">
+          Save Changes
+        </button>
+      </div>
+    `, 'Edit HUD');
+
+    document.getElementById('edit-hud-save').onclick = async () => {
+      const style = document.getElementById('edit-hud-style').value;
+      const device = document.getElementById('edit-hud-device').value;
+      const notes = document.getElementById('edit-hud-notes').value.trim();
+      const fileInput = document.getElementById('edit-hud-image');
+
+      try {
+        const updates = {
+          gunName: `HUD · ${style}`,
+          gunsmithCode: device,
+          attachments: { style, device },
+          notes
+        };
+
+        if (fileInput.files && fileInput.files[0]) {
+          updates.imageUrl = await compressImage(fileInput.files[0], 800, 0.7);
+        }
+
+        await updateDoc(doc(db, 'vaults', vault.id), updates);
+        toast('✏️ Updated', 'success');
+        closeSheet();
+        State.cache.vaults = State.cache.vaults.map(v => v.id === vault.id ? { ...v, ...updates } : v);
+        renderVaults();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    };
+
+  } else {
+    // Gunsmith edit
+    openSheet(`
+      <div class="space-y-4">
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gun Name</label>
+          <input id="edit-v-gun" type="text" value="${esc(vault.gunName || '')}" maxlength="40" />
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Gunsmith Code</label>
+          <input id="edit-v-code" type="text" value="${esc(vault.gunsmithCode || '')}" maxlength="20" />
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">Attachments (one per line: "Slot: Name")</label>
+          <textarea id="edit-v-attach" rows="5" maxlength="500">${esc(Object.entries(vault.attachments || {}).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : v.name || ''}`).join('\n'))}</textarea>
+        </div>
+
+        <div>
+          <label class="block mb-2 text-xs font-bold text-gray-400 uppercase">New Screenshot (optional)</label>
+          <input id="edit-v-image" type="file" accept="image/*" class="text-xs" />
+        </div>
+
+        <button id="edit-v-save" class="btn-press w-full py-4 rounded-2xl bg-primary font-bold glow-primary">
+          Save Changes
+        </button>
+      </div>
+    `, 'Edit Build');
+
+    document.getElementById('edit-v-save').onclick = async () => {
+      const gunName = document.getElementById('edit-v-gun').value.trim();
+      const gunsmithCode = document.getElementById('edit-v-code').value.trim();
+      const attachRaw = document.getElementById('edit-v-attach').value.trim();
+      const fileInput = document.getElementById('edit-v-image');
+
+      if (!gunName) { toast('Gun name required', 'error'); return; }
+
+      const attachments = {};
+      attachRaw.split('\n').forEach(line => {
+        const [k, ...v] = line.split(':');
+        if (k && v.length) attachments[k.trim()] = v.join(':').trim();
+      });
+
+      try {
+        const updates = { gunName, gunsmithCode, attachments };
+        if (fileInput.files && fileInput.files[0]) {
+          updates.imageUrl = await compressImage(fileInput.files[0], 700, 0.6);
+        }
+
+        await updateDoc(doc(db, 'vaults', vault.id), updates);
+        toast('✏️ Updated', 'success');
+        closeSheet();
+        State.cache.vaults = State.cache.vaults.map(v => v.id === vault.id ? { ...v, ...updates } : v);
+        renderVaults();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    };
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 4: REWRITTEN VAULT RENDER (with detail view + likes)
+// ============================================
+
+const _origRenderVaultsDetail = renderVaults;
+renderVaults = function() {
+  const feed = document.getElementById('vault-feed');
+  if (!feed) return;
+  let vaults = State.cache.vaults;
+  if (State.filters.vaults.search) {
+    const s = State.filters.vaults.search;
+    vaults = vaults.filter(v =>
+      (v.gunName || '').toLowerCase().includes(s) ||
+      (v.gunsmithCode || '').toLowerCase().includes(s)
+    );
+  }
+
+  if (vaults.length === 0) {
+    feed.className = '';
+    let emptyText = 'Share your first build';
+    let emptyCta = 'Submit Build';
+    let emptyFn = openSubmitVaultSheet;
+    if (vaultTypeFilter === 'sens') { emptyText = 'Share your best sensitivity'; emptyCta = 'Share Sensitivity'; emptyFn = openSubmitSensSheet; }
+    if (vaultTypeFilter === 'hud') { emptyText = 'Share your HUD layout'; emptyCta = 'Share HUD'; emptyFn = openSubmitHudSheet; }
+    feed.innerHTML = emptyState('package-open', 'Nothing here yet', emptyText, emptyCta, emptyFn);
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feed.className = 'grid grid-cols-2 gap-3';
+  feed.innerHTML = vaults.map(v => {
+    const isMine = v.uid === State.user.uid;
+    const isSens = v.type === 'sens';
+    const isHud = v.type === 'hud';
+    const isLiked = State.likedItems?.vault?.[v.id] || false;
+
+    return `
+      <div class="bg-card border border-border rounded-2xl p-3 fade-in relative vault-card" data-id="${v.id}" style="cursor: pointer;">
+        ${isMine ? `
+          <button class="vault-menu-btn absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center z-10" data-id="${v.id}">
+            <i data-lucide="more-vertical" class="w-3.5 h-3.5 text-white/70"></i>
+          </button>
+        ` : ''}
+
+        ${isHud && v.imageUrl ? `
+          <img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" loading="lazy" />
+        ` : isSens ? `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-primaryDark/20 flex items-center justify-center flex-col gap-1">
+            <span class="text-2xl">🎯</span>
+            <span class="text-[10px] text-primary font-bold">SENSITIVITY</span>
+          </div>
+        ` : isHud ? `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-gold/20 to-yellow-500/20 flex items-center justify-center flex-col gap-1">
+            <span class="text-2xl">🎮</span>
+            <span class="text-[10px] text-gold font-bold">HUD LAYOUT</span>
+          </div>
+        ` : v.imageUrl ? `
+          <img src="${esc(v.imageUrl)}" class="w-full h-24 object-cover rounded-xl mb-3" loading="lazy" />
+        ` : `
+          <div class="w-full h-24 rounded-xl mb-3 bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+            <i data-lucide="crosshair" class="w-8 h-8 text-primary/60"></i>
+          </div>
+        `}
+
+        <div class="text-xs font-bold text-gray-300 truncate">${esc(v.gunName || 'Unknown')}</div>
+        <div class="text-[10px] text-gray-500 mb-2 truncate">${esc(v.gunsmithCode || v.type || 'build')}</div>
+
+        ${!isSens && !isHud && v.gunsmithCode ? `
+          <button class="copy-code-btn w-full py-2 rounded-lg bg-primary/15 border border-primary/30 text-primary text-[11px] font-bold flex items-center justify-center gap-1 mb-2" data-code="${esc(v.gunsmithCode)}">
+            <i data-lucide="copy" class="w-3 h-3"></i> Copy Code
+          </button>
+        ` : ''}
+
+        <div class="flex items-center justify-between">
+          <button class="like-btn flex items-center gap-1 text-[11px] ${isLiked ? 'text-primary' : 'text-gray-400'}" data-id="${v.id}">
+            <i data-lucide="heart" class="w-3.5 h-3.5 ${isLiked ? 'fill-current' : ''}"></i> ${v.likes || 0}
+          </button>
+          <button class="share-vault-btn text-primary" data-id="${v.id}" data-gun="${esc(v.gunName)}">
+            <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Wire copy
+  feed.querySelectorAll('.copy-code-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); copyText(btn.dataset.code, 'Code copied!'); };
+  });
+
+  // Wire like
+  feed.querySelectorAll('.like-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const vault = vaults.find(v => v.id === btn.dataset.id);
+      if (!vault) return;
+
+      const nowLiked = await toggleLike('vault', vault.id, 'likes');
+      const newCount = nowLiked ? (vault.likes || 0) + 1 : Math.max(0, (vault.likes || 0) - 1);
+
+      btn.innerHTML = `<i data-lucide="heart" class="w-3.5 h-3.5 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+      btn.classList.toggle('text-primary', nowLiked);
+      btn.classList.toggle('text-gray-400', !nowLiked);
+
+      State.likedItems = State.likedItems || {};
+      State.likedItems.vault = State.likedItems.vault || {};
+      State.likedItems.vault[vault.id] = nowLiked;
+      vault.likes = newCount;
+
+      if (window.lucide) window.lucide.createIcons();
+      toast(nowLiked ? '❤️ Liked!' : 'Unliked', 'success', 1000);
+    };
+  });
+
+  // Wire share
+  feed.querySelectorAll('.share-vault-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openShareSheet({
+        title: btn.dataset.gun,
+        text: `Check out this ${btn.dataset.gun} on CODMPanda!`,
+        url: getVaultShareUrl(btn.dataset.id)
+      });
+    };
+  });
+
+  // Wire 3-dot menu
+  feed.querySelectorAll('.vault-menu-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openVaultMenu(btn.dataset.id);
+    };
+  });
+
+  // Wire card tap → detail view
+  feed.querySelectorAll('.vault-card').forEach(card => {
+    card.onclick = (e) => {
+      // Ignore if tapped a button
+      if (e.target.closest('button')) return;
+      openVaultDetail(card.dataset.id);
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 5: REWRITTEN 3-DOT MENU
+// ============================================
+
+function openVaultMenu(vaultId) {
+  const vault = State.cache.vaults.find(v => v.id === vaultId);
+  if (!vault) return;
+
+  openSheet(`
+    <div class="space-y-2">
+      <div class="text-[10px] text-gray-500 uppercase font-bold mb-2">${esc(vault.gunName || 'Build')}</div>
+
+      <button id="vault-menu-view" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+        <i data-lucide="eye" class="w-4 h-4 text-gray-400"></i>
+        <span class="text-sm font-bold">View Details</span>
+      </button>
+
+      <button id="vault-menu-edit" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+        <i data-lucide="pencil" class="w-4 h-4 text-primary"></i>
+        <span class="text-sm font-bold">Edit</span>
+      </button>
+
+      <button id="vault-menu-share" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+        <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+        <span class="text-sm font-bold">Share</span>
+      </button>
+
+      ${vault.gunsmithCode && vault.type === 'gunsmith' ? `
+        <button id="vault-menu-copy" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border text-left">
+          <i data-lucide="copy" class="w-4 h-4 text-primary"></i>
+          <span class="text-sm font-bold">Copy Code</span>
+        </button>
+      ` : ''}
+
+      <button id="vault-menu-delete" class="btn-press w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-left">
+        <i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i>
+        <span class="text-sm font-bold text-red-400">Delete</span>
+      </button>
+
+      <button onclick="closeSheet()" class="text-xs text-gray-500 w-full pt-3">Cancel</button>
+    </div>
+  `, '');
+
+  document.getElementById('vault-menu-view').onclick = () => {
+    closeSheet();
+    setTimeout(() => openVaultDetail(vault.id), 300);
+  };
+
+  document.getElementById('vault-menu-edit').onclick = () => {
+    closeSheet();
+    setTimeout(() => openEditVaultModal(vault), 300);
+  };
+
+  document.getElementById('vault-menu-share').onclick = () => {
+    closeSheet();
+    setTimeout(() => {
+      openShareSheet({
+        title: vault.gunName,
+        text: `Check out this ${vault.gunName} on CODMPanda!`,
+        url: getVaultShareUrl(vault.id)
+      });
+    }, 300);
+  };
+
+  const copyBtn = document.getElementById('vault-menu-copy');
+  if (copyBtn) {
+    copyBtn.onclick = () => {
+      closeSheet();
+      copyText(vault.gunsmithCode, 'Code copied!');
+    };
+  }
+
+  document.getElementById('vault-menu-delete').onclick = () => {
+    closeSheet();
+    setTimeout(() => {
+      confirmDialog('Delete Build', 'This will remove it permanently.', async () => {
+        try {
+          await deleteDoc(doc(db, 'vaults', vault.id));
+          State.cache.vaults = State.cache.vaults.filter(v => v.id !== vault.id);
+          renderVaults();
+          toast('🗑️ Deleted', 'success');
+        } catch (e) { toast('Failed', 'error'); }
+      }, 'Delete', true);
+    }, 300);
+  };
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================
+// PART 6: LOAD USER LIKES
+// ============================================
+
+async function loadUserLikes() {
+  if (!State.user) return;
+  try {
+    State.likedItems = { vault: {}, clip: {}, leak: {}, comment: {} };
+
+    const snap = await getDocs(query(
+      collection(db, 'likes'),
+      where('userId', '==', State.user.uid),
+      limit(500)
+    ));
+
+    snap.forEach(d => {
+      const data = d.data();
+      if (!State.likedItems[data.itemType]) State.likedItems[data.itemType] = {};
+      State.likedItems[data.itemType][data.itemId] = true;
+    });
+
+    console.log('✅ Loaded', snap.size, 'user likes');
+  } catch (e) {
+    console.warn('Load likes error:', e);
+  }
+}
+
+setTimeout(() => {
+  if (State.user) loadUserLikes();
+}, 4000);
+
+window.openVaultDetail = openVaultDetail;
+window.openEditVaultModal = openEditVaultModal;
+window.openVaultMenu = openVaultMenu;
+window.toggleLike = toggleLike;
+window.loadUserLikes = loadUserLikes;
+
+console.log('✅ Chunk 46: Vault detail + edit fix + like fix loaded');
+
+/* END OF CHUNK 46 */
+// ============================================
+// Chunk 47: Professional Gun Icons + Attachment Preview
+// ============================================
+
+// ============================================
+// PART 1: GUN CATEGORY ICONS + COLORS
+// ============================================
+
+const GUN_CATEGORY_META = {
+  'Assault Rifle': { icon: 'crosshair', color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)', emoji: '🔫' },
+  'SMG':           { icon: 'zap', color: '#22C55E', bg: 'rgba(34, 197, 94, 0.15)', emoji: '💨' },
+  'Sniper':        { icon: 'target', color: '#A855F7', bg: 'rgba(168, 85, 247, 0.15)', emoji: '🎯' },
+  'LMG':           { icon: 'box', color: '#F97316', bg: 'rgba(249, 115, 22, 0.15)', emoji: '📦' },
+  'Shotgun':       { icon: 'shield', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.15)', emoji: '💥' },
+  'Marksman':      { icon: 'crosshair', color: '#06B6D4', bg: 'rgba(6, 182, 212, 0.15)', emoji: '🎯' },
+  'Pistol':        { icon: 'target', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.15)', emoji: '🔫' },
+  'Melee':         { icon: 'sword', color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.15)', emoji: '⚔️' },
+  'Launcher':      { icon: 'rocket', color: '#F43F5E', bg: 'rgba(244, 63, 94, 0.15)', emoji: '🚀' }
+};
+
+function getGunMeta(gunName) {
+  for (const [cat, guns] of Object.entries(CODM_GUNS)) {
+    if (guns.includes(gunName)) {
+      return { category: cat, ...GUN_CATEGORY_META[cat] };
+    }
+  }
+  return { category: 'Assault Rifle', ...GUN_CATEGORY_META['Assault Rifle'] };
+}
+
+// ============================================
+// PART 2: ATTACHMENT SLOT ICONS (Lucide)
+// ============================================
+
+const SLOT_ICON_MAP = {
+  muzzle: 'shield',
+  barrel: 'align-vertical-space-around',
+  optic: 'eye',
+  stock: 'minus',
+  laser: 'zap',
+  underbarrel: 'grip',
+  ammunition: 'package',
+  rearGrip: 'hand',
+  perk: 'star'
+};
+
+// ============================================
+// PART 3: PATCH GUN PICKER with icons
+// ============================================
+
+const _origRenderGunPickerIcons = renderGunPicker;
+renderGunPicker = function(body) {
+  const categories = ['Assault Rifle', 'SMG', 'Sniper', 'LMG', 'Shotgun', 'Marksman', 'Pistol'];
+  let activeCategory = 'Assault Rifle';
+
+  body.innerHTML = `
+    <div class="text-center mb-4">
+      <div class="text-xs text-gray-500 mb-2">Step 1 — Pick your weapon</div>
+    </div>
+
+    <div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1" id="gun-cat-filters">
+      ${categories.map((c, i) => `
+        <button class="chip gun-cat-btn ${i === 0 ? 'active' : ''}" data-cat="${c}">${c}</button>
+      `).join('')}
+    </div>
+
+    <div class="relative mb-4">
+      <i data-lucide="search" class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+      <input id="gun-search" type="text" placeholder="Search guns..." class="pl-10" />
+    </div>
+
+    <div id="gun-grid" class="grid grid-cols-2 gap-3"></div>
+  `;
+
+  const renderGuns = (category, search) => {
+    const grid = document.getElementById('gun-grid');
+    if (!grid) return;
+
+    const gunsInCat = CODM_GUNS[category] || [];
+    const filtered = search
+      ? gunsInCat.filter(g => g.toLowerCase().includes(search.toLowerCase()))
+      : gunsInCat;
+
+    if (filtered.length === 0) {
+      grid.innerHTML = '<div class="col-span-2 text-center py-8 text-xs text-gray-500">No guns found</div>';
+      return;
+    }
+
+    const meta = GUN_CATEGORY_META[category] || GUN_CATEGORY_META['Assault Rifle'];
+
+    grid.innerHTML = filtered.map(gun => `
+      <button class="gun-pick-btn bg-card border border-border rounded-2xl p-3 text-left hover:border-primary transition-colors" data-gun="${esc(gun)}">
+        <div class="w-full h-16 rounded-xl mb-2 flex items-center justify-center" style="background: ${meta.bg};">
+          <i data-lucide="${meta.icon}" class="w-7 h-7" style="color: ${meta.color};"></i>
+        </div>
+        <div class="text-xs font-bold truncate">${esc(gun)}</div>
+        <div class="text-[9px] text-gray-500" style="color: ${meta.color};">${category}</div>
+      </button>
+    `).join('');
+
+    grid.querySelectorAll('.gun-pick-btn').forEach(btn => {
+      btn.onclick = () => {
+        BuilderState.selectedGun = btn.dataset.gun;
+        BuilderState.selectedAttachments = {};
+        renderBuilderBody();
+      };
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  };
+
+  body.querySelectorAll('.gun-cat-btn').forEach(btn => {
+    btn.onclick = () => {
+      body.querySelectorAll('.gun-cat-btn').forEach(b => b.classList.toggle('active', b === btn));
+      activeCategory = btn.dataset.cat;
+      const search = document.getElementById('gun-search')?.value || '';
+      renderGuns(activeCategory, search);
+    };
+  });
+
+  document.getElementById('gun-search').oninput = (e) => {
+    renderGuns(activeCategory, e.target.value);
+  };
+
+  renderGuns(activeCategory, '');
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 4: PATCH LOADOUT CANVAS with better visuals
+// ============================================
+
+const _origRenderLoadoutCanvasIcons = renderLoadoutCanvas;
+renderLoadoutCanvas = function(body) {
+  const gun = BuilderState.selectedGun;
+  const { final, base, modifiers } = calculateFinalStats(gun, BuilderState.selectedAttachments);
+  const attachedCount = Object.keys(BuilderState.selectedAttachments).length;
+  const presets = PRESET_BUILDS[gun] || [];
+  const score = scoreBuild(final);
+  const gunMeta = getGunMeta(gun);
+
+  body.innerHTML = `
+    <!-- Gun Header -->
+    <div class="bg-card border border-primary/40 rounded-2xl p-4 mb-4 relative overflow-hidden">
+      <div class="absolute top-3 right-3 text-2xl opacity-20"></div>
+      <div class="flex items-center gap-3">
+        <div class="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0" style="background: ${gunMeta.bg};">
+          <i data-lucide="${gunMeta.icon}" class="w-7 h-7" style="color: ${gunMeta.color};"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-lg font-black truncate">${esc(gun)}</div>
+          <div class="text-[10px] text-gray-500">${gunMeta.category} · ${attachedCount}/9 attachments · ${score.emoji} ${score.tier}</div>
+        </div>
+        <button id="change-gun-btn" class="btn-press px-3 py-2 rounded-lg bg-cardAlt border border-border text-[10px] font-bold">
+          Change
+        </button>
+      </div>
+    </div>
+
+    <!-- Presets -->
+    ${presets.length > 0 && attachedCount === 0 ? `
+      <div class="mb-4">
+        <div class="text-xs font-bold text-gray-400 uppercase mb-2">✨ Quick Presets</div>
+        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+          ${presets.map((p, i) => `
+            <button class="preset-btn chip" data-preset-index="${i}">${p.name}</button>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- Enhanced Stats Preview -->
+    <div id="stat-preview">
+      ${renderEnhancedStats(base, final, modifiers)}
+    </div>
+
+    <!-- Attachments Grid -->
+    <div class="text-xs font-bold text-gray-400 uppercase mb-2 mt-4">Attachments</div>
+    <div class="grid grid-cols-3 gap-2 mb-4" id="slot-grid">
+      ${GUNSMITH_SLOTS.map(slot => {
+        const picked = BuilderState.selectedAttachments[slot.key];
+        const iconName = SLOT_ICON_MAP[slot.key] || 'circle';
+        return `
+          <button class="slot-btn bg-card border ${picked ? 'border-primary/60 bg-primary/5' : 'border-border'} rounded-xl p-3 flex flex-col items-center gap-1.5" data-slot="${slot.key}">
+            <i data-lucide="${iconName}" class="w-5 h-5 ${picked ? 'text-primary' : 'text-gray-500'}"></i>
+            <div class="text-[9px] font-bold ${picked ? 'text-primary' : 'text-gray-400'} text-center leading-tight">${slot.label}</div>
+            ${picked ? `<div class="text-[8px] text-primary truncate w-full text-center">${esc(picked.name)}</div>` : `<div class="text-[8px] text-gray-600">Empty</div>`}
+          </button>
+        `;
+      }).join('')}
+    </div>
+
+    <!-- Attachment Preview Pills -->
+    ${attachedCount > 0 ? `
+      <div class="bg-card border border-border rounded-2xl p-3 mb-4">
+        <div class="text-[10px] font-bold text-gray-400 uppercase mb-2">Attached</div>
+        <div class="flex flex-wrap gap-1.5">
+          ${GUNSMITH_SLOTS.map(slot => {
+            const picked = BuilderState.selectedAttachments[slot.key];
+            if (!picked) return '';
+            return `
+              <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary/15 border border-primary/30">
+                <i data-lucide="${SLOT_ICON_MAP[slot.key] || 'circle'}" class="w-3 h-3 text-primary"></i>
+                <span class="text-[10px] font-bold text-primary">${esc(picked.name)}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- Actions -->
+    <div class="space-y-2">
+      <button id="builder-save-btn" class="btn-press w-full py-3.5 rounded-xl bg-primary font-black text-sm glow-primary flex items-center justify-center gap-2">
+        <i data-lucide="save" class="w-4 h-4"></i> Save to Vault
+      </button>
+      <button id="builder-share-btn" class="btn-press w-full py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm flex items-center justify-center gap-2">
+        <i data-lucide="share-2" class="w-4 h-4"></i> Share Build
+      </button>
+    </div>
+
+    <div class="text-[10px] text-gray-600 text-center mt-4">
+      Stats are approximate — based on community-sourced data
+    </div>
+  `;
+
+  document.getElementById('change-gun-btn').onclick = () => {
+    BuilderState.selectedGun = null;
+    BuilderState.selectedAttachments = {};
+    renderBuilderBody();
+  };
+
+  body.querySelectorAll('.slot-btn').forEach(btn => {
+    btn.onclick = () => openAttachmentPicker(btn.dataset.slot);
+  });
+
+  body.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.presetIndex);
+      applyPreset(presets[idx]);
+    };
+  });
+
+  document.getElementById('builder-save-btn').onclick = saveBuildToVault;
+  document.getElementById('builder-share-btn').onclick = shareBuild;
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 5: PATCH ATTACHMENT PICKER with icons
+// ============================================
+
+const _origOpenAttachmentPickerIcons = openAttachmentPicker;
+openAttachmentPicker = function(slotKey) {
+  const slot = GUNSMITH_SLOTS.find(s => s.key === slotKey);
+  if (!slot) return;
+
+  const gun = BuilderState.selectedGun;
+  const attachments = getAttachmentsForSlot(gun, slotKey);
+  const current = BuilderState.selectedAttachments[slotKey];
+  const slotIcon = SLOT_ICON_MAP[slotKey] || 'circle';
+
+  if (attachments.length === 0) {
+    toast('No attachments available for this slot', 'info');
+    return;
+  }
+
+  openSheet(`
+    <div class="space-y-2 max-h-[70vh] overflow-y-auto">
+      <div class="flex items-center gap-2 mb-3">
+        <i data-lucide="${slotIcon}" class="w-5 h-5 text-primary"></i>
+        <div class="text-xs text-gray-400 font-bold uppercase">${slot.label}</div>
+      </div>
+
+      ${current ? `
+        <button class="pick-attach-remove w-full text-left px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/40 text-red-400 font-bold text-sm mb-2">
+          ✕ Remove current: ${esc(current.name)}
+        </button>
+      ` : ''}
+
+      ${attachments.map((att, i) => {
+        const isSelected = current && current.name === att.name;
+        const effects = Object.entries(att.effects || {});
+        return `
+          <button class="pick-attach-btn w-full text-left px-4 py-3 rounded-xl ${isSelected ? 'bg-primary/15 border border-primary' : 'bg-card border border-border'} font-semibold text-sm" data-index="${i}">
+            <div class="flex items-center justify-between mb-1">
+              <span class="${isSelected ? 'text-primary' : 'text-white'}">${esc(att.name)}</span>
+              ${isSelected ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-primary text-white font-black">EQUIPPED</span>' : ''}
+            </div>
+            ${effects.length > 0 ? `
+              <div class="flex flex-wrap gap-1.5 mt-1">
+                ${effects.map(([stat, val]) => `
+                  <span class="text-[9px] px-1.5 py-0.5 rounded ${val > 0 ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'} font-bold">
+                    ${stat} ${val > 0 ? '+' + val : val}
+                  </span>
+                `).join('')}
+              </div>
+            ` : '<div class="text-[10px] text-gray-500">No stat changes</div>'}
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `, slot.label);
+
+  document.querySelectorAll('.pick-attach-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.index);
+      BuilderState.selectedAttachments[slotKey] = attachments[idx];
+      closeSheet();
+      renderBuilderBody();
+      toast(`${slot.label}: ${attachments[idx].name}`, 'success', 1500);
+    };
+  });
+
+  const removeBtn = document.querySelector('.pick-attach-remove');
+  if (removeBtn) {
+    removeBtn.onclick = () => {
+      delete BuilderState.selectedAttachments[slotKey];
+      closeSheet();
+      renderBuilderBody();
+      toast(`${slot.label} removed`, 'success', 1500);
+    };
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 6: PATCH GUNSMITH BUILDER HEADER
+// ============================================
+
+const _origOpenGunsmithBuilderIcons = openGunsmithBuilder;
+openGunsmithBuilder = function(gunName) {
+  BuilderState.selectedGun = gunName || null;
+  BuilderState.selectedAttachments = {};
+  BuilderState.activeSlot = null;
+
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <div class="flex items-center justify-between mb-4">
+        <button id="builder-back-btn" class="btn-press w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
+          <i data-lucide="arrow-left" class="w-5 h-5"></i>
+        </button>
+        <div class="text-center flex-1">
+          <div class="text-lg font-black">Gunsmith Builder</div>
+          <div class="text-[10px] text-gray-500">Build & share your perfect loadout</div>
+        </div>
+        <button id="builder-reset-btn" class="btn-press w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
+          <i data-lucide="rotate-ccw" class="w-5 h-5 text-gray-400"></i>
+        </button>
+      </div>
+
+      <div id="builder-body"></div>
+    </div>
+  `;
+
+  document.getElementById('builder-back-btn').onclick = () => {
+    labSubTab = 'vault';
+    renderLabTab();
+  };
+  document.getElementById('builder-reset-btn').onclick = () => {
+    confirmDialog('Reset Build', 'Clear all attachments?', () => {
+      BuilderState.selectedAttachments = {};
+      renderBuilderBody();
+    }, 'Reset', true);
+  };
+
+  renderBuilderBody();
+  if (window.lucide) window.lucide.createIcons();
+};
+
+window.getGunMeta = getGunMeta;
+window.GUN_CATEGORY_META = GUN_CATEGORY_META;
+window.SLOT_ICON_MAP = SLOT_ICON_MAP;
+
+console.log('✅ Chunk 47: Professional gun icons + attachment preview loaded');
+
+/* END OF CHUNK 47 */
+// ============================================
+// Chunk 48a: HOME Feed — Core Render
+// ============================================
+
+// ============================================
+// PART 1: HOME STATE
+// ============================================
+
+let homeFilter = 'all';
+let homeCache = {
+  feed: [],
+  lastFetch: 0,
+  isLoading: false
+};
+
+
+// ============================================
+// PART 2: FETCH UNIFIED FEED
+// ============================================
+
+async function fetchHomeFeed() {
+  if (homeCache.isLoading) return homeCache.feed;
+  homeCache.isLoading = true;
+
+  try {
+    const now = Date.now();
+
+    // Parallel fetch all 4 sources
+    const [lobbiesSnap, vaultsSnap, clipsSnap, leaksSnap] = await Promise.all([
+      getDocs(query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'clips'), limit(30))).catch(() => ({ forEach: () => {} })),
+      getDocs(query(collection(db, 'leaks'), limit(20))).catch(() => ({ forEach: () => {} }))
+    ]);
+
+    const feed = [];
+
+    // Lobbies → feed
+    lobbiesSnap.forEach(d => {
+      const data = d.data();
+      const expiresAt = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
+      if (expiresAt < now) return; // Skip expired
+      feed.push({
+        id: d.id,
+        type: 'lobby',
+        ...data,
+        _sortTime: data.createdAt?.seconds || 0
+      });
+    });
+
+    // Vaults → feed
+    vaultsSnap.forEach(d => {
+      const data = d.data();
+      feed.push({
+        id: d.id,
+        type: 'vault',
+        ...data,
+        _sortTime: data.createdAt?.seconds || 0
+      });
+    });
+
+    // Clips → feed
+    clipsSnap.forEach(d => {
+      const data = d.data();
+      feed.push({
+        id: d.id,
+        type: 'clip',
+        ...data,
+        _sortTime: data.createdAt?.seconds || 0
+      });
+    });
+
+    // Leaks → feed
+    leaksSnap.forEach(d => {
+      const data = d.data();
+      feed.push({
+        id: d.id,
+        type: 'leak',
+        ...data,
+        _sortTime: (data.createdAt || data.publishedAt)?.seconds || 0
+      });
+    });
+
+    // Sort newest first
+    feed.sort((a, b) => b._sortTime - a._sortTime);
+
+    homeCache.feed = feed;
+    homeCache.lastFetch = now;
+    homeCache.isLoading = false;
+
+    return feed;
+  } catch (e) {
+    console.error('Home feed fetch error:', e);
+    homeCache.isLoading = false;
+    return homeCache.feed;
+  }
+}
+
+// ============================================
+// PART 3: MAIN HOME RENDER
+// ============================================
+
+async function renderHomeTab() {
+  const content = document.getElementById('content');
+  if (!content) return;
+
+  // Set up shell with header + filters + feed
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <!-- Header -->
+      <div class="mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h1 class="text-2xl font-black">Home</h1>
+            <p class="text-xs text-gray-500">What's happening in CODM</p>
+          </div>
+          <button id="home-refresh-btn" class="btn-press w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center">
+            <i data-lucide="refresh-cw" class="w-4 h-4 text-gray-400"></i>
+          </button>
+        </div>
+
+        <!-- Filters -->
+        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+          ${HOME_FILTERS.map(f => `
+            <button class="chip home-filter-btn ${homeFilter === f.key ? 'active' : ''}" data-filter="${f.key}">
+              ${f.emoji} ${f.label}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Feed -->
+      <div id="home-feed">
+        ${renderHomeSkeleton()}
+      </div>
+    </div>
+  `;
+
+  // Wire filters
+  document.querySelectorAll('.home-filter-btn').forEach(btn => {
+    btn.onclick = () => {
+      homeFilter = btn.dataset.filter;
+      document.querySelectorAll('.home-filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderHomeFeed();
+    };
+  });
+
+  // Wire refresh
+  document.getElementById('home-refresh-btn').onclick = async () => {
+    homeCache.lastFetch = 0;
+    toast('Refreshing...', 'info', 1000);
+    await fetchHomeFeed();
+    renderHomeFeed();
+  };
+
+  // Fetch and render
+  await fetchHomeFeed();
+  renderHomeFeed();
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function renderHomeSkeleton() {
+  return Array(3).fill(0).map(() => `
+    <div class="bg-card border border-border rounded-2xl p-4 mb-3">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="skeleton w-10 h-10 rounded-full"></div>
+        <div class="flex-1">
+          <div class="skeleton h-3 w-24 rounded mb-1.5"></div>
+          <div class="skeleton h-2.5 w-16 rounded"></div>
+        </div>
+      </div>
+      <div class="skeleton h-3 w-full rounded mb-2"></div>
+      <div class="skeleton h-3 w-2/3 rounded"></div>
+    </div>
+  `).join('');
+}
+
+function renderHomeFeed() {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  let items = homeCache.feed;
+
+  // Apply filter
+  if (homeFilter !== 'all') {
+    const typeMap = {
+      lfg: 'lobby',
+      builds: 'vault',
+      clips: 'clip',
+      leaks: 'leak'
+    };
+    items = items.filter(i => i.type === typeMap[homeFilter]);
+  }
+
+  if (items.length === 0) {
+    feedEl.innerHTML = renderHomeEmpty();
+    wireHomeEmpty();
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feedEl.innerHTML = items.map(item => renderHomeCard(item)).join('');
+
+  wireHomeCards(items);
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function renderHomeEmpty() {
+  return `
+    <div class="flex flex-col items-center justify-center py-16 px-6 text-center fade-in">
+      <div class="relative mb-5">
+        <div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-gold/10 rounded-full blur-2xl"></div>
+        <div class="relative w-24 h-24 rounded-full bg-card border border-border flex items-center justify-center">
+          <i data-lucide="sparkles" class="w-10 h-10 text-primary/70"></i>
+        </div>
+      </div>
+      <div class="text-lg font-black mb-2">Nothing here yet</div>
+      <div class="text-xs text-gray-500 max-w-[260px] leading-relaxed mb-5">
+        ${homeFilter === 'all' ? 'Be the first to post something — start by finding a squad or sharing a build.' : 'No ' + homeFilter + ' content yet.'}
+      </div>
+      <div class="flex gap-2">
+        <button id="home-empty-lfg" class="btn-press px-4 py-2.5 rounded-xl bg-primary text-white font-bold text-xs">Post Lobby</button>
+        <button id="home-empty-vault" class="btn-press px-4 py-2.5 rounded-xl bg-card border border-border font-bold text-xs">Build Gunsmith</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireHomeEmpty() {
+  const lfgBtn = document.getElementById('home-empty-lfg');
+  if (lfgBtn) lfgBtn.onclick = openPostLobbySheet;
+  const vaultBtn = document.getElementById('home-empty-vault');
+  if (vaultBtn) vaultBtn.onclick = () => {
+    labSubTab = 'vault';
+    switchTab('lab');
+  };
+}
+
+// ============================================
+// PART 4: FEED CARD RENDERERS
+// ============================================
+
+function renderHomeCard(item) {
+  switch (item.type) {
+    case 'lobby': return renderHomeLobbyCard(item);
+    case 'vault': return renderHomeVaultCard(item);
+    case 'clip': return renderHomeClipCard(item);
+    case 'leak': return renderHomeLeakCard(item);
+    default: return '';
+  }
+}
+
+function renderHomeLobbyCard(l) {
+  const isMine = l.uid === State.user.uid;
+  const playersText = `${l.players || 1}/5`;
+  return `
+    <div class="home-card bg-card border border-border rounded-2xl p-4 mb-3 fade-in" data-type="lobby" data-id="${l.id}" style="cursor: pointer;">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-black">🎮 LOBBY</span>
+        <span class="text-[10px] text-gray-500">${timeAgo(l.createdAt)}</span>
+        <div class="ml-auto text-right">
+          <div class="text-xs font-black text-primary">${playersText}</div>
+        </div>
+      </div>
+
+      <div class="flex items-start gap-3 mb-3">
+        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0">
+          ${l.avatar ? `<img src="${esc(l.avatar)}" class="w-full h-full object-cover" />` : getInitials(l.ign)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-bold text-sm">${esc(l.ign || 'Unknown')}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
+            ${l.uid === ADMIN_UID ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-gradient-to-r from-gold to-yellow-500 text-black font-black">👑</span>' : ''}
+          </div>
+          <div class="text-[10px] text-gray-500 mt-0.5">${esc(l.mode)} · ${esc(l.region)}${l.mic ? ' · 🎤' : ''}</div>
+        </div>
+      </div>
+
+      ${l.note ? `<p class="text-xs text-gray-400 mb-3 line-clamp-2">${esc(l.note)}</p>` : ''}
+
+      <div class="flex gap-2">
+        <button class="home-join-btn btn-press flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold flex items-center justify-center gap-1.5" data-id="${l.id}">
+          <i data-lucide="log-in" class="w-4 h-4"></i> Join
+        </button>
+        <button class="home-like-btn btn-press w-11 h-11 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-type="lobby" data-id="${l.id}">
+          <i data-lucide="heart" class="w-4 h-4 text-gray-400"></i>
+        </button>
+        <button class="home-share-btn btn-press w-11 h-11 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-type="lobby" data-id="${l.id}">
+          <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHomeVaultCard(v) {
+  const isSens = v.type === 'sens';
+  const isHud = v.type === 'hud';
+  const isLiked = State.likedItems?.vault?.[v.id] || false;
+
+  return `
+    <div class="home-card bg-card border border-border rounded-2xl p-4 mb-3 fade-in" data-type="vault" data-id="${v.id}" style="cursor: pointer;">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-[10px] px-2 py-1 rounded-full ${isSens ? 'bg-primary/15 text-primary' : isHud ? 'bg-gold/15 text-gold' : 'bg-primary/15 text-primary'} font-black">
+          ${isSens ? '🎯 SENS' : isHud ? '🎮 HUD' : '🔧 BUILD'}
+        </span>
+        <span class="text-[10px] text-gray-500">${timeAgo(v.createdAt)}</span>
+      </div>
+
+      <div class="flex items-start gap-3 mb-3">
+        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-hidden flex-shrink-0">
+          ${v.avatar ? `<img src="${esc(v.avatar)}" class="w-full h-full object-cover" />` : getInitials(v.ign)}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-sm">${esc(v.gunName || 'Build')}</div>
+          <div class="text-[10px] text-gray-500 mt-0.5">
+            by ${esc(v.ign || 'Unknown')}
+            ${v.approved ? ' · <span class="text-green-400">✓ Approved</span>' : ''}
+          </div>
+        </div>
+      </div>
+
+      ${v.imageUrl && !isSens ? `
+        <img src="${esc(v.imageUrl)}" class="w-full h-40 object-cover rounded-xl mb-3" loading="lazy" />
+      ` : isHud && v.imageUrl ? `
+        <img src="${esc(v.imageUrl)}" class="w-full h-40 object-cover rounded-xl mb-3" loading="lazy" />
+      ` : ''}
+
+      ${v.gunsmithCode && !isSens ? `
+        <div class="bg-cardAlt border border-border rounded-lg p-2.5 mb-3">
+          <div class="font-mono text-xs text-primary font-bold truncate">${esc(v.gunsmithCode)}</div>
+        </div>
+      ` : isSens ? `
+        <div class="text-[10px] text-gray-500 mb-3 line-clamp-2">${esc(v.gunsmithCode || '')}</div>
+      ` : ''}
+
+      <div class="flex gap-2">
+        ${v.gunsmithCode && !isSens && !isHud ? `
+          <button class="home-copy-btn btn-press flex-1 py-2.5 rounded-xl bg-primary/15 border border-primary/30 text-primary text-sm font-bold flex items-center justify-center gap-1.5" data-code="${esc(v.gunsmithCode)}">
+            <i data-lucide="copy" class="w-4 h-4"></i> Copy Code
+          </button>
+        ` : `
+          <button class="home-view-vault-btn btn-press flex-1 py-2.5 rounded-xl bg-primary/15 border border-primary/30 text-primary text-sm font-bold" data-id="${v.id}">
+            View Details
+          </button>
+        `}
+        <button class="home-like-btn btn-press w-11 h-11 rounded-xl ${isLiked ? 'bg-primary/15 border-primary/30' : 'bg-cardAlt border-border'} border flex items-center justify-center" data-type="vault" data-id="${v.id}">
+          <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'text-primary fill-current' : 'text-gray-400'}"></i>
+        </button>
+        <button class="home-share-btn btn-press w-11 h-11 rounded-xl bg-cardAlt border border-border flex items-center justify-center" data-type="vault" data-id="${v.id}">
+          <i data-lucide="share-2" class="w-4 h-4 text-primary"></i>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHomeClipCard(c) {
+  const embedUrl = getYouTubeEmbed(c.youtubeUrl);
+  const isApproved = !!c.approved;
+  const isLiked = State.likedItems?.clip?.[c.id] || false;
+  const authorName = c.submittedByIgn || c.ign || 'CODMPanda';
+
+  return `
+    <div class="home-card bg-card border border-border rounded-2xl overflow-hidden mb-3 fade-in" data-type="clip" data-id="${c.id}">
+      <div class="p-3 pb-2">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-black">🎬 CLIP</span>
+          ${isApproved ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold">✓ Approved</span>' : ''}
+          <span class="text-[10px] text-gray-500 ml-auto">${timeAgo(c.createdAt)}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
+            ${c.submittedByAvatar ? `<img src="${esc(c.submittedByAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName)}
+          </div>
+          <div class="text-xs text-gray-400">by <span class="text-white font-bold">${esc(authorName)}</span> · ${esc(c.gunTag || 'CODM')}</div>
+        </div>
+        ${c.caption ? `<p class="text-xs text-gray-300 mt-2 break-words">${esc(c.caption)}</p>` : ''}
+      </div>
+
+      ${embedUrl ? `
+        <div class="relative w-full aspect-video bg-black">
+          <iframe src="${embedUrl}" class="w-full h-full" frameborder="0" allowfullscreen loading="lazy"></iframe>
+        </div>
+      ` : `
+        <a href="${esc(c.youtubeUrl)}" target="_blank" class="block w-full aspect-video bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
+          <div class="text-center">
+            <i data-lucide="external-link" class="w-8 h-8 mx-auto text-primary mb-2"></i>
+            <div class="text-xs text-gray-400">Open link</div>
+          </div>
+        </a>
+      `}
+
+      <div class="p-3 flex items-center justify-between">
+        <button class="home-like-btn btn-press flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'}" data-type="clip" data-id="${c.id}">
+          <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i> ${c.likes || 0}
+        </button>
+        <button class="home-share-btn btn-press text-primary" data-type="clip" data-id="${c.id}">
+          <i data-lucide="share-2" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHomeLeakCard(l) {
+  const rarityColors = {
+    common: 'bg-gray-500', rare: 'bg-blue-500', epic: 'bg-purple-500',
+    legendary: 'bg-gold text-black', mythic: 'bg-red-500'
+  };
+  const authorName = l.submittedByIgn || l.authorIgn || 'CODMPanda';
+  const isLiked = State.likedItems?.leak?.[l.id] || false;
+
+  return `
+    <div class="home-card bg-card border border-border rounded-2xl overflow-hidden mb-3 fade-in" data-type="leak" data-id="${l.id}">
+      ${l.imageUrl ? `<img src="${esc(l.imageUrl)}" class="w-full h-44 object-cover" loading="lazy" />` : ''}
+      <div class="p-4">
+        <div class="flex items-center gap-2 mb-2 flex-wrap">
+          <span class="text-[10px] px-2 py-1 rounded-full bg-gold/15 text-gold font-black">🔥 LEAK</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full ${rarityColors[l.rarity] || 'bg-gray-500'} font-black uppercase">${esc(l.rarity || 'common')}</span>
+          <span class="text-[10px] text-gray-500 ml-auto">${timeAgo(l.createdAt || l.publishedAt)}</span>
+        </div>
+        <h3 class="text-base font-bold mb-2">${esc(l.title)}</h3>
+        ${l.body ? `<p class="text-xs text-gray-400 line-clamp-3 mb-3">${esc(l.body)}</p>` : ''}
+        <div class="flex items-center justify-between pt-2 border-t border-border">
+          <button class="home-like-btn btn-press flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'}" data-type="leak" data-id="${l.id}">
+            <i data-lucide="flame" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i> ${l.hypes || 0}
+          </button>
+          <button class="home-share-btn btn-press text-primary" data-type="leak" data-id="${l.id}">
+            <i data-lucide="share-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// PART 5: WIRE CARD INTERACTIONS
+// ============================================
+
+function wireHomeCards(items) {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  // Join lobby
+  feedEl.querySelectorAll('.home-join-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      joinLobby(btn.dataset.id);
+    };
+  });
+
+  // Copy code
+  feedEl.querySelectorAll('.home-copy-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      copyText(btn.dataset.code, 'Code copied!');
+    };
+  });
+
+  // View vault
+  feedEl.querySelectorAll('.home-view-vault-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      // Refresh cache to ensure vault is available
+      openVaultDetail(btn.dataset.id);
+    };
+  });
+
+  // Like
+  feedEl.querySelectorAll('.home-like-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const itemType = btn.dataset.type;
+      const itemId = btn.dataset.id;
+
+      const nowLiked = await toggleLike(itemType, itemId, itemType === 'leak' ? 'hypes' : 'likes');
+
+      State.likedItems = State.likedItems || {};
+      State.likedItems[itemType] = State.likedItems[itemType] || {};
+      State.likedItems[itemType][itemId] = nowLiked;
+
+      const icon = btn.querySelector('i');
+      if (nowLiked) {
+        icon.classList.add('fill-current', 'text-primary');
+        icon.classList.remove('text-gray-400');
+        btn.classList.add('text-primary');
+      } else {
+        icon.classList.remove('fill-current', 'text-primary');
+        icon.classList.add('text-gray-400');
+        btn.classList.remove('text-primary');
+      }
+
+      toast(nowLiked ? '❤️ Liked!' : 'Unliked', 'success', 1000);
+    };
+  });
+
+  // Share
+  feedEl.querySelectorAll('.home-share-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const type = btn.dataset.type;
+      const id = btn.dataset.id;
+      const urls = {
+        lobby: getLobbyShareUrl,
+        vault: getVaultShareUrl,
+        clip: getClipShareUrl,
+        leak: getLeakShareUrl
+      };
+      const urlFn = urls[type];
+      if (urlFn) {
+        openShareSheet({
+          title: `CODMPanda ${type}`,
+          text: `Check this out on CODMPanda!`,
+          url: urlFn(id)
+        });
+      }
+    };
+  });
+
+  // Card tap → detail
+  feedEl.querySelectorAll('.home-card').forEach(card => {
+    card.onclick = (e) => {
+      if (e.target.closest('button')) return;
+      const type = card.dataset.type;
+      const id = card.dataset.id;
+      if (type === 'vault') openVaultDetail(id);
+      else if (type === 'clip') { squadSubTab = 'clips'; switchTab('squad'); }
+      else if (type === 'leak') { intelSubTab = 'leaks'; switchTab('intel'); }
+      else if (type === 'lobby') { /* lobbies are self-contained */ }
+    };
+  });
+}
+
+window.renderHomeTab = renderHomeTab;
+window.fetchHomeFeed = fetchHomeFeed;
+window.renderHomeFeed = renderHomeFeed;
+window.HOME_FILTERS = HOME_FILTERS;
+
+console.log('✅ Chunk 48a: HOME feed core loaded');
+
+/* END OF CHUNK 48a */
+// ============================================
+// Chunk 48b: HOME Feed — Live + Polish (clean)
+// ============================================
+
+// ============================================
+// PART 1: LIVE UPDATES via onSnapshot
+// ============================================
+
+let homeLiveUnsubs = [];
+
+function startHomeLiveUpdates() {
+  stopHomeLiveUpdates();
+
+  try {
+    homeLiveUnsubs.push(onSnapshot(
+      query(collection(db, 'lobbies'), orderBy('createdAt', 'desc'), limit(20)),
+      () => { scheduleHomeRefresh(); },
+      () => {}
+    ));
+
+    homeLiveUnsubs.push(onSnapshot(
+      query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(20)),
+      () => { scheduleHomeRefresh(); },
+      () => {}
+    ));
+
+    homeLiveUnsubs.push(onSnapshot(
+      query(collection(db, 'clips'), limit(20)),
+      () => { scheduleHomeRefresh(); },
+      () => {}
+    ));
+
+    homeLiveUnsubs.push(onSnapshot(
+      query(collection(db, 'leaks'), limit(15)),
+      () => { scheduleHomeRefresh(); },
+      () => {}
+    ));
+  } catch (e) {
+    console.warn('Live updates failed:', e);
+  }
+}
+
+function stopHomeLiveUpdates() {
+  homeLiveUnsubs.forEach(unsub => {
+    try { unsub(); } catch (e) {}
+  });
+  homeLiveUnsubs = [];
+}
+
+let homeRefreshTimer = null;
+function scheduleHomeRefresh() {
+  clearTimeout(homeRefreshTimer);
+  homeRefreshTimer = setTimeout(async () => {
+    if (State.currentTab !== 'home') return;
+    await fetchHomeFeed();
+    renderHomeFeed();
+  }, 3000);
+}
+
+// ============================================
+// PART 2: PATCH renderHomeTab for live + timeout
+// ============================================
+
+const _origRenderHomeTabLive = renderHomeTab;
+renderHomeTab = async function() {
+  const content = document.getElementById('content');
+  if (!content) return;
+
+  content.innerHTML = `
+    <div class="px-4 pt-4 pb-24">
+      <div class="mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h1 class="text-2xl font-black">Home</h1>
+            <p class="text-xs text-gray-500">What's happening in CODM</p>
+          </div>
+          <button id="home-refresh-btn" class="btn-press w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center">
+            <i data-lucide="refresh-cw" class="w-4 h-4 text-gray-400"></i>
+          </button>
+        </div>
+
+        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+          ${HOME_FILTERS.map(f => `
+            <button class="chip home-filter-btn ${homeFilter === f.key ? 'active' : ''}" data-filter="${f.key}">
+              ${f.emoji} ${f.label}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div id="home-feed">
+        ${renderHomeSkeleton()}
+      </div>
+    </div>
+  `;
+
+  document.querySelectorAll('.home-filter-btn').forEach(btn => {
+    btn.onclick = () => {
+      homeFilter = btn.dataset.filter;
+      document.querySelectorAll('.home-filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderHomeFeed();
+    };
+  });
+
+  document.getElementById('home-refresh-btn').onclick = async () => {
+    homeCache.lastFetch = 0;
+    toast('Refreshing...', 'info', 1000);
+    await fetchHomeFeed();
+    renderHomeFeed();
+  };
+
+  const fetchPromise = fetchHomeFeed();
+  const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 5000));
+  const result = await Promise.race([fetchPromise, timeoutPromise]);
+
+  if (result === 'timeout') {
+    toast('Taking longer than usual...', 'warning', 2000);
+  }
+
+  renderHomeFeed();
+  startHomeLiveUpdates();
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 3: FEED STATS BAR
+// ============================================
+
+function renderHomeStats() {
+  const feed = homeCache.feed;
+  if (!feed.length) return '';
+
+  const counts = {
+    lobby: feed.filter(f => f.type === 'lobby').length,
+    vault: feed.filter(f => f.type === 'vault').length,
+    clip: feed.filter(f => f.type === 'clip').length,
+    leak: feed.filter(f => f.type === 'leak').length
+  };
+
+  return `
+    <div class="flex items-center gap-2 mb-3 text-[10px] text-gray-500">
+      <span class="px-2 py-1 rounded-full bg-card border border-border">🎮 ${counts.lobby}</span>
+      <span class="px-2 py-1 rounded-full bg-card border border-border">🔧 ${counts.vault}</span>
+      <span class="px-2 py-1 rounded-full bg-card border border-border">🎬 ${counts.clip}</span>
+      <span class="px-2 py-1 rounded-full bg-card border border-border">🔥 ${counts.leak}</span>
+    </div>
+  `;
+}
+
+// Patch renderHomeFeed to include stats
+const _origRenderHomeFeedStats = renderHomeFeed;
+renderHomeFeed = function() {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  let items = homeCache.feed.filter(i => !['gunsmith','hud','sens'].includes(i.type));
+
+  if (homeFilter !== 'all') {
+    const typeMap = {
+      lfg: 'lobby',
+      builds: 'vault',
+      clips: 'clip',
+      leaks: 'leak',
+      posts: 'post'
+    };
+    items = items.filter(i => i.type === typeMap[homeFilter]);
+  }
+
+  if (items.length === 0) {
+    feedEl.innerHTML = renderHomeEmpty();
+    wireHomeEmpty();
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  feedEl.innerHTML = renderHomeStats() + items.map(item => renderHomeCard(item)).join('');
+
+  wireHomeCards(items);
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 4: PATCH switchTab for 'home' routing
+// ============================================
+
+const _origSwitchTabHome = switchTab;
+switchTab = function(tab) {
+  State.currentTab = tab;
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const isActive = btn.dataset.tab === tab;
+    btn.classList.toggle('tab-active', isActive);
+    btn.classList.toggle('text-gray-500', !isActive);
+  });
+
+  if (State.lobbiesUnsub && tab !== 'play') { State.lobbiesUnsub(); State.lobbiesUnsub = null; }
+  if (State.vaultsUnsub && tab !== 'lab') { State.vaultsUnsub(); State.vaultsUnsub = null; }
+  if (State.camosUnsub && tab !== 'lab') { State.camosUnsub(); State.camosUnsub = null; }
+  if (State.clansUnsub && tab !== 'squad') { State.clansUnsub(); State.clansUnsub = null; }
+  if (State.scrimsUnsub && tab !== 'squad') { State.scrimsUnsub(); State.scrimsUnsub = null; }
+  if (State.clipsUnsub && tab !== 'squad') { State.clipsUnsub(); State.clipsUnsub = null; }
+  if (State.leaksUnsub && tab !== 'intel') { State.leaksUnsub(); State.leaksUnsub = null; }
+
+  // Stop home live if leaving home
+  if (tab !== 'home') stopHomeLiveUpdates();
+
+  const content = document.getElementById('content');
+  content.innerHTML = '';
+  content.scrollTop = 0;
+  window.scrollTo(0, 0);
+
+  switch (tab) {
+    case 'home': renderHomeTab(); break;
+    case 'play': renderPlayTab(); break;
+    case 'lab': renderLabTab(); break;
+    case 'squad': renderSquadTab(); break;
+    case 'intel': renderIntelTab(); break;
+    case 'you': renderYouTab(); break;
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 5: DEFAULT TO HOME ON APP LOAD
+// ============================================
+
+const _origShowMainAppHome = showMainApp;
+showMainApp = function() {
+  _origShowMainAppHome();
+  setTimeout(() => {
+    // Set HOME as default tab
+    switchTab('home');
+  }, 300);
+};
+
+// ============================================
+// PART 6: PATCH openVaultDetail to fetch if not cached
+// ============================================
+
+const _origOpenVaultDetailHome = openVaultDetail;
+openVaultDetail = async function(vaultId) {
+  let vault = State.cache.vaults?.find(v => v.id === vaultId);
+  if (!vault) {
+    try {
+      const snap = await getDoc(doc(db, 'vaults', vaultId));
+      if (snap.exists()) {
+        vault = { id: snap.id, ...snap.data() };
+        State.cache.vaults = State.cache.vaults || [];
+        State.cache.vaults.unshift(vault);
+      }
+    } catch (e) {}
+  }
+  return _origOpenVaultDetailHome(vaultId);
+};
+
+// ============================================
+// PART 7: CLEANUP
+// ============================================
+
+const _origHandleSignOutHome = handleSignOut;
+handleSignOut = function() {
+  stopHomeLiveUpdates();
+  return _origHandleSignOutHome();
+};
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopHomeLiveUpdates();
+  } else if (State.currentTab === 'home' && State.user) {
+    startHomeLiveUpdates();
+  }
+});
+
+window.startHomeLiveUpdates = startHomeLiveUpdates;
+window.stopHomeLiveUpdates = stopHomeLiveUpdates;
+
+console.log('✅ Chunk 48b: HOME feed live updates loaded');
+
+/* END OF CHUNK 48b */
+// ============================================
+// Chunk 49: Fix 3 Bugs (Sens view + Stat pills + Instant likes)
+// ============================================
+
+// ============================================
+// PART 1: FIX SENSITIVITY DETAIL VIEW
+// ============================================
+
+const _origOpenVaultDetailFix = openVaultDetail;
+openVaultDetail = function(vaultId) {
+  const vault = State.cache.vaults.find(v => v.id === vaultId);
+  if (!vault) {
+    // Try fetching from Firestore
+    getDoc(doc(db, 'vaults', vaultId)).then(snap => {
+      if (snap.exists()) {
+        const fetched = { id: snap.id, ...snap.data() };
+        State.cache.vaults = State.cache.vaults || [];
+        State.cache.vaults.unshift(fetched);
+        _origOpenVaultDetailFix(vaultId);
+      } else {
+        toast('Item not found', 'error');
+      }
+    }).catch(() => toast('Failed to load', 'error'));
+    return;
+  }
+  return _origOpenVaultDetailFix(vaultId);
+};
+
+// ============================================
+// PART 2: REMOVE STAT PILLS FROM HOME
+// ============================================
+
+renderHomeStats = function() {
+  return ''; // Empty — remove the 4 pills
+};
+
+// Patch renderHomeFeed to not use stat pills
+const _origRenderHomeFeedPills = renderHomeFeed;
+renderHomeFeed = function() {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  let items = homeCache.feed;
+
+  if (homeFilter !== 'all') {
+    const typeMap = {
+      lfg: 'lobby',
+      builds: 'vault',
+      clips: 'clip',
+      leaks: 'leak'
+    };
+    items = items.filter(i => i.type === typeMap[homeFilter]);
+  }
+
+  if (items.length === 0) {
+    feedEl.innerHTML = renderHomeEmpty();
+    wireHomeEmpty();
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  // No more stats bar — just cards
+  feedEl.innerHTML = items.map(item => renderHomeCard(item)).join('');
+
+  wireHomeCards(items);
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 3: INSTANT HEART FILL (Optimistic UI)
+// ============================================
+
+// Patch wireHomeCards for instant feedback
+const _origWireHomeCardsInstant = wireHomeCards;
+wireHomeCards = function(items) {
+  const feedEl = document.getElementById('home-feed');
+  if (!feedEl) return;
+
+  // Join lobby
+  feedEl.querySelectorAll('.home-join-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); joinLobby(btn.dataset.id); };
+  });
+
+  // Copy
+  feedEl.querySelectorAll('.home-copy-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); copyText(btn.dataset.code, 'Code copied!'); };
+  });
+
+  // View vault
+  feedEl.querySelectorAll('.home-view-vault-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); openVaultDetail(btn.dataset.id); };
+  });
+
+  // LIKE — instant optimistic UI
+  feedEl.querySelectorAll('.home-like-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const itemType = btn.dataset.type;
+      const itemId = btn.dataset.id;
+
+      // OPTIMISTIC — flip UI instantly
+      State.likedItems = State.likedItems || {};
+      State.likedItems[itemType] = State.likedItems[itemType] || {};
+      const wasLiked = State.likedItems[itemType][itemId] || false;
+      const nowLiked = !wasLiked;
+      State.likedItems[itemType][itemId] = nowLiked;
+
+      // Update button appearance IMMEDIATELY
+      const icon = btn.querySelector('i');
+      // Get current count from the button text
+      const currentText = btn.textContent.trim();
+      const currentCount = parseInt(currentText.replace(/[^0-9]/g, '')) || 0;
+      const newCount = nowLiked ? currentCount + 1 : Math.max(0, currentCount - 1);
+
+      // Rebuild button contents
+      const iconName = itemType === 'leak' ? 'flame' : 'heart';
+      btn.innerHTML = `<i data-lucide="${iconName}" class="w-4 h-4 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+      btn.classList.toggle('text-primary', nowLiked);
+      btn.classList.toggle('text-gray-400', !nowLiked);
+      if (window.lucide) window.lucide.createIcons();
+
+      // Then sync to Firestore in background
+      try {
+        await toggleLike(itemType, itemId, itemType === 'leak' ? 'hypes' : 'likes');
+      } catch (err) {
+        // Revert on failure
+        State.likedItems[itemType][itemId] = wasLiked;
+        btn.innerHTML = `<i data-lucide="${iconName}" class="w-4 h-4 ${wasLiked ? 'fill-current' : ''}"></i> ${currentCount}`;
+        btn.classList.toggle('text-primary', wasLiked);
+        btn.classList.toggle('text-gray-400', !wasLiked);
+        if (window.lucide) window.lucide.createIcons();
+        toast('Failed to update like', 'error');
+      }
+    };
+  });
+
+  // SHARE
+  feedEl.querySelectorAll('.home-share-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const type = btn.dataset.type;
+      const id = btn.dataset.id;
+      const urls = {
+        lobby: getLobbyShareUrl,
+        vault: getVaultShareUrl,
+        clip: getClipShareUrl,
+        leak: getLeakShareUrl
+      };
+      const urlFn = urls[type];
+      if (urlFn) {
+        openShareSheet({
+          title: `CODMPanda ${type}`,
+          text: `Check this out on CODMPanda!`,
+          url: urlFn(id)
+        });
+      }
+    };
+  });
+
+  // Card tap
+  feedEl.querySelectorAll('.home-card').forEach(card => {
+    card.onclick = (e) => {
+      if (e.target.closest('button')) return;
+      const type = card.dataset.type;
+      const id = card.dataset.id;
+      if (type === 'vault') openVaultDetail(id);
+      else if (type === 'clip') { squadSubTab = 'clips'; switchTab('squad'); }
+      else if (type === 'leak') { intelSubTab = 'leaks'; switchTab('intel'); }
+    };
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+};
+
+// ============================================
+// PART 4: PATCH VAULT RENDER FOR INSTANT LIKES
+// ============================================
+
+const _origRenderVaultsInstantLike = renderVaults;
+renderVaults = function() {
+  _origRenderVaultsInstantLike();
+
+  // Re-wire like buttons with instant feedback
+  setTimeout(() => {
+    const feed = document.getElementById('vault-feed');
+    if (!feed) return;
+
+    feed.querySelectorAll('.like-btn').forEach(btn => {
+      const oldOnclick = btn.onclick;
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const vaultId = btn.dataset.id;
+        const vault = State.cache.vaults.find(v => v.id === vaultId);
+        if (!vault) return;
+
+        // Optimistic
+        const wasLiked = State.likedItems?.vault?.[vaultId] || false;
+        const nowLiked = !wasLiked;
+
+        State.likedItems = State.likedItems || {};
+        State.likedItems.vault = State.likedItems.vault || {};
+        State.likedItems.vault[vaultId] = nowLiked;
+
+        const newCount = nowLiked ? (vault.likes || 0) + 1 : Math.max(0, (vault.likes || 0) - 1);
+        btn.innerHTML = `<i data-lucide="heart" class="w-3.5 h-3.5 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+        btn.classList.toggle('text-primary', nowLiked);
+        btn.classList.toggle('text-gray-400', !nowLiked);
+        if (window.lucide) window.lucide.createIcons();
+
+        // Sync
+        try {
+          await toggleLike('vault', vaultId, 'likes');
+          vault.likes = newCount;
+        } catch (err) {
+          State.likedItems.vault[vaultId] = wasLiked;
+          toast('Failed to like', 'error');
+        }
+      };
+    });
+
+    feed.querySelectorAll('.like-clip').forEach(btn => {
+      btn.onclick = async () => {
+        const clipId = btn.dataset.id;
+        const clip = State.cache.clips.find(c => c.id === clipId);
+        if (!clip) return;
+
+        const wasLiked = State.likedItems?.clip?.[clipId] || false;
+        const nowLiked = !wasLiked;
+
+        State.likedItems = State.likedItems || {};
+        State.likedItems.clip = State.likedItems.clip || {};
+        State.likedItems.clip[clipId] = nowLiked;
+
+        const newCount = nowLiked ? (clip.likes || 0) + 1 : Math.max(0, (clip.likes || 0) - 1);
+        btn.innerHTML = `<i data-lucide="heart" class="w-4 h-4 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+        btn.classList.toggle('text-primary', nowLiked);
+        btn.classList.toggle('text-gray-400', !nowLiked);
+        if (window.lucide) window.lucide.createIcons();
+
+        try {
+          await toggleLike('clip', clipId, 'likes');
+          clip.likes = newCount;
+        } catch (err) {
+          State.likedItems.clip[clipId] = wasLiked;
+          toast('Failed to like', 'error');
+        }
+      };
+    });
+
+    feed.querySelectorAll('.hype-leak').forEach(btn => {
+      btn.onclick = async () => {
+        const leakId = btn.dataset.id;
+        const leak = State.cache.leaks.find(l => l.id === leakId);
+        if (!leak) return;
+
+        const wasLiked = State.likedItems?.leak?.[leakId] || false;
+        const nowLiked = !wasLiked;
+
+        State.likedItems = State.likedItems || {};
+        State.likedItems.leak = State.likedItems.leak || {};
+        State.likedItems.leak[leakId] = nowLiked;
+
+        const newCount = nowLiked ? (leak.hypes || 0) + 1 : Math.max(0, (leak.hypes || 0) - 1);
+        btn.innerHTML = `<i data-lucide="flame" class="w-4 h-4 ${nowLiked ? 'fill-current' : ''}"></i> ${newCount}`;
+        btn.classList.toggle('text-primary', nowLiked);
+        btn.classList.toggle('text-gray-400', !nowLiked);
+        if (window.lucide) window.lucide.createIcons();
+
+        try {
+          await toggleLike('leak', leakId, 'hypes');
+          leak.hypes = newCount;
+        } catch (err) {
+          State.likedItems.leak[leakId] = wasLiked;
+          toast('Failed to like', 'error');
+        }
+      };
+    });
+  }, 200);
+};
+
+console.log('✅ Chunk 49: 3 bug fixes loaded');
+
+/* END OF CHUNK 49 */
+// ============================================
+// Chunk 49.5: Restore Missing Constants
+// ============================================
+
+// Sensitivity fields — real CODM settings
+var SENS_FIELDS = [
+  { key: 'standard', label: 'Standard (Hip-Fire)', placeholder: 'e.g. 120' },
+  { key: 'ads', label: 'ADS (Iron Sight)', placeholder: 'e.g. 130' },
+  { key: 'ads2x', label: 'ADS 2x Scope', placeholder: 'e.g. 120' },
+  { key: 'ads3x', label: 'ADS 3x Scope', placeholder: 'e.g. 120' },
+  { key: 'ads4x', label: 'ADS 4x Scope', placeholder: 'e.g. 100' },
+  { key: 'ads6x', label: 'ADS 6x Scope', placeholder: 'e.g. 100' },
+  { key: 'sniper', label: 'Sniper Scope', placeholder: 'e.g. 120' },
+  { key: 'gyro', label: 'Gyroscope', placeholder: 'e.g. 300 (0 = off)' }
+];
+
+// HUD control styles
+var HUD_STYLES = ['2-Finger', '3-Fi
