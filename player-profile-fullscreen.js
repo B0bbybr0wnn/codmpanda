@@ -26,12 +26,8 @@
   function closeProfile() {
     const container = getContainer();
     if (container && !container.classList.contains('hidden')) {
-      try {
-        if (typeof window.closeSheet === 'function') window.closeSheet();
-      } catch (_) {}
-      // Do not let a broken closeSheet implementation leave a transparent,
-      // full-screen layer intercepting every tap in the app.
-      if (!container.classList.contains('hidden')) {
+      if (typeof window.closeSheet === 'function') window.closeSheet();
+      else {
         container.classList.add('hidden');
         container.innerHTML = '';
       }
@@ -108,8 +104,7 @@
     const text = (sheet.innerText || '').slice(0, 900);
     const profileSignals = /Add Friend|Remove Friend|Invite to Lobby|Friend Request/i.test(text);
     const hasProfileTitle = /Profile/i.test(text);
-    const isLoadingProfile = !!sheet.querySelector('.spinner') && hasProfileTitle;
-    return !!uid && hasProfileTitle && (profileSignals || isLoadingProfile);
+    return !!uid && profileSignals && hasProfileTitle;
   }
 
   function promoteToFullscreen(uid) {
@@ -137,51 +132,12 @@
     addStyles();
 
     const wrapped = async function(uid) {
-      // Clear stale profile styling, then make the loading state dismissible too.
+      // A new navigation may replace the current sheet; remove stale fullscreen
+      // classes first so a missing user or another sheet cannot get stuck fullscreen.
       clearProfileMode();
-      const container = getContainer();
-      const resultPromise = original.apply(this, arguments);
-      // openUserProfile renders its loading sheet before its first Firestore await.
-      // Promote that sheet immediately so a slow/offline request never traps the user.
-      let attempts = 0;
-      const promoteTimer = setInterval(() => {
-        attempts++;
-        promoteToFullscreen(uid);
-        if ((container && container.classList.contains('hidden')) || attempts >= 80 ||
-            (container && container.querySelector('.cp-player-profile-fullscreen') &&
-             !container.querySelector('.spinner'))) {
-          clearInterval(promoteTimer);
-        }
-      }, 100);
-      try {
-        const result = await resultPromise;
-        promoteToFullscreen(uid);
-        // The legacy profile loader can return early on a missing user or swallow
-        // a Firestore error while leaving its spinner in the sheet. Never leave
-        // that dead-end view open after the loader has settled.
-        setTimeout(() => {
-          const active = getContainer();
-          if (!active || active.classList.contains('hidden')) return;
-          const sheet = active.querySelector('.sheet');
-          if (sheet && sheet.querySelector('.spinner')) {
-            closeProfile();
-            if (typeof window.toast === 'function') window.toast('Could not load that player profile. Please try again.', 'error');
-          }
-        }, 250);
-        return result;
-      } catch (error) {
-        const active = getContainer();
-        if (active && !active.classList.contains('hidden')) {
-          closeProfile();
-          if (typeof window.toast === 'function') window.toast('Could not load that player profile. Please try again.', 'error');
-        }
-        throw error;
-      } finally {
-        clearTimeout(stuckProfileTimer);
-        // Keep polling briefly after completion in case a later profile wrapper
-        // finishes injecting the final profile markup.
-        setTimeout(() => clearInterval(promoteTimer), 1000);
-      }
+      const result = await original.apply(this, arguments);
+      promoteToFullscreen(uid);
+      return result;
     };
     wrapped.__cpFullscreenWrapped = true;
     window.openUserProfile = wrapped;
@@ -196,21 +152,6 @@
       });
       observer.observe(container, { attributes: true, attributeFilter: ['class'], childList: true, subtree: true });
       container.__cpProfileObserver = observer;
-    }
-
-    if (!window.__cpProfileBackBound) {
-      window.__cpProfileBackBound = true;
-      // Run before the app's generic popstate handlers. Those handlers otherwise
-      // close the sheet and then immediately navigate to another tab in the same
-      // event, which makes profile navigation feel stuck or unpredictable.
-      window.addEventListener('popstate', event => {
-        const activeContainer = getContainer();
-        if (!activeContainer || !activeContainer.classList.contains(OPEN_CLASS)) return;
-        event.stopImmediatePropagation();
-        event.preventDefault();
-        closeProfile();
-        try { history.pushState({ __codm: true }, ''); } catch (_) {}
-      }, true);
     }
 
     if (!window.__cpProfileEscapeBound) {
