@@ -258,7 +258,10 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const notificationCard = content.querySelector("#notif-toggle")?.closest(".bg-card") || null;
     const proCard = content.querySelector("#unlock-pro-btn")?.closest(".bg-gradient-to-br") || null;
 
-    const settingSections = ["Settings", "Support", "Admin Panel", "Danger Zone"]
+    // The Settings page already has its own page title. Keep the legacy
+    // Settings options, but remove the inner legacy "Settings" card heading.
+    const settingsRoot = elementWithHeader(content, "Settings");
+    const settingSections = ["Support", "Admin Panel", "Danger Zone"]
       .map(title => elementWithHeader(content, title))
       .filter((node, index, list) => node && list.indexOf(node) === index);
 
@@ -272,10 +275,13 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     // it is replaced, but never carry its old Profile/Settings navigation wrapper.
     const excludedRoots = [profileCard, activity, themeFrames, statsGrid, achievements, tournamentBadges]
       .filter(Boolean);
-    const knownSettingsRoots = [...settingsNodes, contributor].filter(Boolean);
+    const knownSettingsRoots = [...settingsNodes, settingsRoot, contributor, proCard].filter(Boolean);
     const extraSettingsCandidates = [...content.querySelectorAll(".bg-card, .bg-gradient-to-br")]
       .filter(card => {
         if (excludedRoots.some(root => root === card || root.contains(card) || card.contains(root))) return false;
+        // Never classify the Upgrade to Pro promotion (or its wrapper) as a setting.
+        if (proCard && (card === proCard || card.contains(proCard) || proCard.contains(card))) return false;
+        if (settingsRoot && (card === settingsRoot || card.contains(settingsRoot) || settingsRoot.contains(card))) return false;
         if (knownSettingsRoots.some(root => root === card || root.contains(card) || card.contains(root))) return false;
         if (card.querySelector("#cp-open-profile, #cp-open-settings, [data-cp-profile-tab], #cp-you-home-menu")) return false;
         const text = (card.innerText || card.textContent || "").toLowerCase();
@@ -429,8 +435,18 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
 
     // Contributor is an account/settings option, not a community achievement.
     if (contributor && !settingsNodes.includes(contributor)) settingsNodes.push(contributor);
+    // Show the original Settings controls directly under the page title, without
+    // nesting a second card titled "Settings" inside the Settings page.
+    if (settingsRoot) {
+      const legacySettingsHeading = [...settingsRoot.querySelectorAll(".uppercase")]
+        .find(el => el.textContent.trim().toLowerCase() === "settings");
+      if (legacySettingsHeading) legacySettingsHeading.remove();
+      settingsRoot.classList.remove("bg-card", "border", "border-border", "rounded-2xl", "p-4", "mb-3");
+      settingsBody.appendChild(settingsRoot);
+    }
+
     [...settingsNodes, ...extraSettingsCards]
-      .filter((node, index, list) => node && list.indexOf(node) === index)
+      .filter((node, index, list) => node && list.indexOf(node) === index && node !== settingsRoot && node !== proCard)
       .forEach(node => settingsBody.appendChild(node));
 
     // Recover settings controls that are rendered as rows or plain wrappers,
@@ -473,7 +489,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
       });
       const text = (root.innerText || root.textContent || "").toLowerCase();
       const hasAction = !!root.querySelector("button, a, input, select, [role='button']");
-      if (hasAction && /account|setting|support|report|bug|notification|sign out|signout|log out|logout|privacy|terms|contributor|admin|delete account|feedback|help|upgrade|pro/.test(text)) {
+      if (hasAction && /account|setting|support|report|bug|notification|sign out|signout|log out|logout|privacy|terms|contributor|admin|delete account|feedback|help/.test(text)) {
         settingsBody.appendChild(root);
       }
     });
