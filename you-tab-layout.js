@@ -287,9 +287,12 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const proCard = content.querySelector("#unlock-pro-btn")?.closest(".bg-gradient-to-br") || null;
     if (proCard && userHasProAccess()) proCard.remove();
 
-    // The Settings page already has its own page title. Keep the legacy
-    // Settings options, but remove the inner legacy "Settings" card heading.
+    // Remove the redundant legacy "Settings" card from inside the Settings tab.
+    // The Settings tab itself is the only Settings section; other independent
+    // settings cards (notifications, Support, Admin Panel, Danger Zone, etc.)
+    // are handled separately below.
     const settingsRoot = elementWithHeader(content, "Settings");
+    if (settingsRoot) settingsRoot.remove();
     const settingSections = ["Support", "Admin Panel", "Danger Zone"]
       .map(title => elementWithHeader(content, title))
       .filter((node, index, list) => node && list.indexOf(node) === index);
@@ -411,14 +414,6 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     settingsBody.className = "space-y-3";
     settingsPage.appendChild(settingsBody);
 
-    // Remove the redundant inner "Settings" heading only. Keep the original
-    // settings options/card contents inside the single Settings tab.
-    if (settingsRoot) {
-      const innerSettingsHeading = [...settingsRoot.querySelectorAll(".uppercase")]
-        .find(el => el.textContent.trim().toLowerCase() === "settings");
-      if (innerSettingsHeading) innerSettingsHeading.remove();
-    }
-
     // Move, rather than clone, existing controls so their click handlers continue to work.
     if (activity) activityPane.appendChild(activity);
     else {
@@ -452,12 +447,10 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
 
     // Contributor is an account/settings option, not a community achievement.
     if (contributor && !settingsNodes.includes(contributor)) settingsNodes.push(contributor);
-    // Put the notification toggle first, followed by the original dark Settings
-    // card and the existing Support/Admin/Danger Zone sections. Keep their
-    // original markup and event handlers intact.
+    // Keep the notification toggle and independent Support/Admin/Danger Zone
+    // sections. The redundant legacy Settings card has been removed above.
     const orderedSettingsNodes = [
       notificationCard,
-      settingsRoot,
       ...settingSections,
       contributor,
       ...extraSettingsCards
