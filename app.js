@@ -28784,3 +28784,140 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
   });
   console.log('[CODMPanda] Full-screen public profile pages ready');
 })();
+
+
+/* Preserve existing profile actions in the new full-page layout without adding follow functionality. */
+(function cpPublicProfileActionsV1() {
+  if (window.__cpPublicProfileActionsV1) return;
+  window.__cpPublicProfileActionsV1 = true;
+  let running = false;
+
+  async function renderActions() {
+    const root = document.getElementById('cp-public-profile-page');
+    const data = root?.__cpPPData;
+    if (!root || !data || data.restricted || !data.user || !State.user) return;
+    const uid = String(data.uid || '');
+    if (!uid) return;
+    if (root.__cpPPActionUid === uid && root.querySelector('#cp-pp-actions')) return;
+    root.querySelector('#cp-pp-actions')?.remove();
+    root.__cpPPActionUid = uid;
+    const card = root.querySelector('#cp-pp-body > section:first-child');
+    if (!card) return;
+
+    const row = document.createElement('section');
+    row.id = 'cp-pp-actions';
+    row.className = 'grid gap-2 mb-3';
+    row.style.gridTemplateColumns = uid === State.user.uid ? '1fr 1fr' : '1fr';
+    if (uid === State.user.uid) {
+      row.innerHTML =
+        '<button type="button" data-cp-pp-action="edit" class="btn-press py-3 rounded-xl bg-primary font-black text-sm text-white">Edit Profile</button>' +
+        '<button type="button" data-cp-pp-action="post" class="btn-press py-3 rounded-xl bg-cardAlt border border-border font-bold text-sm">＋ Share a Post</button>';
+      card.insertAdjacentElement('afterend', row);
+      return;
+    }
+
+    const target = data.user;
+    let mine = State.profile || {};
+    try {
+      const mySnap = await getDoc(doc(db, 'users', State.user.uid));
+      if (mySnap.exists()) mine = mySnap.data();
+    } catch (_) {}
+    if (!root.isConnected || root.dataset.uid !== uid || root.__cpPPActionUid !== uid) return;
+
+    const friends = Array.isArray(mine.friends) ? mine.friends : [];
+    const sent = Array.isArray(mine.friendRequestsSent) ? mine.friendRequestsSent : [];
+    const received = Array.isArray(mine.friendRequests) ? mine.friendRequests : [];
+    const isFriend = friends.includes(uid);
+    const reqSent = sent.includes(uid);
+    const reqReceived = received.includes(uid);
+
+    let primary = '';
+    if (isFriend) {
+      primary = '<button type="button" data-cp-pp-action="remove-friend" class="btn-press py-3 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 font-bold text-sm">Remove Friend</button>';
+    } else if (reqReceived) {
+      primary = '<button type="button" data-cp-pp-action="accept-friend" class="btn-press py-3 rounded-xl bg-green-500 text-white font-bold text-sm">✓ Accept Friend Request</button>';
+    } else if (reqSent) {
+      primary = '<div class="py-3 rounded-xl border border-yellow-500/20 bg-yellow-500/5 text-yellow-400 text-center text-xs font-bold">⏳ Friend request pending</div>';
+    } else {
+      primary = '<button type="button" data-cp-pp-action="add-friend" class="btn-press py-3 rounded-xl bg-primary font-bold text-sm text-white">＋ Add Friend</button>';
+    }
+    row.style.gridTemplateColumns = '1fr';
+    row.innerHTML = primary;
+    card.insertAdjacentElement('afterend', row);
+  }
+
+  async function handleAction(event) {
+    const target = event.target instanceof Element ? event.target.closest('[data-cp-pp-action]') : null;
+    if (!target) return;
+    const root = document.getElementById('cp-public-profile-page');
+    const data = root?.__cpPPData;
+    if (!root || !data || data.restricted) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const action = target.dataset.cpPpAction;
+    const uid = String(data.uid || '');
+    if (action === 'edit') {
+      if (typeof openEditProfileSheet === 'function') openEditProfileSheet();
+      else toast('Profile editing is available from the YOU tab', 'info');
+      return;
+    }
+    if (action === 'post') {
+      if (typeof openWritePostSheet === 'function') openWritePostSheet();
+      else toast('Post creation is available from the Home tab', 'info');
+      return;
+    }
+    if (!uid || uid === State.user?.uid) return;
+    if (action === 'add-friend') {
+      if (typeof sendFriendRequest !== 'function') return;
+      await sendFriendRequest(uid, data.user.ign || data.user.displayName || 'Player');
+      root.__cpPPActionUid = '';
+      setTimeout(renderActions, 300);
+      return;
+    }
+    if (action === 'accept-friend') {
+      try {
+        await updateDoc(doc(db, 'users', State.user.uid), {
+          friends: arrayUnion(uid),
+          friendRequests: arrayRemove(uid)
+        });
+        await updateDoc(doc(db, 'users', uid), {
+          friends: arrayUnion(State.user.uid),
+          friendRequestsSent: arrayRemove(State.user.uid)
+        });
+        toast('Friend added!', 'success');
+        root.__cpPPActionUid = '';
+        setTimeout(renderActions, 300);
+      } catch (error) {
+        console.warn('[CODMPanda] Accept friend request failed', error);
+        toast('Could not accept friend request', 'error');
+      }
+      return;
+    }
+    if (action === 'remove-friend') {
+      confirmDialog('Remove Friend', 'Remove ' + (data.user.ign || 'this player') + '?', async function() {
+        try {
+          await updateDoc(doc(db, 'users', State.user.uid), { friends: arrayRemove(uid) });
+          await updateDoc(doc(db, 'users', uid), { friends: arrayRemove(State.user.uid) });
+          toast('Friend removed', 'success');
+          root.__cpPPActionUid = '';
+          setTimeout(renderActions, 300);
+        } catch (error) {
+          console.warn('[CODMPanda] Remove friend failed', error);
+          toast('Could not remove friend', 'error');
+        }
+      }, 'Remove', true);
+    }
+  }
+
+  document.addEventListener('click', handleAction);
+  const observer = new MutationObserver(function(records) {
+    if (running || !records.some(record => record.addedNodes?.length || record.type === 'attributes')) return;
+    running = true;
+    setTimeout(function() {
+      running = false;
+      renderActions().catch(error => console.warn('[CODMPanda] Profile actions failed', error));
+    }, 80);
+  });
+  observer.observe(document.documentElement, { childList:true, subtree:true });
+  setTimeout(() => renderActions().catch(()=>{}), 500);
+})();
