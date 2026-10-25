@@ -267,6 +267,24 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     const settingsNodes = [...settingSections, notificationCard, proCard]
       .filter((node, index, list) => node && list.indexOf(node) === index);
 
+    // Collect additional real settings cards from the legacy YOU markup before
+    // it is replaced, but never carry its old Profile/Settings navigation wrapper.
+    const excludedRoots = [profileCard, activity, themeFrames, statsGrid, achievements, tournamentBadges]
+      .filter(Boolean);
+    const knownSettingsRoots = [...settingsNodes, contributor].filter(Boolean);
+    const extraSettingsCards = [...content.querySelectorAll(".bg-card, .bg-gradient-to-br")]
+      .filter(card => {
+        if (excludedRoots.some(root => root === card || root.contains(card) || card.contains(root))) return false;
+        if (knownSettingsRoots.some(root => root === card || root.contains(card) || card.contains(root))) return false;
+        if (card.querySelector("#cp-open-profile, #cp-open-settings, [data-cp-profile-tab], #cp-you-home-menu")) return false;
+        const text = (card.innerText || card.textContent || "").toLowerCase();
+        const hasAction = !!card.querySelector("button, a, input, select, [role='button']");
+        return hasAction && /account|setting|support|report|bug|notification|sign out|signout|log out|logout|privacy|terms|contributor|go pro|admin|delete account|feedback|help/.test(text);
+      })
+      .filter(card => ![...card.querySelectorAll(".bg-card, .bg-gradient-to-br")].some(child =>
+        child !== card && (child.innerText || child.textContent || "").toLowerCase().match(/account|setting|support|report|bug|notification|sign out|signout|log out|logout|privacy|terms|contributor|go pro|admin|delete account|feedback|help/)
+      ));
+
     const app = document.createElement("div");
     app.id = "cp-you-app";
     app.className = "px-4 pt-3 pb-24";
@@ -401,7 +419,9 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
 
     // Contributor is an account/settings option, not a community achievement.
     if (contributor && !settingsNodes.includes(contributor)) settingsNodes.push(contributor);
-    settingsNodes.forEach(node => settingsBody.appendChild(node));
+    [...settingsNodes, ...extraSettingsCards]
+      .filter((node, index, list) => node && list.indexOf(node) === index)
+      .forEach(node => settingsBody.appendChild(node));
 
     // Do not move the old YOU-page wrapper into Settings: it contains its own
     // legacy Profile/Settings navigation and creates a second nested menu.
@@ -422,7 +442,7 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
     layoutTimer = setTimeout(() => {
       if (!isYouTab()) return;
       if (!document.getElementById("cp-you-app")) buildLayout();
-    }, 850);
+    }, 450);
   }
 
   // Observe the actual tab content: the app has several legacy wrappers/injectors.
