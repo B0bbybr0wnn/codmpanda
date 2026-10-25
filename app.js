@@ -28206,7 +28206,7 @@ function __cpYouMillisV2(value) {
 
 function __cpYouProfileCardV2(p, uid, detail) {
   const isPro = !!p.isPro;
-  const themes = window.PROFILE_THEMES || {};
+  const themes = PROFILE_THEMES || {};
   const theme = themes[p.themeStyle || 'dark'] || themes.dark;
   const themeStyle = theme && theme !== themes.dark
     ? 'style="background:' + theme.gradient + ';border-color:' + theme.border + ';box-shadow:' + theme.glow + '"'
@@ -28216,9 +28216,7 @@ function __cpYouProfileCardV2(p, uid, detail) {
   const copyId = detail ? 'you-profile-copy-uid-btn' : 'you-overview-copy-uid-btn';
   return '<section id="' + cardId + '" class="bg-card border ' + (isPro ? 'border-gold glow-gold' : 'border-border') + ' rounded-2xl p-4 mb-4" ' + themeStyle + '>' +
     '<div class="flex items-center gap-3 mb-3">' +
-      '<div class="relative flex-shrink-0"><div data-uid="' + esc(uid) + '" class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-2xl overflow-hidden">' +
-        (p.avatar ? '<img src="' + esc(p.avatar) + '" alt="" class="w-full h-full object-cover" />' : getInitials(p.ign || '?')) +
-      '</div></div>' +
+      '<div data-uid="' + esc(uid) + '" class="relative flex-shrink-0 w-16 h-16 flex items-center justify-center">' + getAvatarWithFrame(p.avatar || '', p.ign || '?', 64) + '</div>' +
       '<div class="flex-1 min-w-0"><div class="flex items-center gap-2 flex-wrap">' +
         '<span data-uid="' + esc(uid) + '" class="text-base font-black truncate">' + esc(p.ign || 'Set IGN') + '</span>' +
         (isPro ? '<span class="text-[9px] px-2 py-0.5 rounded-full bg-gold text-black font-black">PRO</span>' : '') +
