@@ -433,9 +433,50 @@ import { getFirestore, collection, getDocs, query, where, limit } from "https://
       .filter((node, index, list) => node && list.indexOf(node) === index)
       .forEach(node => settingsBody.appendChild(node));
 
-    // Do not append the legacy YOU wrapper here: it contains the old nested
-    // Profile/Settings navigation. Settings options are collected above as their
-    // original settings sections/cards, avoiding a second Settings menu.
+    // Recover settings controls that are rendered as rows or plain wrappers,
+    // not as standalone .bg-card elements. Move the original DOM nodes so their
+    // existing listeners/state survive; never copy the legacy navigation menu or
+    // the Pro promotion into Settings.
+    const alreadyMoved = new Set([
+      app, profileCard, activity, themeFrames, statsGrid, achievements,
+      tournamentBadges, contributor, notificationCard, proCard,
+      ...settingsNodes, ...extraSettingsCards
+    ].filter(Boolean));
+    const excludedIds = [
+      "#activity-stats-card", "#theme-frame-buttons", "#tournament-badge-card",
+      "#cp-v4-achievements", "#contributor-card-injected", "#unlock-pro-btn",
+      "#edit-profile-btn", "#cp-open-profile", "#cp-open-settings",
+      "#cp-you-home-menu", "[data-cp-profile-tab]"
+    ].join(",");
+    const legacyRoots = [...content.children].filter(root =>
+      root !== app && !alreadyMoved.has(root) &&
+      ![...alreadyMoved].some(moved => moved && root.contains(moved))
+    );
+    legacyRoots.forEach(root => {
+      // Remove only known profile/promotion/navigation elements from the legacy
+      // wrapper. Leave account, support, reporting, notifications, admin and
+      // sign-out controls untouched.
+      root.querySelectorAll(excludedIds).forEach(found => {
+        if (found.id === "unlock-pro-btn") {
+          const promo = found.closest(".bg-gradient-to-br") || found;
+          if (promo.parentNode) promo.remove();
+          return;
+        }
+        if (found.matches("#cp-open-profile, #cp-open-settings, #cp-you-home-menu")) {
+          const nav = found.closest("#cp-you-home-menu") || found.parentElement;
+          if (nav && nav !== root && nav.parentNode) nav.remove();
+          else if (nav === root) [...root.querySelectorAll("#cp-open-profile, #cp-open-settings")].forEach(button => button.remove());
+          return;
+        }
+        const removable = found.closest(".bg-card, .bg-gradient-to-br") || found;
+        if (removable !== root && removable.parentNode) removable.remove();
+      });
+      const text = (root.innerText || root.textContent || "").toLowerCase();
+      const hasAction = !!root.querySelector("button, a, input, select, [role='button']");
+      if (hasAction && /account|setting|support|report|bug|notification|sign out|signout|log out|logout|privacy|terms|contributor|admin|delete account|feedback|help|upgrade|pro/.test(text)) {
+        settingsBody.appendChild(root);
+      }
+    });
 
     // Preserve the old theme/frame button's event listeners if it was injected already.
     // Replace the old page only after all unhandled sections have been carried forward.
