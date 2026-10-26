@@ -11077,12 +11077,46 @@ async function openUserProfile(uid) {
       </div>
     `;
 
-    // Wire actions
+    // Wire profile Add Friend to the same request sender used by the
+    // working You > Friends > Search flow. Keep the profile open on failure so
+    // the user can see the error and retry; show Pending immediately on success.
     const addBtn = document.getElementById('up-add-friend');
-    if (addBtn) addBtn.onclick = async () => {
-      await sendFriendRequest(uid, u.ign);
-      closeSheet();
-    };
+    if (addBtn) {
+      addBtn.type = 'button';
+      addBtn.onclick = async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (addBtn.dataset.sending === '1') return;
+
+        const sendRequest = window.sendFriendRequest || sendFriendRequest;
+        if (typeof sendRequest !== 'function') {
+          toast('Friend requests are unavailable. Please refresh and try again.', 'error');
+          return;
+        }
+
+        addBtn.dataset.sending = '1';
+        addBtn.disabled = true;
+        addBtn.textContent = 'Sending request…';
+        addBtn.classList.add('opacity-60');
+
+        let sent = false;
+        try {
+          sent = await sendRequest(uid, u.ign);
+        } catch (error) {
+          console.error('[CODMPanda] Profile friend request handler failed:', error);
+          toast('Could not send friend request. Please try again.', 'error');
+        }
+
+        if (sent) {
+          addBtn.outerHTML = '<div id="up-friend-request-pending" class="text-center py-2 text-xs text-yellow-400 font-bold">⏳ Friend request sent — Pending</div>';
+        } else {
+          addBtn.dataset.sending = '0';
+          addBtn.disabled = false;
+          addBtn.textContent = '+ Add Friend';
+          addBtn.classList.remove('opacity-60');
+        }
+      };
+    }
 
     const removeBtn = document.getElementById('up-remove-friend');
     if (removeBtn) removeBtn.onclick = () => {
