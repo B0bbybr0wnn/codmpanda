@@ -28699,7 +28699,26 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
     button.innerHTML='<i data-lucide="heart" class="w-4 h-4 '+(next?'fill-current':'')+'"></i> <span data-reaction-count="1">'+post.likes+'</span>';
     button.classList.toggle('text-primary',next);button.classList.toggle('text-gray-400',!next);
     if(window.lucide)window.lucide.createIcons();
-    await toggleLike('post',id,'likes');
+    try {
+      const actual = await toggleLike('post',id,'likes');
+      if (actual !== next) {
+        State.likedItems.post[id] = actual;
+        post.likes = Math.max(0, old + (actual ? 1 : 0) - (was ? 1 : 0));
+        button.innerHTML='<i data-lucide="heart" class="w-4 h-4 '+(actual?'fill-current':'')+'"></i> <span data-reaction-count="1">'+post.likes+'</span>';
+        button.classList.toggle('text-primary',actual);
+        button.classList.toggle('text-gray-400',!actual);
+        if(window.lucide)window.lucide.createIcons();
+      }
+    } catch (error) {
+      State.likedItems.post[id] = was;
+      post.likes = old;
+      button.innerHTML='<i data-lucide="heart" class="w-4 h-4 '+(was?'fill-current':'')+'"></i> <span data-reaction-count="1">'+old+'</span>';
+      button.classList.toggle('text-primary',was);
+      button.classList.toggle('text-gray-400',!was);
+      if(window.lucide)window.lucide.createIcons();
+      toast('Could not update reaction', 'error');
+      console.warn('[CODMPanda] Profile post reaction failed', error);
+    }
   }
   const originalComments=openPostComments;
   openPostComments=async function(postId){
