@@ -2,7 +2,7 @@
    Uses the site's existing Firebase app and DM thread function; no duplicate messaging backend. */
 import { getApps } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayUnion, arrayRemove, getDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 (() => {
   'use strict';
@@ -125,6 +125,44 @@ import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayU
       button.textContent=isBlocked?'Unblock':'Block';
       if(input){input.disabled=isBlocked;input.placeholder=isBlocked?'You blocked this player':(input.dataset.cpOriginalPlaceholder||'Message…')}
     }catch(_){}
+  }
+
+
+  let cpTypingTimer=null;
+  function installTypingPresence(input,header){
+    const fb=appDb(),target=window.__cpCurrentDMTarget;
+    if(!fb?.auth.currentUser||!target?.uid||!input)return;
+    const selfUid=fb.auth.currentUser.uid;
+    const statusWrap=header.children[1];
+    if(statusWrap&&!statusWrap.querySelector('#cp-dm-presence')){
+      const status=document.createElement('div');
+      status.id='cp-dm-presence';
+      status.style.cssText='font-size:10px;color:#ff9a56;margin-top:4px;min-height:12px';
+      status.textContent=' ';
+      statusWrap.appendChild(status);
+    }
+    const status=header.querySelector('#cp-dm-presence');
+    if(window.__cpTypingUnsub){try{window.__cpTypingUnsub()}catch(_){}window.__cpTypingUnsub=null}
+    if(status){
+      window.__cpTypingUnsub=onSnapshot(doc(fb.db,'users',target.uid),snap=>{
+        const d=snap.data()||{};
+        const fresh=Number(d.typingAt||0)>Date.now()-4500;
+        status.textContent=d.typingTo===selfUid&&fresh?'Typing…':' ';
+      },()=>{if(status)status.textContent=' '});
+    }
+    if(input.dataset.cpTypingBound==='1')return;
+    input.dataset.cpTypingBound='1';
+    const updateTyping=async active=>{
+      try{await updateDoc(doc(fb.db,'users',selfUid),{typingTo:active?target.uid:'',typingAt:active?Date.now():0})}catch(_){}
+    };
+    input.addEventListener('input',()=>{
+      clearTimeout(cpTypingTimer);
+      if(!String(input.value||'').trim()){updateTyping(false);return}
+      cpTypingTimer=setTimeout(()=>updateTyping(true),500);
+    });
+    input.addEventListener('blur',()=>{clearTimeout(cpTypingTimer);updateTyping(false)});
+    const form=input.closest('form');
+    if(form)form.addEventListener('submit',()=>{clearTimeout(cpTypingTimer);updateTyping(false)},true);
   }
 
   function enhanceThread(){
