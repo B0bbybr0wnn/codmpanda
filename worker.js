@@ -2,7 +2,7 @@
 // Required secrets: GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON
 const BUILD = 'codmpanda-worker-v1';
 const APP_URL = 'https://codmpanda.pages.dev';
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-3.8-flash';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -20,7 +20,7 @@ export default {
       aiConfigured: Boolean(env.GEMINI_API_KEY),
       serviceAccountConfigured: Boolean(env.FIREBASE_SERVICE_ACCOUNT_JSON),
       aiProvider: env.GEMINI_API_KEY ? 'gemini' : 'none',
-      geminiModel: String(env.GEMINI_MODEL || MODEL).replace(/^models\//, ''),
+      geminiModel: MODEL,
       routes: ['GET /health', 'GET /briefings', 'POST /coach', 'POST /send'],
     });
     if (request.method === 'GET' && path === '/briefings') return briefingsRoute(env);
@@ -58,7 +58,7 @@ async function coachRoute(request, env) {
 
 async function gemini(env, payload) {
   if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY missing');
-  const model = String(env.GEMINI_MODEL || MODEL).replace(/^models\//, '');
+  const model = MODEL;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   for (let attempt = 0; attempt < 3; attempt++) {
     let response;
