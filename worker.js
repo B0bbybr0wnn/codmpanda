@@ -1,6 +1,6 @@
 // CODMPanda Notify — clean Cloudflare Worker
 // Required secrets: GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON
-const BUILD = 'codmpanda-worker-v4';
+const BUILD = 'codmpanda-worker-v5';
 const APP_URL = 'https://codmpanda.pages.dev';
 // Google-maintained alias that follows the latest stable Flash model.
 const MODEL = 'gemini-flash-latest';
@@ -46,12 +46,23 @@ async function coachRoute(request, env) {
   try { body = await request.json(); } catch { return json({ success: false, error: 'Request body must be valid JSON.' }, 400); }
   const message = String(body.message || body.question || body.prompt || body.text || '').trim().slice(0, 1500);
   if (!message) return json({ success: false, error: 'Please enter a CODM question.' }, 400);
-  const history = (Array.isArray(body.history) ? body.history : []).slice(-8).map(x => ({
+  const rawHistory = (Array.isArray(body.history) ? body.history : []).slice(-8);
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const history = rawHistory.filter(x => {
+    const stamp = Number(x?.timestamp || x?.createdAt || x?.time || 0);
+    return !stamp || (stamp < 1e12 ? stamp * 1000 : stamp) >= cutoff;
+  }).map(x => ({
     role: ['assistant', 'model'].includes(x?.role) ? 'model' : 'user',
     parts: [{ text: String(x?.text || x?.content || '').trim().slice(0, 1000) }],
   })).filter(x => x.parts[0].text);
   const player = String(body.playerName || body.profileName || '').trim().slice(0, 60);
-  const system = 'You are CODMPanda Coach, a friendly and skilled Call of Duty: Mobile teammate. Focus on CODM gameplay, gunsmith builds, settings, HUD, sensitivity, movement, ranked, Battle Royale, multiplayer, events, updates, esports and CODMPanda. Answer the exact question first with practical, concise advice. Do not invent current patch notes or weapon stats; acknowledge uncertainty.' + (player ? ` The player's in-game name is ${JSON.stringify(player)}; use it naturally but not every reply.` : '');
+  const codmTopic = /\b(codm|cod\s?mobile|call\s?of\s?duty|gunsmith|loadout|weapon|gun|ranked|battle royale|br match|multiplayer|mp match|sensitivity|hud|aim|recoil|legendary|mythic|camouflage|camo|grind|operator skill|scorestreak|perk|clan war|shipment|nuketown|rank reset|season|battle pass|redeem code|activision|codmpanda)\b/i;
+  const greeting = /^(hi|hey|hello|yo|sup|what's up|whats up|good morning|good afternoon|good evening|thanks|thank you|ok|okay|lol|😂|👍)[!.?\s]*$/i.test(message);
+  const historyHasCodmContext = history.some(x => codmTopic.test(x.parts[0].text));
+  if (!codmTopic.test(message) && !historyHasCodmContext && !greeting) {
+    return json({ success: true, reply: 'Bro, I’m here for CODM 😄 Ask me about gunsmith builds, ranked, BR, sensitivity, movement, events, or anything Call of Duty: Mobile.' });
+  }
+  const system = 'You are CODMPanda Coach, a real, friendly CODM teammate—not a formal chatbot. ONLY help with Call of Duty: Mobile (CODM) and CODMPanda. If asked about anything else, briefly steer the user back to CODM. Talk naturally and directly; match the user’s tone, answer what they actually asked, and do not dump generic tips or repeat the question. Use prior messages to understand short follow-ups and maintain context. Ask one short clarifying question only when needed. Keep answers useful and as concise as the question deserves; use bullets only when they help. Never claim to remember details not present in the recent chat. Do not invent current patch notes, weapon stats, or event details; say when unsure.' + (player ? ` The player's in-game name is ${JSON.stringify(player)}; use it naturally but not every reply.` : '');
   try {
     const reply = await gemini(env, { systemInstruction: { parts: [{ text: system }] }, contents: [...history, { role: 'user', parts: [{ text: message }] }], generationConfig: { temperature: 0.75, maxOutputTokens: 650 } });
     return json({ success: true, reply });
