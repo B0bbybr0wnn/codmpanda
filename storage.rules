@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // DM images are stored under the existing sorted participant chat ID.
+    // Only a participant can read the image; only its sender can upload/delete it.
+    match /dm-images/{chatId}/{senderUid}/{fileName} {
+      function isParticipant() {
+        return request.auth != null
+          && (
+            chatId.matches('^' + request.auth.uid + '_.*$')
+            || chatId.matches('^.*_' + request.auth.uid + '$')
+          );
+      }
+
+      allow read: if isParticipant();
+      allow create: if isParticipant()
+        && senderUid == request.auth.uid
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
+      allow update: if false;
+      allow delete: if request.auth != null && senderUid == request.auth.uid;
+    }
+  }
+}
