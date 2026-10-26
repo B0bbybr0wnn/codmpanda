@@ -4,7 +4,6 @@
 // ============================================
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -62,7 +61,6 @@ const APP_VERSION = "1.0.0";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app);
 
 // One live listener while the Friends panel is open; prevents stale request lists.
 let friendsPanelUnsub = null;
