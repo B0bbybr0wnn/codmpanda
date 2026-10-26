@@ -27681,7 +27681,7 @@ window.performGlobalSearch = performGlobalSearch;
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     const coachUid = State.user?.uid || 'guest';
     const coachHistoryKey = 'cp_coach_history_v1_' + coachUid;
-    const coachMaxAge = 48 * 60 * 60 * 1000;
+    const coachMaxAge = 7 * 24 * 60 * 60 * 1000;
     // Remove expired caches for every local account, not just the account currently signed in.
     try {
       for (let i = localStorage.length - 1; i >= 0; i--) {
@@ -27697,7 +27697,12 @@ window.performGlobalSearch = performGlobalSearch;
     try {
       const saved = JSON.parse(localStorage.getItem(coachHistoryKey) || 'null');
       if (saved && Number.isFinite(saved.updatedAt) && Date.now() - saved.updatedAt < coachMaxAge && Array.isArray(saved.messages)) {
-        history = saved.messages.filter(m => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string').slice(-20);
+        const now = Date.now();
+        history = saved.messages
+          .filter(m => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string')
+          .map(m => ({ ...m, timestamp: Number.isFinite(m.timestamp) ? m.timestamp : saved.updatedAt }))
+          .filter(m => now - m.timestamp < coachMaxAge)
+          .slice(-20);
         history.forEach(m => {
           const line = document.createElement('div');
           line.style.cssText = m.role === 'user' ? 'align-self:flex-end;max-width:90%;background:#71320d;border-radius:12px;padding:10px;font-size:13px;white-space:pre-wrap' : 'align-self:flex-start;max-width:95%;background:#20212a;border-radius:12px;padding:11px;font-size:13px;line-height:1.5;white-space:pre-wrap';
@@ -27732,9 +27737,10 @@ window.performGlobalSearch = performGlobalSearch;
       try {
         const currentCoachName = State.profile?.ign || State.profile?.displayName || State.user?.displayName || '';
         const answer = await cpCoachReply(value, history, currentCoachName);
-        history.push({ role:'user', text:value }, { role:'model', text:answer });
-        history = history.slice(-20);
-        try { localStorage.setItem(coachHistoryKey, JSON.stringify({ updatedAt:Date.now(), messages:history })); } catch (_) { /* local storage may be full or disabled */ }
+        const messageTime = Date.now();
+        history.push({ role:'user', text:value, timestamp:messageTime }, { role:'model', text:answer, timestamp:messageTime });
+        history = history.filter(m => Number.isFinite(m.timestamp) && messageTime - m.timestamp < coachMaxAge).slice(-20);
+        try { localStorage.setItem(coachHistoryKey, JSON.stringify({ updatedAt:messageTime, messages:history })); } catch (_) { /* local storage may be full or disabled */ }
         reply.textContent=answer;
       } catch (error) {
         console.warn('[CODMPanda Coach] Request failed:', error);
