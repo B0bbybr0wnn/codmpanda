@@ -201,6 +201,24 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
     const messages=sheet.querySelector('#dm-messages');
     const input=sheet.querySelector('#dm-input');
     if(!header||!messages||!input)return;
+    installTypingPresence(input,header);
+    const fb=appDb(),target=window.__cpCurrentDMTarget;
+    if(fb?.auth.currentUser&&target?.uid){
+      const receiptChatId=[fb.auth.currentUser.uid,target.uid].sort().join('_');
+      if(sheet.dataset.cpReceiptChat!==receiptChatId){
+        sheet.dataset.cpReceiptChat=receiptChatId;
+        if(window.__cpDMReceiptUnsub){try{window.__cpDMReceiptUnsub()}catch(_){}}
+        window.__cpDMReceiptUnsub=onSnapshot(
+          query(collection(fb.db,'messages'),where('chatId','==',receiptChatId),where('fromUid','==',fb.auth.currentUser.uid),limit(100)),
+          snap=>snap.forEach(d=>{
+            const row=Array.from(messages.querySelectorAll('[data-dm-message-id]')).find(el=>el.dataset.dmMessageId===d.id);
+            const status=row?.querySelector('[data-dm-status]');
+            if(status)status.textContent=d.data().readAt?' · Read':' · Sent';
+          }),
+          err=>console.warn('[CODMPanda DM] Read receipt listener unavailable',err)
+        );
+      }
+    }
     if(!header.querySelector('#cp-dm-thread-search-toggle')){
       const actions=document.createElement('div');actions.style.cssText='display:flex;gap:6px;align-items:center;margin-left:auto';
       actions.innerHTML='<button type="button" id="cp-dm-thread-search-toggle" class="cp-dm-action" aria-label="Search messages" title="Search messages">⌕</button><button type="button" id="cp-dm-block-user" class="cp-dm-action" title="Block or unblock this player">Block</button>';
