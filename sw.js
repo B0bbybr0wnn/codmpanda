@@ -1,7 +1,7 @@
 /* CODMPanda Service Worker v2.2.0
    Cache-first for app shell, network-first for Firebase calls */
 
-const CACHE_NAME = 'codmpanda-v64.0.0';
+const CACHE_NAME = 'codmpanda-v65.0.0';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -17,7 +17,8 @@ const APP_SHELL = [
   '/app.js?v=20261026-friend-requests-realtime-v1',
   '/app.js?v=20261026-friend-requests-realtime-v2',
   '/app.js?v=20261026-back-navigation-scroll-restore-v1',
-  '/app.js?v=20261026-navigation-feed-ranking-v3',
+  '/app.js?v=20261026-navigation-feed-ranking-v4',
+  '/reliability-fixes.js?v=20261026-navigation-v6',
   '/badges.js?v=20261024-obsidian-spike-v4',
   '/manifest.json',
   '/icon-192.png',
