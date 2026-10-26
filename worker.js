@@ -41,7 +41,7 @@ export default {
 };
 
 async function coachRoute(request, env) {
-  if (!env.GEMINI_API_KEY) return json({ success: false, error: 'AI is not configured on this Worker.' }, 503);
+  if (!env.GEMINI_API_KEY && !env.DEEPSEEK_API_KEY) return json({ success: false, error: 'AI is not configured on this Worker.' }, 503);
   let body;
   try { body = await request.json(); } catch { return json({ success: false, error: 'Request body must be valid JSON.' }, 400); }
   const message = String(body.message || body.question || body.prompt || body.text || '').trim().slice(0, 1500);
