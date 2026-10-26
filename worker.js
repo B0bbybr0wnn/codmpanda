@@ -1,6 +1,6 @@
 // CODMPanda Notify — clean Cloudflare Worker
 // Required secrets: GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON
-const BUILD = 'codmpanda-worker-v5';
+const BUILD = 'codmpanda-worker-v6';
 const APP_URL = 'https://codmpanda.pages.dev';
 // Google-maintained alias that follows the latest stable Flash model.
 const MODEL = 'gemini-flash-latest';
@@ -132,21 +132,13 @@ async function gemini(env, payload) {
 async function briefingsRoute(env) {
   try {
     const articles = await getOfficialArticles();
-    const summaries = [];
-    for (let i = 0; i < articles.length; i += 2) {
-      summaries.push(...await Promise.all(articles.slice(i, i + 2).map(async article => {
-        try {
-          const summary = await gemini(env, {
-            systemInstruction: { parts: [{ text: 'Summarize official Call of Duty: Mobile news using only the title and article text. Write 2–4 concise sentences stating what changed or was announced and why players should care. Preserve dates, season names, modes, rewards and availability details. Do not speculate.' }] },
-            contents: [{ role: 'user', parts: [{ text: `Source: ${article.sourceName}\nTitle: ${article.title}\nPublished: ${article.publishedAt || 'Not listed'}\nArticle:\n${article.articleText.slice(0, 7500)}` }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 220 },
-          });
-          return { ...article, summary, aiSummary: true };
-        } catch (e) { console.warn('[briefings summary]', article.url, errText(e)); return { ...article, summary: '', aiSummary: false }; }
-      })));
-    }
-    const output = summaries.map(({ articleText, ...x }) => x);
-    return json({ success: output.some(x => x.aiSummary && x.summary), aiConfigured: Boolean(env.GEMINI_API_KEY), sourcesChecked: 3, articlesFound: output.length, summariesGenerated: output.filter(x => x.aiSummary && x.summary).length, updatedAt: new Date().toISOString(), briefings: output });
+    const output = articles.map(article => {
+      const clean = String(article.articleText || '').replace(/\s+/g, ' ').trim();
+      const summary = (clean.slice(0, 560).replace(/\s+\S*$/, '') + (clean.length > 560 ? '…' : '')).trim();
+      const { articleText, ...rest } = article;
+      return { ...rest, summary, aiSummary: false };
+    });
+    return json({ success: output.length > 0, aiConfigured: Boolean(env.GEMINI_API_KEY || env.DEEPSEEK_API_KEY), sourcesChecked: 3, articlesFound: output.length, summariesGenerated: output.filter(x => x.summary).length, updatedAt: new Date().toISOString(), briefings: output });
   } catch (e) { console.error('[briefings]', errText(e)); return json({ success: false, error: 'Could not load official CODM briefings.', briefings: [] }, 502); }
 }
 
@@ -173,7 +165,7 @@ async function getOfficialArticles() {
       while ((m = re.exec(xml)) && count < 80) { const link = articleUrl(m[1], s); if (link) { candidates.set(link, { url: link, title: '', sourceName: s.name }); count++; } }
     } catch (e) { console.warn('[briefings sitemap]', s.sitemap, errText(e)); }
   }));
-  const picked = [...candidates.values()].slice(0, 12);
+  const picked = [...candidates.values()].slice(0, 6);
   const results = await Promise.all(picked.map(async item => {
     try {
       const html = await fetchText(item.url);
@@ -204,7 +196,7 @@ function articleUrl(href, source) {
   } catch { return null; }
 }
 async function fetchText(url) {
-  const r = await fetch(url, { headers: { Accept: 'text/html,application/xhtml+xml,application/xml,text/xml;q=0.9,*/*;q=0.5', 'User-Agent': 'Mozilla/5.0 (compatible; CODMPanda/1.0)' }, signal: AbortSignal.timeout(12000), cf: { cacheTtl: 120, cacheEverything: true } });
+  const r = await fetch(url, { headers: { Accept: 'text/html,application/xhtml+xml,application/xml,text/xml;q=0.9,*/*;q=0.5', 'User-Agent': 'Mozilla/5.0 (compatible; CODMPanda/1.0)' }, signal: AbortSignal.timeout(5000), cf: { cacheTtl: 120, cacheEverything: true } });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.text();
 }
