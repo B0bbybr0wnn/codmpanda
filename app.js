@@ -12490,7 +12490,7 @@ messages.sort((a, b) => {
           <div class="flex ${isMine ? 'justify-end' : 'justify-start'}" data-dm-message-id="${esc(m.id)}">
             <div class="max-w-[82%] ${isMine ? 'bg-primary text-white' : 'bg-card border border-border'} rounded-2xl px-3 py-2">
               ${body}
-              <div class="text-[8px] ${isMine ? 'text-white/70' : 'text-gray-500'} mt-1 text-right">${cpDateTimeHTML(m.createdAt)} ${status ? ' · '+status : ''}</div>
+              <div class="text-[8px] ${isMine ? 'text-white/70' : 'text-gray-500'} mt-1 text-right">${cpDateTimeHTML(m.createdAt)} <span data-dm-status>${status ? ' · '+status : ''}</span></div>
             </div>
           </div>
         `;
