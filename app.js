@@ -4,6 +4,7 @@
 // ============================================
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -61,6 +62,7 @@ const APP_VERSION = "1.0.0";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 // One live listener while the Friends panel is open; prevents stale request lists.
 let friendsPanelUnsub = null;
@@ -12425,11 +12427,16 @@ async function openDMThread(friendUid, friendIgn) {
       <div id="dm-messages" class="flex-1 overflow-y-auto mb-3 space-y-2 pb-3">
         <div class="text-center py-6"><div class="spinner mx-auto"></div></div>
       </div>
-      <div class="flex gap-2 sticky bottom-0 bg-[#0a0a0a] pt-3 border-t border-border">
-        <input id="dm-input" type="text" placeholder="Message ${esc(friendIgn)}..." class="flex-1" maxlength="500" />
-        <button id="dm-send" class="btn-press w-11 h-11 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
-          <i data-lucide="send" class="w-5 h-5 text-white"></i>
-        </button>
+      <div class="sticky bottom-0 bg-[#0a0a0a] pt-3 border-t border-border">
+        <div class="flex gap-2 items-center">
+          <button id="dm-image-pick" type="button" title="Attach image" aria-label="Attach image" class="w-11 h-11 rounded-xl border border-border text-gray-300 flex items-center justify-center flex-shrink-0">＋</button>
+          <input id="dm-image-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" />
+          <input id="dm-input" type="text" placeholder="Message ${esc(friendIgn)}..." class="flex-1 min-w-0" maxlength="500" />
+          <button id="dm-send" class="btn-press w-11 h-11 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
+            <i data-lucide="send" class="w-5 h-5 text-white"></i>
+          </button>
+        </div>
+        <div id="dm-upload-status" class="text-[10px] text-gray-500 mt-2 min-h-3"></div>
       </div>
     </div>
   `, `💬 ${esc(friendIgn)}`);
@@ -12475,16 +12482,24 @@ messages.sort((a, b) => {
 
       messagesContainer.innerHTML = messages.map(m => {
         const isMine = m.fromUid === State.user.uid;
+        const body = m.imageUrl
+          ? `<a href="${esc(m.imageUrl)}" target="_blank" rel="noopener noreferrer"><img src="${esc(m.imageUrl)}" alt="Shared image" loading="lazy" style="display:block;max-width:220px;max-height:260px;border-radius:10px;object-fit:contain"></a>${m.text ? `<div class="text-xs whitespace-pre-wrap break-words mt-2">${esc(m.text)}</div>` : ''}`
+          : `<div class="text-xs whitespace-pre-wrap break-words">${esc(m.text || '')}</div>`;
+        const status = isMine ? (m.readAt ? 'Read' : 'Sent') : '';
         return `
-          <div class="flex ${isMine ? 'justify-end' : 'justify-start'}">
-            <div class="max-w-[75%] ${isMine ? 'bg-primary text-white' : 'bg-card border border-border'} rounded-2xl px-3 py-2">
-              <div class="text-xs whitespace-pre-wrap break-words">${esc(m.text)}</div>
-              <div class="text-[8px] ${isMine ? 'text-white/70' : 'text-gray-500'} mt-1 text-right">${cpDateTimeHTML(m.createdAt)}</div>
+          <div class="flex ${isMine ? 'justify-end' : 'justify-start'}" data-dm-message-id="${esc(m.id)}">
+            <div class="max-w-[82%] ${isMine ? 'bg-primary text-white' : 'bg-card border border-border'} rounded-2xl px-3 py-2">
+              ${body}
+              <div class="text-[8px] ${isMine ? 'text-white/70' : 'text-gray-500'} mt-1 text-right">${cpDateTimeHTML(m.createdAt)} ${status ? ' · '+status : ''}</div>
             </div>
           </div>
         `;
       }).join('');
 
+      // Receiver marks incoming messages read; the rules only permit the recipient to set readAt.
+      messages.filter(m => m.toUid === State.user.uid && !m.readAt).forEach(m => {
+        updateDoc(doc(db, 'messages', m.id), { readAt: serverTimestamp() }).catch(() => {});
+      });
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     } catch (e) {
       console.error('DM load error:', e);
@@ -12536,6 +12551,62 @@ messages.sort((a, b) => {
   document.getElementById('dm-input').onkeypress = (e) => {
     if (e.key === 'Enter') sendMessage();
   };
+
+  // Image attachments use Firebase Storage, then the existing messages collection.
+  const imagePick = document.getElementById('dm-image-pick');
+  const imageFile = document.getElementById('dm-image-file');
+  const uploadStatus = document.getElementById('dm-upload-status');
+  if (imagePick && imageFile) {
+    imagePick.onclick = () => imageFile.click();
+    imageFile.onchange = async () => {
+      const file = imageFile.files?.[0];
+      if (!file) return;
+      if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+        toast('Choose a JPG, PNG, WEBP, or GIF image', 'error');
+        imageFile.value = '';
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast('Images must be 5 MB or smaller', 'error');
+        imageFile.value = '';
+        return;
+      }
+      imagePick.disabled = true;
+      imageFile.disabled = true;
+      if (uploadStatus) uploadStatus.textContent = 'Uploading image…';
+      try {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'image';
+        const path = `dm-images/${chatId}/${State.user.uid}/${Date.now()}-${safeName}`;
+        const uploaded = await uploadBytes(storageRef(storage, path), file, { contentType: file.type });
+        const imageUrl = await getDownloadURL(uploaded.ref);
+        await addDoc(collection(db, 'messages'), {
+          chatId,
+          fromUid: State.user.uid,
+          fromIgn: State.profile.ign,
+          toUid: friendUid,
+          toIgn: friendIgn,
+          text: '',
+          type: 'image',
+          imageUrl,
+          imagePath: path,
+          createdAt: serverTimestamp()
+        });
+        try {
+          await sendNotificationToUser(friendUid, `💬 ${State.profile.ign}`, '📷 Sent you an image', { type: 'dm', chatId });
+        } catch (_) {}
+        if (uploadStatus) uploadStatus.textContent = '';
+        await loadMessages();
+      } catch (e) {
+        console.error('DM image upload failed:', e);
+        toast('Image failed to send. Check Firebase Storage rules.', 'error');
+        if (uploadStatus) uploadStatus.textContent = 'Upload failed';
+      } finally {
+        imagePick.disabled = false;
+        imageFile.disabled = false;
+        imageFile.value = '';
+      }
+    };
+  }
 
   // Render the sheet first, then hydrate messages in the background.
   loadMessages();
