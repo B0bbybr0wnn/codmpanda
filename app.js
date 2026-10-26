@@ -29021,6 +29021,21 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
     }
     row.style.gridTemplateColumns = '1fr';
     row.innerHTML = primary;
+    // Bind the profile Add Friend control directly. This profile is rendered
+    // dynamically and other document-level click handlers can intercept
+    // delegated events; a direct listener guarantees this exact button reaches
+    // the shared Firebase request sender.
+    const addFriendButton = row.querySelector('[data-cp-pp-action="add-friend"]');
+    if (addFriendButton) {
+      addFriendButton.addEventListener('click', function(event) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        handleAction(event).catch(error => {
+          console.error('[CODMPanda] Profile Add Friend click failed:', error);
+          toast('Could not send friend request. Please try again.', 'error');
+        });
+      });
+    }
     card.insertAdjacentElement('afterend', row);
     } finally {
       if (root.__cpPPActionRenderingUid === uid) root.__cpPPActionRenderingUid = '';
@@ -29050,10 +29065,20 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
     if (!uid || uid === State.user?.uid) return;
     if (action === 'add-friend') {
       if (target.disabled) return;
-      if (typeof sendFriendRequest !== 'function') { toast('Friend requests are unavailable right now', 'error'); return; }
+      if (typeof sendFriendRequest !== 'function') {
+        toast('Friend requests are unavailable right now', 'error');
+        return;
+      }
       target.disabled = true;
       target.textContent = 'Sending request…';
-      const sent = await sendFriendRequest(uid, data.user.ign || data.user.displayName || 'Player');
+      let sent = false;
+      try {
+        sent = await sendFriendRequest(uid, data.user.ign || data.user.displayName || 'Player');
+      } catch (error) {
+        console.error('[CODMPanda] Profile Add Friend write failed:', error);
+        toast('Could not send friend request. Please try again.', 'error');
+      }
+      if (!target.isConnected) return;
       target.disabled = false;
       root.__cpPPActionUid = '';
       target.textContent = sent ? 'Friend request sent' : '＋ Add Friend';
