@@ -321,7 +321,12 @@ service cloud.firestore {
       allow list: if isSignedIn() && (
         resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid
       );
-      allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        // A block works in both directions: neither party can send while the other has blocked them.
+        && !(request.resource.data.toUid in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('blockedUsers', []))
+        && !(request.auth.uid in get(/databases/$(database)/documents/users/$(request.resource.data.toUid)).data.get('blockedUsers', []));
       allow update, delete: if isSignedIn() && (resource.data.fromUid == request.auth.uid || isAdmin());
     }
 
