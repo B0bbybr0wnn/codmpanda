@@ -69,6 +69,108 @@ service cloud.firestore {
                 || newList.size() < oldList.size()));
     }
 
+    // Friend relationships are edited only through the expected request/accept/remove flows.
+    function ownerUpdatesSentRequests(userId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldSent = resource.data.get('friendRequestsSent', []);
+      let newSent = request.resource.data.get('friendRequestsSent', []);
+      return isOwner(userId)
+        && changed.hasOnly(['friendRequestsSent'])
+        && oldSent is list && newSent is list
+        && ((newSent.size() == oldSent.size() + 1 && newSent.hasAll(oldSent))
+          || (oldSent.size() == newSent.size() + 1 && oldSent.hasAll(newSent)));
+    }
+
+    function anotherUserAddsIncomingRequest(userId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldRequests = resource.data.get('friendRequests', []);
+      let newRequests = request.resource.data.get('friendRequests', []);
+      return isSignedIn() && request.auth.uid != userId
+        && changed.hasOnly(['friendRequests'])
+        && oldRequests is list && newRequests is list
+        && !oldRequests.hasAny([request.auth.uid])
+        && newRequests.hasAny([request.auth.uid])
+        && newRequests.size() == oldRequests.size() + 1
+        && newRequests.hasAll(oldRequests);
+    }
+
+    function incomingRequestIsRemoved(userId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldRequests = resource.data.get('friendRequests', []);
+      let newRequests = request.resource.data.get('friendRequests', []);
+      return isSignedIn()
+        && changed.hasOnly(['friendRequests'])
+        && oldRequests is list && newRequests is list
+        && oldRequests.size() == newRequests.size() + 1
+        && oldRequests.hasAll(newRequests)
+        && (isOwner(userId)
+          || (request.auth.uid != userId
+            && oldRequests.hasAny([request.auth.uid])
+            && !newRequests.hasAny([request.auth.uid])));
+    }
+
+    function ownerAcceptsIncomingRequest(userId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldFriends = resource.data.get('friends', []);
+      let newFriends = request.resource.data.get('friends', []);
+      let oldRequests = resource.data.get('friendRequests', []);
+      let newRequests = request.resource.data.get('friendRequests', []);
+      return isOwner(userId)
+        && changed.hasAll(['friends', 'friendRequests'])
+        && changed.hasOnly(['friends', 'friendRequests'])
+        && oldFriends is list && newFriends is list
+        && oldRequests is list && newRequests is list
+        && newFriends.size() == oldFriends.size() + 1
+        && newFriends.hasAll(oldFriends)
+        && newFriends.hasAny(oldRequests)
+        && oldRequests.size() == newRequests.size() + 1
+        && oldRequests.hasAll(newRequests);
+    }
+
+    function acceptedRequesterProfileUpdate(userId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldSent = resource.data.get('friendRequestsSent', []);
+      let newSent = request.resource.data.get('friendRequestsSent', []);
+      let oldFriends = resource.data.get('friends', []);
+      let newFriends = request.resource.data.get('friends', []);
+      return isSignedIn() && request.auth.uid != userId
+        && changed.hasAll(['friends', 'friendRequestsSent'])
+        && changed.hasOnly(['friends', 'friendRequestsSent'])
+        && oldSent is list && newSent is list
+        && oldFriends is list && newFriends is list
+        && oldSent.hasAny([request.auth.uid])
+        && !newSent.hasAny([request.auth.uid])
+        && oldSent.size() == newSent.size() + 1
+        && oldSent.hasAll(newSent)
+        && newFriends.size() == oldFriends.size() + 1
+        && newFriends.hasAll(oldFriends)
+        && newFriends.hasAny([request.auth.uid]);
+    }
+
+    function ownerRemovesFriend(userId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldFriends = resource.data.get('friends', []);
+      let newFriends = request.resource.data.get('friends', []);
+      return isOwner(userId)
+        && changed.hasOnly(['friends'])
+        && oldFriends is list && newFriends is list
+        && oldFriends.size() == newFriends.size() + 1
+        && oldFriends.hasAll(newFriends);
+    }
+
+    function anotherUserRemovesSelfAsFriend(userId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldFriends = resource.data.get('friends', []);
+      let newFriends = request.resource.data.get('friends', []);
+      return isSignedIn() && request.auth.uid != userId
+        && changed.hasOnly(['friends'])
+        && oldFriends is list && newFriends is list
+        && oldFriends.hasAny([request.auth.uid])
+        && !newFriends.hasAny([request.auth.uid])
+        && oldFriends.size() == newFriends.size() + 1
+        && oldFriends.hasAll(newFriends);
+    }
+
     // ---------- USERS ----------
     match /users/{userId} {
       allow get, list: if isSignedIn();
@@ -83,12 +185,16 @@ service cloud.firestore {
       allow update: if isAdmin()
         || (isOwner(userId)
             && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['banned','banReason','bannedAt','bannedBy','isPro','isAdmin','role','proExpiresAt','proStatus','verified','verifiedAt'])
+                .hasAny(['banned','banReason','bannedAt','bannedBy','isPro','isAdmin','role','proExpiresAt','proStatus','verified','verifiedAt','friendRequests','friendRequestsSent','friends'])
             && changedProfileFramesAllowed()
             && watchlistUpdateAllowed())
-        || (isSignedIn()
-            && request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['friendRequests','friendRequestsSent','friends']));
+        || ownerUpdatesSentRequests(userId)
+        || anotherUserAddsIncomingRequest(userId)
+        || incomingRequestIsRemoved(userId)
+        || ownerAcceptsIncomingRequest(userId)
+        || acceptedRequesterProfileUpdate(userId)
+        || ownerRemovesFriend(userId)
+        || anotherUserRemovesSelfAsFriend(userId);
       allow delete: if isOwner(userId) || isAdmin();
     }
 

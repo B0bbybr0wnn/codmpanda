@@ -38,7 +38,8 @@ import {
   arrayUnion,
   arrayRemove,
   Timestamp,
-  runTransaction
+  runTransaction,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ============================================
@@ -276,6 +277,10 @@ function timeAgo(timestamp) {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
   return date.toLocaleDateString();
+}
+
+function cpDateTimeHTML(timestamp) {
+  return `<span class="cp-date-time">${esc(timeAgo(timestamp))}</span>`;
 }
 
 function esc(str) {
@@ -1323,7 +1328,7 @@ function renderLobbies() {
               <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
             </div>
-            <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
+            <div class="text-[11px] text-gray-500 mt-0.5">${cpDateTimeHTML(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
           </div>
           <div class="text-right flex-shrink-0">
             <div class="text-sm font-black text-primary">${playersText}</div>
@@ -2114,7 +2119,9 @@ function exportCamoProgress() {
 
   ctx.fillStyle = '#888';
   ctx.font = '18px Inter, sans-serif';
-  ctx.fillText(`${State.profile.ign} · ${new Date().toLocaleDateString()}`, 40, 165);
+  ctx.fillText(State.profile.ign, 40, 165);
+  ctx.font = '16px Inter, sans-serif';
+  ctx.fillText(new Date().toLocaleDateString(), 40 + ctx.measureText(State.profile.ign + ' · ').width, 165);
 
   let y = 230;
   ctx.fillStyle = '#FFD700';
@@ -2432,7 +2439,7 @@ function renderScrims() {
     <div class="bg-card border border-border rounded-2xl p-4 fade-in">
       <div class="flex items-center gap-2 mb-2">
         <span class="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-bold">${esc(s.mode || 'MP')}</span>
-        <span class="text-[10px] text-gray-500">${timeAgo(s.createdAt)}</span>
+        <span class="text-[10px] text-gray-500">${cpDateTimeHTML(s.createdAt)}</span>
       </div>
       <p class="text-sm text-gray-200 mb-3 whitespace-pre-wrap">${esc(s.text)}</p>
       <div class="flex items-center justify-between">
@@ -2573,7 +2580,7 @@ function renderClips() {
         <div class="p-3">
           <div class="flex items-center gap-2 mb-2">
             <span class="text-xs font-bold text-gray-300">${esc(c.gunTag || 'CODM')}</span>
-            <span class="text-[10px] text-gray-500">· ${timeAgo(c.createdAt)}</span>
+            <span class="text-[10px] text-gray-500">· ${cpDateTimeHTML(c.createdAt)}</span>
           </div>
           <div class="flex items-center justify-between">
             <button class="like-clip flex items-center gap-1 text-xs text-gray-400" data-id="${c.id}">
@@ -2836,7 +2843,7 @@ function renderLeaks() {
       <div class="p-4">
         <div class="flex items-center gap-2 mb-2">
           <span class="text-[10px] px-2 py-0.5 rounded-full ${rarityColors[l.rarity] || 'bg-gray-500'} font-black uppercase">${esc(l.rarity || 'common')}</span>
-          <span class="text-[10px] text-gray-500">${timeAgo(l.createdAt)}</span>
+          <span class="text-[10px] text-gray-500">${cpDateTimeHTML(l.createdAt)}</span>
         </div>
         <h3 class="text-base font-bold mb-2">${esc(l.title)}</h3>
         ${l.body ? `<p class="text-xs text-gray-400 line-clamp-3 mb-3">${esc(l.body)}</p>` : ''}
@@ -3272,7 +3279,7 @@ function renderProActive(p) {
       <div class="flex items-center gap-2 mb-3">
                 <div>
           <div class="text-sm font-black text-gold glow-text-gold">PRO ACTIVE</div>
-          <div class="text-[10px] text-gray-400">Expires: ${expiry}</div>
+          <div class="text-[10px] text-gray-400">Expires: <span class="cp-date-time">${expiry}</span></div>
         </div>
       </div>
       <div class="text-xs text-gray-300 mb-3">Enjoy unlimited access & zero ads.</div>
@@ -3678,7 +3685,7 @@ async function showAdminReports() {
           <div class="bg-card border border-border rounded-xl p-3 mb-2">
             <div class="flex items-center gap-2 mb-1">
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-bold uppercase">${esc(r.type || 'report')}</span>
-              <span class="text-[10px] text-gray-500">${timeAgo(r.createdAt)}</span>
+              <span class="text-[10px] text-gray-500">${cpDateTimeHTML(r.createdAt)}</span>
             </div>
             <div class="text-xs text-gray-300">${esc(r.reason)}</div>
             <div class="text-[10px] text-gray-600 mt-1">By: ${esc((r.reporterUid || '').slice(0, 12))}...</div>
@@ -4202,7 +4209,7 @@ renderLeaks = function() {
           <div class="flex items-center gap-2 mb-2 flex-wrap">
             <span class="text-[10px] px-2 py-0.5 rounded-full ${rarityColors[l.rarity] || 'bg-gray-500'} font-black uppercase">${esc(l.rarity || 'common')}</span>
             ${isApproved ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold flex items-center gap-0.5"><i data-lucide="check" class="w-2.5 h-2.5"></i> Approved</span>` : ''}
-            <span class="text-[10px] text-gray-500">${timeAgo(l.createdAt || l.publishedAt)}</span>
+            <span class="text-[10px] text-gray-500">${cpDateTimeHTML(l.createdAt || l.publishedAt)}</span>
           </div>
           <h3 class="text-base font-bold mb-2">${esc(l.title)}</h3>
           ${l.body ? `<p class="text-xs text-gray-400 line-clamp-3 mb-3">${esc(l.body)}</p>` : ''}
@@ -4352,7 +4359,7 @@ renderClips = function() {
           <div class="flex items-center gap-2 mb-2 flex-wrap">
             <span class="text-xs font-bold text-gray-300">${esc(c.gunTag || 'CODM')}</span>
             ${isApproved ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold flex items-center gap-0.5"><i data-lucide="check" class="w-2.5 h-2.5"></i> Approved</span>` : ''}
-            <span class="text-[10px] text-gray-500">· ${timeAgo(c.createdAt)}</span>
+            <span class="text-[10px] text-gray-500">· ${cpDateTimeHTML(c.createdAt)}</span>
           </div>
           <div class="flex items-center gap-2 mb-2">
             <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
@@ -4499,7 +4506,7 @@ function renderSubmissionCard(type, item) {
         </div>
         <div class="flex-1 min-w-0">
           <div class="text-xs font-bold truncate">${iconMap[type]} ${esc(titleMap)}</div>
-          <div class="text-[10px] text-gray-500">by ${esc(item.submitterIgn || 'Unknown')} · ${timeAgo(item.submittedAt)}</div>
+          <div class="text-[10px] text-gray-500">by ${esc(item.submitterIgn || 'Unknown')} · ${cpDateTimeHTML(item.submittedAt)}</div>
         </div>
       </div>
       ${descMap[type] ? `<div class="text-[11px] text-gray-400 mb-2 line-clamp-2">${esc(descMap[type])}</div>` : ''}
@@ -5769,7 +5776,7 @@ renderLobbies = function() {
               <span data-uid="${esc(l.uid || l.userId || l.ownerUid || '')}" class="font-bold text-sm">${esc(l.ign || 'Unknown')}${renderVerifiedBadge(l)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
             </div>
-            <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
+            <div class="text-[11px] text-gray-500 mt-0.5">${cpDateTimeHTML(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
           </div>
           <div class="text-right flex-shrink-0">
             <div class="text-sm font-black text-primary">${playersText}</div>
@@ -5930,7 +5937,7 @@ renderClips = function() {
           <div class="flex items-center gap-2 mb-2 flex-wrap">
             <span class="text-xs font-bold text-gray-300">${esc(c.gunTag || 'CODM')}</span>
             ${isApproved ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold flex items-center gap-0.5"><i data-lucide="check" class="w-2.5 h-2.5"></i> Approved</span>` : ''}
-            <span class="text-[10px] text-gray-500">· ${timeAgo(c.createdAt)}</span>
+            <span class="text-[10px] text-gray-500">· ${cpDateTimeHTML(c.createdAt)}</span>
           </div>
           <div class="flex items-center gap-2 mb-2">
             <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
@@ -6000,7 +6007,7 @@ renderLeaks = function() {
           <div class="flex items-center gap-2 mb-2 flex-wrap">
             <span class="text-[10px] px-2 py-0.5 rounded-full ${rarityColors[l.rarity] || 'bg-gray-500'} font-black uppercase">${esc(l.rarity || 'common')}</span>
             ${isApproved ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold flex items-center gap-0.5"><i data-lucide="check" class="w-2.5 h-2.5"></i> Approved</span>` : ''}
-            <span class="text-[10px] text-gray-500">${timeAgo(l.createdAt || l.publishedAt)}</span>
+            <span class="text-[10px] text-gray-500">${cpDateTimeHTML(l.createdAt || l.publishedAt)}</span>
           </div>
           <h3 class="text-base font-bold mb-2">${esc(l.title)}</h3>
           ${l.body ? `<p class="text-xs text-gray-400 line-clamp-3 mb-3">${esc(l.body)}</p>` : ''}
@@ -6937,7 +6944,7 @@ async function showAdminAnalytics() {
                     <div data-uid="${esc(u.id || u.uid || '')}" class="text-xs font-bold truncate">${esc(u.ign || 'Unknown')}</div>
                     <div class="text-[10px] text-gray-500">${esc(u.region || 'Unknown')}</div>
                   </div>
-                  <div class="text-[10px] text-gray-500">${timeAgo({ seconds: Math.floor(u.createdAt / 1000) })}</div>
+                  <div class="text-[10px] text-gray-500">${cpDateTimeHTML({ seconds: Math.floor(u.createdAt / 1000) })}</div>
                 </div>
               `).join('')}
             </div>
@@ -7372,35 +7379,47 @@ async function performFriendSearch(query) {
 }
 
 async function sendFriendRequest(targetUid, targetIgn) {
+  const senderUid = State.user?.uid;
+  targetUid = String(targetUid || '').trim();
+  if (!senderUid || !targetUid || targetUid === senderUid) {
+    toast('Could not send this friend request', 'error');
+    return false;
+  }
+
   try {
-    // Add to my sent list
-    await updateDoc(doc(db, 'users', State.user.uid), {
+    // Commit both sides together; never leave a false "Pending" request behind.
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'users', senderUid), {
       friendRequestsSent: arrayUnion(targetUid)
     });
-
-    // Add to their incoming list
-    await updateDoc(doc(db, 'users', targetUid), {
-      friendRequests: arrayUnion(State.user.uid)
+    batch.update(doc(db, 'users', targetUid), {
+      friendRequests: arrayUnion(senderUid)
     });
+    await batch.commit();
 
-    toast(`Request sent to ${targetIgn}`, 'success');
+    State.profile = {
+      ...(State.profile || {}),
+      friendRequestsSent: [...new Set([...(State.profile?.friendRequestsSent || []), targetUid])]
+    };
+    toast(`Friend request sent to ${targetIgn || 'player'}`, 'success');
 
-    // Send notification
+    // Notification delivery must not affect the persisted request.
     try {
       await sendNotificationToUser(
         targetUid,
         '👋 New Friend Request',
-        `${State.profile.ign} wants to be your friend`,
+        `${State.profile?.ign || 'A CODMPanda player'} wants to be your friend`,
         { type: 'friend_request' }
       );
     } catch (e) { /* silent */ }
 
-    // Refresh search
     const input = document.getElementById('friend-search-input');
     if (input) performFriendSearch(input.value.trim());
+    return true;
   } catch (e) {
-    console.error(e);
-    toast('Failed: ' + e.message, 'error');
+    console.error('[CODMPanda] Friend request write failed:', e);
+    toast('Could not send friend request: ' + (e?.message || 'Please try again'), 'error');
+    return false;
   }
 }
 
@@ -9381,7 +9400,7 @@ function renderTournamentCard(t) {
 
       <div class="flex items-center justify-between pt-2 border-t border-border mt-2">
         <div class="text-[10px] text-gray-500">by ${esc(t.creatorIgn || 'Unknown')}</div>
-        <div class="text-[10px] text-gray-500">${timeAgo(t.createdAt)}</div>
+        <div class="text-[10px] text-gray-500">${cpDateTimeHTML(t.createdAt)}</div>
       </div>
     </div>
   `;
@@ -10383,7 +10402,7 @@ renderTournamentCard = function(t) {
 
         <div class="flex items-center justify-between pt-2 border-t border-border">
           <div class="text-[10px] text-gray-500">by ${esc(t.creatorIgn || 'Unknown')}</div>
-          <div class="text-[10px] text-gray-500">${timeAgo(t.completedAt || t.createdAt)}</div>
+          <div class="text-[10px] text-gray-500">${cpDateTimeHTML(t.completedAt || t.createdAt)}</div>
         </div>
       </div>
     `;
@@ -10918,7 +10937,7 @@ async function openUserProfile(uid) {
                 <div class="flex items-center gap-1.5 mt-1">
                   ${(Date.now() / 1000 - u.lastSeen.seconds) < 300
                     ? `<div class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div><span class="text-[9px] text-green-400 font-bold">ONLINE</span>`
-                    : `<div class="w-1.5 h-1.5 rounded-full bg-gray-500"></div><span class="text-[9px] text-gray-500">${timeAgo(u.lastSeen)}</span>`
+                    : `<div class="w-1.5 h-1.5 rounded-full bg-gray-500"></div><span class="text-[9px] text-gray-500">${cpDateTimeHTML(u.lastSeen)}</span>`
                   }
                 </div>
               ` : ''}
@@ -11154,7 +11173,7 @@ function openAdvancedSettings() {
         <div class="text-xs font-bold text-gray-400 uppercase mb-3">App Info</div>
         <div class="space-y-2 text-[11px]">
           <div class="flex justify-between"><span class="text-gray-500">Version</span><span class="font-bold">1.0.0</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">Build</span><span class="font-mono text-gray-400">${new Date().toISOString().slice(0, 10)}</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">Build</span><span class="font-mono text-gray-400 cp-date-time">${new Date().toISOString().slice(0, 10)}</span></div>
           <div class="flex justify-between"><span class="text-gray-500">Environment</span><span class="font-bold text-green-400">Production</span></div>
           ${p.isPro ? `<div class="flex justify-between"><span class="text-gray-500">Account</span><span class="font-bold text-gold"> Pro Member</span></div>` : ''}
         </div>
@@ -11976,7 +11995,7 @@ function wireSkinCards(skins) {
           </div>
           <div class="bg-card border border-border rounded-xl p-3 space-y-2 text-xs">
             <div class="flex justify-between"><span class="text-gray-500">Rarity</span><span class="font-bold capitalize" style="color: ${SKIN_RARITIES.find(r => r.key === s.rarity)?.color};">${s.rarity}</span></div>
-            <div class="flex justify-between"><span class="text-gray-500">Date acquired</span><span class="font-bold">${s.date ? new Date(s.date).toLocaleDateString() : 'Unknown'}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">Date acquired</span><span class="font-bold cp-date-time">${s.date ? new Date(s.date).toLocaleDateString() : 'Unknown'}</span></div>
             ${s.note ? `<div class="text-gray-400 pt-2 border-t border-border">${esc(s.note)}</div>` : ''}
           </div>
           <button class="delete-skin-btn btn-press w-full py-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-sm" data-key="${esc(key)}">
@@ -12345,7 +12364,7 @@ messages.sort((a, b) => {
           <div class="flex ${isMine ? 'justify-end' : 'justify-start'}">
             <div class="max-w-[75%] ${isMine ? 'bg-primary text-white' : 'bg-card border border-border'} rounded-2xl px-3 py-2">
               <div class="text-xs whitespace-pre-wrap break-words">${esc(m.text)}</div>
-              <div class="text-[8px] ${isMine ? 'text-white/70' : 'text-gray-500'} mt-1 text-right">${timeAgo(m.createdAt)}</div>
+              <div class="text-[8px] ${isMine ? 'text-white/70' : 'text-gray-500'} mt-1 text-right">${cpDateTimeHTML(m.createdAt)}</div>
             </div>
           </div>
         `;
@@ -13016,7 +13035,7 @@ function renderNotificationsList(notifs) {
               <div class="flex-1 min-w-0">
                 <div class="text-xs font-bold mb-0.5 ${isUnread ? 'text-white' : 'text-gray-300'}">${esc(n.title || '')}</div>
                 <div class="text-[11px] text-gray-400 mb-1">${esc(n.body || '')}</div>
-                <div class="text-[9px] text-gray-600">${timeAgo(n.createdAt)}</div>
+                <div class="text-[9px] text-gray-600">${cpDateTimeHTML(n.createdAt)}</div>
               </div>
               ${isUnread ? '<div class="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1"></div>' : ''}
             </div>
@@ -14330,7 +14349,7 @@ renderLobbies = function() {
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
               ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
             </div>
-            <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
+            <div class="text-[11px] text-gray-500 mt-0.5">${cpDateTimeHTML(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
           </div>
           <div class="text-right flex-shrink-0">
             <div class="text-sm font-black text-primary">${playersText}</div>
@@ -14483,7 +14502,7 @@ renderScrims = function() {
         <div class="flex items-center gap-2 mb-2 flex-wrap">
           <span class="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-bold">${esc(s.mode || 'MP')}</span>
           ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
-          <span class="text-[10px] text-gray-500">${timeAgo(s.createdAt)}</span>
+          <span class="text-[10px] text-gray-500">${cpDateTimeHTML(s.createdAt)}</span>
         </div>
         <p class="text-sm text-gray-200 mb-3 whitespace-pre-wrap">${esc(s.text)}</p>
         <div class="flex items-center justify-between gap-2">
@@ -14671,7 +14690,7 @@ renderClips = function() {
           <div class="flex items-center gap-2 mb-2 flex-wrap">
             <span class="text-xs font-bold text-gray-300">${esc(c.gunTag || 'CODM')}</span>
             ${isApproved ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold flex items-center gap-0.5"><i data-lucide="check" class="w-2.5 h-2.5"></i> Approved</span>` : ''}
-            <span class="text-[10px] text-gray-500">· ${timeAgo(c.createdAt)}</span>
+            <span class="text-[10px] text-gray-500">· ${cpDateTimeHTML(c.createdAt)}</span>
           </div>
           <div class="flex items-center gap-2 mb-2">
             <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
@@ -15858,7 +15877,7 @@ async function openCommentsSheet(contentType, contentId, contentTitle) {
                 <div class="text-xs break-words">${esc(c.text)}</div>
               </div>
               <div class="flex items-center gap-2 mt-1 ${isMine ? 'justify-end' : ''}">
-                <span class="text-[9px] text-gray-500">${timeAgo(c.createdAt)}</span>
+                <span class="text-[9px] text-gray-500">${cpDateTimeHTML(c.createdAt)}</span>
                 ${isMine ? `
                   <button class="delete-comment text-[9px] text-red-400 font-bold" data-id="${c.id}">Delete</button>
                 ` : ''}
@@ -16982,7 +17001,7 @@ async function renderNotificationsTabFast() {
               <div style="flex: 1; min-width: 0;">
                 <div style="font-size: 13px; font-weight: 800; color: ${isUnread ? '#fff' : '#ccc'}; margin-bottom: 3px;">${esc(n.title || '')}</div>
                 <div style="font-size: 12px; color: #888; line-height: 1.4; margin-bottom: 4px;">${esc(n.body || '')}</div>
-                <div style="font-size: 10px; color: #555;">${timeAgo(n.createdAt)}</div>
+                <div style="font-size: 10px; color: #555;">${cpDateTimeHTML(n.createdAt)}</div>
               </div>
               ${isUnread ? '<div style="width: 8px; height: 8px; border-radius: 50%; background: #FF6B00; flex-shrink: 0; margin-top: 4px;"></div>' : ''}
             </div>
@@ -17227,7 +17246,7 @@ async function renderMessagesTabFast() {
                 <div style="font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(preview)}</div>
               </div>
               <div style="text-align: right; flex-shrink: 0;">
-                <div style="font-size: 10px; color: #555;">${timeAgo(lastMsg.createdAt)}</div>
+                <div style="font-size: 10px; color: #555;">${cpDateTimeHTML(lastMsg.createdAt)}</div>
               </div>
             </div>
           `;
@@ -17808,7 +17827,7 @@ function openVaultDetail(vaultId) {
         <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden">
           ${vault.avatar ? `<img src="${esc(vault.avatar)}" class="w-full h-full object-cover" />` : getInitials(vault.ign || '?')}
         </div>
-        <span class="text-gray-400">by <span data-uid="${esc(vault.uid || vault.userId || vault.ownerUid || '')}" class="text-white font-bold">${esc(vault.ign || 'Unknown')}</span> · ${timeAgo(vault.createdAt)}</span>
+        <span class="text-gray-400">by <span data-uid="${esc(vault.uid || vault.userId || vault.ownerUid || '')}" class="text-white font-bold">${esc(vault.ign || 'Unknown')}</span> · ${cpDateTimeHTML(vault.createdAt)}</span>
       </div>
 
       <!-- Content -->
@@ -18996,7 +19015,7 @@ function renderHomeLobbyCard(l) {
     <div class="home-card bg-card border border-border rounded-2xl p-4 mb-3 fade-in" data-type="lobby" data-id="${l.id}" style="cursor: pointer;">
       <div class="flex items-center gap-2 mb-2">
         <span class="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-black">🎮 LOBBY</span>
-        <span class="text-[10px] text-gray-500">${timeAgo(l.createdAt)}</span>
+        <span class="text-[10px] text-gray-500">${cpDateTimeHTML(l.createdAt)}</span>
         <div class="ml-auto text-right">
           <div class="text-xs font-black text-primary">${playersText}</div>
         </div>
@@ -19044,7 +19063,7 @@ function renderHomeVaultCard(v) {
         <span class="text-[10px] px-2 py-1 rounded-full ${isSens ? 'bg-primary/15 text-primary' : isHud ? 'bg-gold/15 text-gold' : 'bg-primary/15 text-primary'} font-black">
           ${isSens ? '🎯 SENS' : isHud ? '🎮 HUD' : '🔧 BUILD'}
         </span>
-        <span class="text-[10px] text-gray-500">${timeAgo(v.createdAt)}</span>
+        <span class="text-[10px] text-gray-500">${cpDateTimeHTML(v.createdAt)}</span>
       </div>
 
       <div class="flex items-start gap-3 mb-3">
@@ -19107,7 +19126,7 @@ function renderHomeClipCard(c) {
         <div class="flex items-center gap-2 mb-2">
           <span class="text-[10px] px-2 py-1 rounded-full bg-primary/15 text-primary font-black">🎬 CLIP</span>
           ${isApproved ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold">✓ Approved</span>' : ''}
-          <span class="text-[10px] text-gray-500 ml-auto">${timeAgo(c.createdAt)}</span>
+          <span class="text-[10px] text-gray-500 ml-auto">${cpDateTimeHTML(c.createdAt)}</span>
         </div>
         <div class="flex items-center gap-2">
           <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
@@ -19158,7 +19177,7 @@ function renderHomeLeakCard(l) {
         <div class="flex items-center gap-2 mb-2 flex-wrap">
           <span class="text-[10px] px-2 py-1 rounded-full bg-gold/15 text-gold font-black">🔥 LEAK</span>
           <span class="text-[10px] px-2 py-0.5 rounded-full ${rarityColors[l.rarity] || 'bg-gray-500'} font-black uppercase">${esc(l.rarity || 'common')}</span>
-          <span class="text-[10px] text-gray-500 ml-auto">${timeAgo(l.createdAt || l.publishedAt)}</span>
+          <span class="text-[10px] text-gray-500 ml-auto">${cpDateTimeHTML(l.createdAt || l.publishedAt)}</span>
         </div>
         <h3 class="text-base font-bold mb-2">${esc(l.title)}</h3>
         ${l.body ? `<p class="text-xs text-gray-400 line-clamp-3 mb-3">${esc(l.body)}</p>` : ''}
@@ -20588,7 +20607,7 @@ function renderHomePostCard(post) {
             
           </div>
           <div class="text-[10px] text-gray-500 mt-0.5">
-            ${timeAgo(post.createdAt)}${wasEdited ? ' · edited' : ''}
+            ${cpDateTimeHTML(post.createdAt)}${wasEdited ? ' · edited' : ''}
           </div>
         </div>
         ${isMine ? `
@@ -22799,7 +22818,7 @@ renderLobbies = function() {
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
               ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
             </div>
-            <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
+            <div class="text-[11px] text-gray-500 mt-0.5">${cpDateTimeHTML(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
           </div>
           <div class="text-right flex-shrink-0">
             <div class="text-sm font-black text-primary">${playersText}</div>
@@ -23395,7 +23414,7 @@ console.log('✅ Chunk 54 loaded — run __fix54() to diagnose');
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">${esc(l.rank || 'Rookie')}</span>
                 ${isExpired ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-500/30 text-gray-400 font-bold">CLOSED</span>' : ''}
               </div>
-              <div class="text-[11px] text-gray-500 mt-0.5">${timeAgo(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
+              <div class="text-[11px] text-gray-500 mt-0.5">${cpDateTimeHTML(l.createdAt)} · ${esc(l.region)} · ${esc(l.mode)}</div>
             </div>
             <div class="text-right flex-shrink-0">
               <div class="text-sm font-black text-primary">${playersText}</div>
@@ -25350,7 +25369,7 @@ window.performGlobalSearch = performGlobalSearch;
           </div>
           <div class="flex-1 min-w-0" ${post.uid ? `data-uid="${post.uid}" style="cursor:pointer;"` : ''}>
             <div data-uid="${esc(post.uid || post.userId || '')}" class="text-sm font-bold truncate">${esc(post.ign || 'Unknown')}</div>
-            <div class="text-[10px] text-gray-500">${timeAgo(post.createdAt)}</div>
+            <div class="text-[10px] text-gray-500">${cpDateTimeHTML(post.createdAt)}</div>
           </div>
           ${isMine ? `
             <button class="btn-press w-8 h-8 rounded-lg bg-cardAlt border border-border flex items-center justify-center" onclick="closeSheet()">
@@ -26803,7 +26822,7 @@ window.performGlobalSearch = performGlobalSearch;
       const source = /^https?:\/\//i.test(article.sourceURL || '') ? escV4(article.sourceURL) : '';
       const weapons = Array.isArray(article.weapons) ? article.weapons : [];
       return `<article class="bg-card border border-border rounded-2xl overflow-hidden"><div class="p-4">
-        <div class="flex items-center justify-between gap-2 mb-2"><span class="text-[9px] uppercase font-black tracking-widest px-2 py-1 rounded-full bg-primary/15 text-primary">${escV4(category)}</span><span class="text-[10px] text-gray-500">${escV4(cpV4Date(article.createdAt))}</span></div>
+        <div class="flex items-center justify-between gap-2 mb-2"><span class="text-[9px] uppercase font-black tracking-widest px-2 py-1 rounded-full bg-primary/15 text-primary">${escV4(category)}</span><span class="text-[10px] text-gray-500 cp-date-time">${escV4(cpV4Date(article.createdAt))}</span></div>
         <h3 class="font-black text-base mb-2">${escV4(article.title || 'CODM Update')}</h3><p class="text-sm text-gray-300 whitespace-pre-wrap break-words">${escV4(article.summary || article.body || '')}</p>
         ${weapons.length ? `<div class="flex flex-wrap gap-1.5 mt-3">${weapons.slice(0,8).map(w => `<span class="text-[10px] bg-cardAlt border border-border rounded-full px-2 py-1">${escV4(w)}</span>`).join('')}</div>` : ''}
         <div class="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-border"><span class="text-[10px] text-gray-500">${article.authorIgn ? 'By ' + escV4(article.authorIgn) : 'CODMPanda Intel'}</span>
@@ -27149,7 +27168,7 @@ window.performGlobalSearch = performGlobalSearch;
         author.className = 'cp-v4-clip-author p-3 flex items-center gap-3 border-b border-border';
         const avatarFallback = clip.avatar || clip.submittedByAvatar || '';
         const who = clip.submittedByIgn || clip.ign || 'CODMPanda Player';
-        author.innerHTML = `<div data-uid="${escV4(clip.uid || '')}" class="cp-v4-clip-avatar w-9 h-9 rounded-full bg-cardAlt flex items-center justify-center text-xs font-black overflow-hidden flex-shrink-0">${avatarFallback ? `<img src="${escV4(avatarFallback)}" alt="" class="w-full h-full object-cover">` : escV4((typeof getInitials === 'function' ? getInitials(who) : String(who).slice(0,2)).toString())}</div><div class="min-w-0 flex-1"><div class="text-xs font-bold truncate">${escV4(who)}</div><div class="text-[10px] text-gray-500 truncate">${escV4(clip.gunTag || 'CODM')} · ${escV4(cpV4Date(clip.createdAt))}</div>${clip.caption ? `<p class="text-xs text-gray-300 mt-1 break-words">${escV4(clip.caption)}</p>` : ''}</div>`;
+        author.innerHTML = `<div data-uid="${escV4(clip.uid || '')}" class="cp-v4-clip-avatar w-9 h-9 rounded-full bg-cardAlt flex items-center justify-center text-xs font-black overflow-hidden flex-shrink-0">${avatarFallback ? `<img src="${escV4(avatarFallback)}" alt="" class="w-full h-full object-cover">` : escV4((typeof getInitials === 'function' ? getInitials(who) : String(who).slice(0,2)).toString())}</div><div class="min-w-0 flex-1"><div class="text-xs font-bold truncate">${escV4(who)}</div><div class="text-[10px] text-gray-500 truncate">${escV4(clip.gunTag || 'CODM')} · <span class="cp-date-time">${escV4(cpV4Date(clip.createdAt))}</span></div>${clip.caption ? `<p class="text-xs text-gray-300 mt-1 break-words">${escV4(clip.caption)}</p>` : ''}</div>`;
         card.insertBefore(author, card.firstChild);
       }
     });
@@ -28263,7 +28282,7 @@ async function __cpYouLoadPostsV2(host) {
         return renderHomePostCard(post);
       } catch (err) {
         console.warn('[CODMPanda] Could not render profile post', err);
-        return '<article class="bg-card border border-border rounded-2xl p-4 mb-3"><p class="text-sm whitespace-pre-wrap break-words">' + esc(post.text || post.caption || 'Community post') + '</p><p class="text-[10px] text-gray-500 mt-2">' + esc(timeAgo(post.createdAt)) + '</p></article>';
+        return '<article class="bg-card border border-border rounded-2xl p-4 mb-3"><p class="text-sm whitespace-pre-wrap break-words">' + esc(post.text || post.caption || 'Community post') + '</p><p class="text-[10px] text-gray-500 mt-2">' + cpDateTimeHTML(post.createdAt) + '</p></article>';
       }
     }).join('');
     if (window.lucide) window.lucide.createIcons();
@@ -28653,7 +28672,7 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
           card=card.replace(namePattern,'$1'+(typeof renderVerifiedBadge==='function'?renderVerifiedBadge(post):'')+earned+profileBadge);
         }
         return card;
-      }catch(err){console.warn('[CODMPanda] Profile post render failed',err);return '<article class="bg-card border border-border rounded-2xl p-4 mb-3"><p class="text-sm whitespace-pre-wrap break-words">'+esc(post.text||post.caption||'Community post')+'</p><p class="text-[10px] text-gray-500 mt-2">'+esc(timeAgo(post.createdAt))+'</p></article>'}}).join('');
+      }catch(err){console.warn('[CODMPanda] Profile post render failed',err);return '<article class="bg-card border border-border rounded-2xl p-4 mb-3"><p class="text-sm whitespace-pre-wrap break-words">'+esc(post.text||post.caption||'Community post')+'</p><p class="text-[10px] text-gray-500 mt-2">'+cpDateTimeHTML(post.createdAt)+'</p></article>'}}).join('');
       if(window.lucide)window.lucide.createIcons();
       if(typeof window.__codmpandaRefreshNamesAndAvatars==='function')setTimeout(window.__codmpandaRefreshNamesAndAvatars,100);
       return;
@@ -28675,7 +28694,7 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       const joinedText=joinedMs?new Date(joinedMs).toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'}):'Not available';
       const facts=[['Rank',u.rank||'Rookie'],['Region',u.region||'Global'],['Favourite weapon',u.favGun||'Not set'],['Profile theme',themeFor(u).name||'Operator Black'],['Avatar frame',frameName(u)],['Joined CODMPanda',joinedText]];
       host.innerHTML=(u.bio?'<section class="bg-card border border-border rounded-2xl p-4 mt-2 mb-3"><div class="text-[10px] font-black uppercase tracking-wider text-gray-500 mb-2">About this player</div><p class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap break-words">'+esc(u.bio)+'</p></section>':'')+
-        '<section class="bg-card border border-border rounded-2xl p-4 mt-2"><div class="flex items-center justify-between mb-3"><div><h2 class="font-black">Operator Details</h2><p class="text-[10px] text-gray-500 mt-1">Player identity and profile cosmetics</p></div><span class="text-2xl">🎮</span></div><div class="grid grid-cols-2 gap-2">'+facts.map(x=>'<div class="cp-pp-fact"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></div>').join('')+'</div></section>';
+        '<section class="bg-card border border-border rounded-2xl p-4 mt-2"><div class="flex items-center justify-between mb-3"><div><h2 class="font-black">Operator Details</h2><p class="text-[10px] text-gray-500 mt-1">Player identity and profile cosmetics</p></div><span class="text-2xl">🎮</span></div><div class="grid grid-cols-2 gap-2">'+facts.map(x=>'<div class="cp-pp-fact"><small>'+esc(x[0])+'</small><strong class="'+(x[0]==='Joined CODMPanda'?'cp-date-time':'')+'">'+esc(x[1])+'</strong></div>').join('')+'</div></section>';
     }
   }
   async function handleMention(el) {
@@ -28928,8 +28947,10 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       if (typeof sendFriendRequest !== 'function') { toast('Friend requests are unavailable right now', 'error'); return; }
       target.disabled = true;
       target.textContent = 'Sending request…';
-      await sendFriendRequest(uid, data.user.ign || data.user.displayName || 'Player');
+      const sent = await sendFriendRequest(uid, data.user.ign || data.user.displayName || 'Player');
+      target.disabled = false;
       root.__cpPPActionUid = '';
+      target.textContent = sent ? 'Friend request sent' : '＋ Add Friend';
       setTimeout(renderActions, 300);
       return;
     }
