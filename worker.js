@@ -43,7 +43,7 @@ export default {
         const usable = briefings.filter(item => item.isArticle && item.articleText && item.articleText.length >= 180);
         return json({
           success: usable.some(item => item.aiSummary && item.summary),
-          aiConfigured: !!env.GEMINI_API_KEY,
+          aiConfigured: hasAIKey(env),
           sourcesChecked: 3,
           articlesFound: usable.length,
           summariesGenerated: usable.filter(item => item.aiSummary && item.summary).length,
@@ -549,11 +549,11 @@ async function callGemini(env, payload) {
   if (provider === 'openai') {
     const model = String(env.OPENAI_MODEL || 'gpt-4o-mini');
     const messages = [];
-    const systemText = payload.systemInstruction?.parts?.map(part => part.text || '').join('\\n').trim();
+    const systemText = payload.systemInstruction?.parts?.map(part => part.text || '').join('\n').trim();
     if (systemText) messages.push({ role: 'system', content: systemText });
     for (const item of payload.contents || []) {
       const role = item.role === 'model' || item.role === 'assistant' ? 'assistant' : 'user';
-      const content = (item.parts || []).map(part => part.text || '').join('\\n').trim();
+      const content = (item.parts || []).map(part => part.text || '').join('\n').trim();
       if (content) messages.push({ role, content });
     }
     endpoint = 'https://api.openai.com/v1/chat/completions';
@@ -562,7 +562,7 @@ async function callGemini(env, payload) {
       max_tokens: payload.generationConfig?.maxOutputTokens ?? 500 };
     providerLabel = 'OpenAI';
   } else if (provider === 'gemini') {
-    const model = String(env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\\//, '');
+    const model = String(env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//, '');
     endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
     headers = { 'Content-Type': 'application/json', 'x-goog-api-key': getGeminiKey(env) };
     requestBody = payload;
@@ -587,10 +587,10 @@ async function callGemini(env, payload) {
   let answer = '';
   if (provider === 'openai') {
     const content = data.choices?.[0]?.message?.content;
-    answer = Array.isArray(content) ? content.map(part => part.text || '').join('\\n').trim() : String(content || '').trim();
+    answer = Array.isArray(content) ? content.map(part => part.text || '').join('\n').trim() : String(content || '').trim();
   } else {
     answer = (data.candidates || []).flatMap(candidate => candidate.content?.parts || [])
-      .map(part => part.text || '').join('\\n').trim();
+      .map(part => part.text || '').join('\n').trim();
   }
   if (!answer) throw new Error(providerLabel + ' returned an empty response');
   return answer;
