@@ -7042,9 +7042,13 @@ window.showAdminAnalytics = showAdminAnalytics;
 
 let friendsTab = 'friends'; // 'friends' | 'requests' | 'search'
 let friendsRenderVersion = 0;
+let friendsPanelLastRelationshipKey = null;
+let friendsPanelHasInitialSnapshot = false;
 
 // ---------- MAIN RENDER ----------
 async function showFriendsPanel() {
+  friendsPanelLastRelationshipKey = null;
+  friendsPanelHasInitialSnapshot = false;
   openSheet(`
     <div class="text-center py-8"><div class="spinner mx-auto"></div></div>
   `, '👥 Friends');
@@ -7086,14 +7090,27 @@ async function showFriendsPanel() {
       if (!currentBody || !sheet || sheet.classList.contains('hidden')) return;
 
       const data = snap.exists() ? snap.data() : {};
-      // Do not reset a player's typed search query when their profile changes.
-      if (friendsTab !== 'search') renderFriendsBody(data);
+      const relationshipKey = JSON.stringify([
+        Array.isArray(data.friends) ? data.friends : [],
+        Array.isArray(data.friendRequests) ? data.friendRequests : [],
+        Array.isArray(data.friendRequestsSent) ? data.friendRequestsSent : []
+      ]);
+      const firstSnapshot = !friendsPanelHasInitialSnapshot;
+      const relationshipsChanged = relationshipKey !== friendsPanelLastRelationshipKey;
+      friendsPanelHasInitialSnapshot = true;
+      friendsPanelLastRelationshipKey = relationshipKey;
+
+      // Always paint the first snapshot (including when Search was last selected).
+      // Later relationship changes refresh Friends/Requests without clearing Search.
+      if (firstSnapshot || (relationshipsChanged && friendsTab !== 'search')) {
+        renderFriendsBody(data);
+      }
     },
     (error) => {
       console.error('[CODMPanda] Friends real-time listener failed:', error);
       const currentBody = document.getElementById('friends-body');
       const sheet = document.getElementById('sheet-container');
-      if (currentBody && sheet && !sheet.classList.contains('hidden') && friendsTab !== 'search') {
+      if (currentBody && sheet && !sheet.classList.contains('hidden')) {
         renderFriendsBody();
       }
     }
