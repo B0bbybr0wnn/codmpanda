@@ -12551,7 +12551,26 @@ messages.sort((a, b) => {
   };
 
   // DM images are resized/compressed in the browser and stored as Base64 in Firestore.
-  // Keep the encoded payload below 750 KB so the whole document stays safely under 1 MiB.
+  // Retry with smaller dimensions/lower JPEG quality until the payload is safely below 700 KB.
+  // Base64 strings plus message metadata must remain below Firestore's 1 MiB document limit.
+  async function compressDMImage(file) {
+    const attempts = [
+      [700, 0.55],
+      [600, 0.50],
+      [500, 0.45],
+      [400, 0.40],
+      [320, 0.35],
+      [240, 0.30]
+    ];
+    for (const [maxSize, quality] of attempts) {
+      const data = await compressImage(file, maxSize, quality);
+      if (data && data.startsWith('data:image/jpeg;base64,') && data.length <= 700000) {
+        return data;
+      }
+    }
+    throw new Error('This image is still too large after compression. Try a smaller image.');
+  }
+
   const imagePick = document.getElementById('dm-image-pick');
   const imageFile = document.getElementById('dm-image-file');
   const uploadStatus = document.getElementById('dm-upload-status');
@@ -12574,14 +12593,7 @@ messages.sort((a, b) => {
       imageFile.disabled = true;
       if (uploadStatus) uploadStatus.textContent = 'Compressing image…';
       try {
-        // Existing helper downsizes the longest edge to 700 px and exports JPEG at 55% quality.
-        const imageData = await compressImage(file, 700, 0.55);
-        if (!imageData || !imageData.startsWith('data:image/jpeg;base64,')) {
-          throw new Error('Image compression failed');
-        }
-        if (imageData.length > 750000) {
-          throw new Error('This image is still too large after compression. Try a smaller image.');
-        }
+        const imageData = await compressDMImage(file);
         if (uploadStatus) uploadStatus.textContent = 'Sending image…';
         await addDoc(collection(db, 'messages'), {
           chatId,
