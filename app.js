@@ -13760,15 +13760,26 @@ notifyNewLeakPosted = async function(title) {
 // Fix: Prevent double-tap zoom on iOS
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 
-// Fix: Handle back button gracefully in PWA
+// Fix: Handle back button gracefully in PWA.
+// Mark the overlay close so the smart-back listener doesn't also switch tabs
+// while handling the same physical Back press.
 window.addEventListener('popstate', () => {
+  let closedOverlay = false;
   const sheet = document.getElementById('sheet-container');
   if (sheet && !sheet.classList.contains('hidden')) {
     closeSheet();
+    closedOverlay = true;
   }
   const modal = document.getElementById('modal-container');
   if (modal && !modal.classList.contains('hidden')) {
     closeModal();
+    closedOverlay = true;
+  }
+  if (closedOverlay) {
+    window.__codmOverlayBackHandled = true;
+    if (document.getElementById('cp-public-profile-page')) {
+      window.__cpProfileNestedBackHandled = true;
+    }
   }
 });
 
@@ -14159,6 +14170,14 @@ if (!window.__backBtnHandlerAdded) {
   } catch (e) { /* silent */ }
 
   window.addEventListener('popstate', (e) => {
+    // The earlier overlay listener may already have closed a sheet/modal for
+    // this same Back event. Consume it here instead of switching the app tab.
+    if (window.__codmOverlayBackHandled) {
+      window.__codmOverlayBackHandled = false;
+      try { history.pushState({ __codm: true }, ''); } catch (err) { /* silent */ }
+      return;
+    }
+
     // If a sheet is open — close it and re-push state
     const sheet = document.getElementById('sheet-container');
     if (sheet && !sheet.classList.contains('hidden')) {
@@ -14177,12 +14196,12 @@ if (!window.__backBtnHandlerAdded) {
       return;
     }
 
-    // A public player profile is a full-screen destination; back always returns to HOME.
+    // The public profile is an overlay above the originating screen. Remove
+    // only the overlay so the previous tab, DOM, and exact feed scroll position survive.
     const cpPublicProfileBackRoot = document.getElementById('cp-public-profile-page');
     if (cpPublicProfileBackRoot) {
       cpPublicProfileBackRoot.__cpPPHistoryPushed = false;
       cpPublicProfileBackRoot.remove();
-      if (typeof switchTab === 'function') switchTab('home');
       try { history.pushState({ __codm: true }, ''); } catch (err) { /* silent */ }
       return;
     }
