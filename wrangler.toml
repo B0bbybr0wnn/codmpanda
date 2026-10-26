@@ -1,31 +1,19 @@
-# ============================================
-# CODMPanda Notification Worker
-# ============================================
-# ⚙️ Handles: FCM push sends + daily cron notifications
-# ============================================
-
+# CODMPanda production Worker — deploy from the main repository root.
 name = "codmpanda-notify"
 main = "worker.js"
 compatibility_date = "2024-10-01"
 
-# ============================================
-# CRON TRIGGERS
-# ============================================
-# Daily notification — 7 PM UTC every day
-# 7 PM UTC = 8 PM WAT (Nigeria) = 9 PM SAST = 10 PM EAT
+# Daily notification at 19:00 UTC (20:00 Nigeria time).
 [triggers]
 crons = ["0 19 * * *"]
 
-# ============================================
-# OBSERVABILITY (see cron logs in Cloudflare dashboard)
-# ============================================
 [observability]
 enabled = true
 
-# ============================================
-# SECRETS (set via dashboard or CLI, NOT here)
-# ============================================
-# FIREBASE_SERVICE_ACCOUNT_JSON  ← already set ✅
+# Configure these as Cloudflare Worker secrets; never commit secret values:
+# FIREBASE_SERVICE_ACCOUNT_JSON
+# GEMINI_API_KEY
+# Optional if using OpenAI instead: OPENAI_API_KEY
 #
-# To set via CLI (optional):
-#   wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
+# Cloudflare Workers Builds deploy command: npx wrangler deploy
+# Do not use npx wrangler preview as the production deploy command.
