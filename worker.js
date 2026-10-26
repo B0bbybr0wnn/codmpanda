@@ -1,6 +1,6 @@
 // CODMPanda Notify — clean Cloudflare Worker
 // Required secrets: GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON
-const BUILD = 'codmpanda-worker-v6';
+const BUILD = 'codmpanda-worker-v7';
 const APP_URL = 'https://codmpanda.pages.dev';
 // Google-maintained alias that follows the latest stable Flash model.
 const MODEL = 'gemini-flash-latest';
@@ -134,7 +134,7 @@ async function briefingsRoute(env) {
     const articles = await getOfficialArticles();
     const output = articles.map(article => {
       const clean = String(article.articleText || '').replace(/\s+/g, ' ').trim();
-      const summary = (clean.slice(0, 560).replace(/\s+\S*$/, '') + (clean.length > 560 ? '…' : '')).trim();
+      const summary = String(article.summary || (clean.slice(0, 560).replace(/\s+\S*$/, '') + (clean.length > 560 ? '…' : ''))).trim();
       const { articleText, ...rest } = article;
       return { ...rest, summary, aiSummary: false };
     });
