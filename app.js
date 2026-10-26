@@ -61,6 +61,9 @@ const APP_VERSION = "1.0.0";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// One live listener while the Friends panel is open; prevents stale request lists.
+let friendsPanelUnsub = null;
 // Google sign-in is handled by GIS and exchanged for a Firebase credential.
 
 // ============================================
@@ -232,6 +235,10 @@ function closeModal() {
 }
 
 function closeSheet() {
+  if (friendsPanelUnsub) {
+    friendsPanelUnsub();
+    friendsPanelUnsub = null;
+  }
   const c = document.getElementById('sheet-container');
   const wasPostDetail = !!c.querySelector('.cp-post-detail-sheet');
   c.classList.add('hidden');
@@ -243,6 +250,10 @@ function closeSheet() {
 }
 
 function openSheet(contentHTML, title = '') {
+  if (friendsPanelUnsub) {
+    friendsPanelUnsub();
+    friendsPanelUnsub = null;
+  }
   const container = document.getElementById('sheet-container');
   container.classList.remove('hidden');
   container.innerHTML = `
@@ -7030,6 +7041,7 @@ window.showAdminAnalytics = showAdminAnalytics;
 // ============================================
 
 let friendsTab = 'friends'; // 'friends' | 'requests' | 'search'
+let friendsRenderVersion = 0;
 
 // ---------- MAIN RENDER ----------
 async function showFriendsPanel() {
@@ -7057,40 +7069,79 @@ async function showFriendsPanel() {
     };
   });
 
-  renderFriendsBody();
+  const uid = State.user?.uid;
+  if (!uid) {
+    const body = document.getElementById('friends-body');
+    if (body) body.innerHTML = '<div class="text-center py-6 text-gray-400 text-sm">Sign in to manage friends.</div>';
+    return;
+  }
+
+  // Incoming and outgoing requests update this document. Listen while the panel is
+  // open so a request appears without a refresh, tab switch, or app restart.
+  friendsPanelUnsub = onSnapshot(
+    doc(db, 'users', uid),
+    (snap) => {
+      const currentBody = document.getElementById('friends-body');
+      const sheet = document.getElementById('sheet-container');
+      if (!currentBody || !sheet || sheet.classList.contains('hidden')) return;
+
+      const data = snap.exists() ? snap.data() : {};
+      // Do not reset a player's typed search query when their profile changes.
+      if (friendsTab !== 'search') renderFriendsBody(data);
+    },
+    (error) => {
+      console.error('[CODMPanda] Friends real-time listener failed:', error);
+      const currentBody = document.getElementById('friends-body');
+      const sheet = document.getElementById('sheet-container');
+      if (currentBody && sheet && !sheet.classList.contains('hidden') && friendsTab !== 'search') {
+        renderFriendsBody();
+      }
+    }
+  );
+
   if (window.lucide) window.lucide.createIcons();
 }
 
-async function renderFriendsBody() {
+async function renderFriendsBody(profileData = null) {
   const body = document.getElementById('friends-body');
   if (!body) return;
 
+  const renderVersion = ++friendsRenderVersion;
   body.innerHTML = '<div class="text-center py-6"><div class="spinner mx-auto"></div></div>';
 
   try {
-    const userRef = doc(db, 'users', State.user.uid);
-    const snap = await getDoc(userRef);
-    const data = snap.exists() ? snap.data() : {};
+    let data = profileData;
+    if (data == null) {
+      if (!State.user?.uid) throw new Error('Sign in to manage friends.');
+      const userRef = doc(db, 'users', State.user.uid);
+      const snap = await getDoc(userRef);
+      data = snap.exists() ? snap.data() : {};
+    }
+
+    // Ignore a slower, older read if a newer live update or tab change arrived.
+    if (renderVersion !== friendsRenderVersion || body !== document.getElementById('friends-body')) return;
 
     const friendUids = data.friends || [];
     const incomingReqs = data.friendRequests || [];
     const outgoingReqs = data.friendRequestsSent || [];
 
     if (friendsTab === 'friends') {
-      await renderFriendsList(body, friendUids);
+      await renderFriendsList(body, friendUids, renderVersion);
     } else if (friendsTab === 'requests') {
-      await renderRequestsList(body, incomingReqs, outgoingReqs);
+      await renderRequestsList(body, incomingReqs, outgoingReqs, renderVersion);
     } else {
       renderSearchBody(body);
     }
   } catch (e) {
+    if (renderVersion !== friendsRenderVersion || body !== document.getElementById('friends-body')) return;
     console.error('Friends error:', e);
     body.innerHTML = '<div class="text-center py-6 text-red-400 text-sm">Failed to load</div>';
   }
 }
 
 // ---------- FRIENDS LIST ----------
-async function renderFriendsList(body, friendUids) {
+async function renderFriendsList(body, friendUids, renderVersion = friendsRenderVersion) {
+  if (renderVersion !== friendsRenderVersion || body !== document.getElementById('friends-body')) return;
   if (friendUids.length === 0) {
     body.innerHTML = `
       <div class="text-center py-12">
@@ -7118,6 +7169,8 @@ async function renderFriendsList(body, friendUids) {
       if (s.exists()) friends.push({ id: uid, ...s.data() });
     } catch (e) { /* skip */ }
   }
+
+  if (renderVersion !== friendsRenderVersion || body !== document.getElementById('friends-body')) return;
 
   body.innerHTML = friends.map(f => `
     <div class="flex items-center gap-3 p-3 bg-card border border-border rounded-xl mb-2">
@@ -7154,7 +7207,8 @@ async function renderFriendsList(body, friendUids) {
 }
 
 // ---------- REQUESTS ----------
-async function renderRequestsList(body, incomingReqs, outgoingReqs) {
+async function renderRequestsList(body, incomingReqs, outgoingReqs, renderVersion = friendsRenderVersion) {
+  if (renderVersion !== friendsRenderVersion || body !== document.getElementById('friends-body')) return;
   let html = '';
 
   // Incoming
@@ -7222,6 +7276,7 @@ async function renderRequestsList(body, incomingReqs, outgoingReqs) {
     `;
   }
 
+  if (renderVersion !== friendsRenderVersion || body !== document.getElementById('friends-body')) return;
   body.innerHTML = html;
 
   // Wire accept
