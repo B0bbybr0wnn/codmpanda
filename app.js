@@ -28626,11 +28626,11 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       host.innerHTML=data.posts.map(post=>{try{
         let card=renderHomePostCard(post);
         const uid=esc(post.uid||data.uid||'');
-        const avatarPattern=new RegExp('<div data-uid="[^"]*" class="w-11 h-11[^"]*">[\\\\s\\\\S]*?</div>');
+        const avatarPattern=new RegExp('<div data-uid="[^"]*" class="w-11 h-11[^"]*">[^]*?</div>');
         if(avatarPattern.test(card)){
           card=card.replace(avatarPattern,'<div data-uid="'+uid+'" data-profile-link="true" class="w-11 h-11 rounded-full flex items-center justify-center overflow-visible flex-shrink-0 cursor-pointer">'+avatarHTML(post,44)+'</div>');
         }
-        const namePattern=new RegExp('(<span data-uid="[^"]*" class="font-bold text-sm cursor-pointer">[\\\\s\\\\S]*?</span>)');
+        const namePattern=new RegExp('(<span data-uid="[^"]*" class="font-bold text-sm cursor-pointer">[^]*?</span>)');
         if(namePattern.test(card)){
           const earned=Array.isArray(post.badges)?post.badges.slice(0,3).map(value=>{const badge=badgeLabel(value);return '<span class="text-[11px] leading-none" title="'+esc(badge[1])+'" aria-label="'+esc(badge[1])+'" role="img">'+badge[0]+'</span>'}).join(''):'';
           const profileBadge=post.profileBadge?'<span class="text-[9px] font-black rounded px-1.5 py-0.5 bg-primary/15 text-primary">'+esc(String(post.profileBadge))+'</span>':'';
