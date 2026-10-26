@@ -18934,7 +18934,7 @@ async function fetchHomeFeed() {
         id: d.id,
         type: 'lobby',
         ...data,
-        _sortTime: data.createdAt?.seconds || 0
+        _sortTime: cpHomeFeedRecordTime(data)
       });
     });
 
@@ -18945,7 +18945,7 @@ async function fetchHomeFeed() {
         id: d.id,
         type: 'vault',
         ...data,
-        _sortTime: data.createdAt?.seconds || 0
+        _sortTime: cpHomeFeedRecordTime(data)
       });
     });
 
@@ -18956,7 +18956,7 @@ async function fetchHomeFeed() {
         id: d.id,
         type: 'clip',
         ...data,
-        _sortTime: data.createdAt?.seconds || 0
+        _sortTime: cpHomeFeedRecordTime(data)
       });
     });
 
@@ -18967,7 +18967,7 @@ async function fetchHomeFeed() {
         id: d.id,
         type: 'leak',
         ...data,
-        _sortTime: (data.createdAt || data.publishedAt)?.seconds || 0
+        _sortTime: cpHomeFeedRecordTime(data)
       });
     });
 
@@ -20673,6 +20673,46 @@ function openWritePostSheet() {
 // PART 2: FETCH POSTS
 // ============================================
 
+// Normalize Firestore Timestamps, Dates, epoch values, and ISO date strings before ranking.
+function cpHomeFeedTimestampSeconds(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  if (value && typeof value.toMillis === 'function') {
+    try {
+      const ms = Number(value.toMillis());
+      if (Number.isFinite(ms) && ms > 0) return ms / 1000;
+    } catch (_) {}
+  }
+  if (typeof value === 'object') {
+    const seconds = Number(value.seconds ?? value._seconds);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds;
+  }
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) && ms > 0 ? ms / 1000 : 0;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? (value > 1e11 ? value / 1000 : value) : 0;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric > 1e11 ? numeric / 1000 : numeric;
+    const parsed = Date.parse(trimmed);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed / 1000 : 0;
+  }
+  return 0;
+}
+
+function cpHomeFeedRecordTime(data) {
+  if (!data || typeof data !== 'object') return 0;
+  for (const key of ['createdAt', 'publishedAt', 'postedAt', 'timestamp', 'created', 'date']) {
+    const seconds = cpHomeFeedTimestampSeconds(data[key]);
+    if (seconds > 0) return seconds;
+  }
+  return 0;
+}
+
 var _origFetchHomeFeedWithPosts = fetchHomeFeed;
 fetchHomeFeed = async function() {
   if (homeCache.isLoading) return homeCache.feed;
@@ -20694,29 +20734,29 @@ fetchHomeFeed = async function() {
     lobbiesSnap.forEach(d => {
       const data = d.data();
       if (cpLobbyIsExpired({ id: d.id, ...data })) return;
-      feed.push({ id: d.id, type: 'lobby', ...data, _sortTime: data.createdAt?.seconds || 0 });
+      feed.push({ id: d.id, type: 'lobby', ...data, _sortTime: cpHomeFeedRecordTime(data) });
     });
 
     vaultsSnap.forEach(d => {
       const data = d.data();
-      feed.push({ id: d.id, type: 'vault', ...data, _sortTime: data.createdAt?.seconds || 0 });
+      feed.push({ id: d.id, type: 'vault', ...data, _sortTime: cpHomeFeedRecordTime(data) });
     });
 
     clipsSnap.forEach(d => {
       const data = d.data();
-      feed.push({ id: d.id, type: 'clip', ...data, _sortTime: data.createdAt?.seconds || 0 });
+      feed.push({ id: d.id, type: 'clip', ...data, _sortTime: cpHomeFeedRecordTime(data) });
     });
 
     leaksSnap.forEach(d => {
       const data = d.data();
-      feed.push({ id: d.id, type: 'leak', ...data, _sortTime: (data.createdAt || data.publishedAt)?.seconds || 0 });
+      feed.push({ id: d.id, type: 'leak', ...data, _sortTime: cpHomeFeedRecordTime(data) });
     });
 
     postsSnap.forEach(d => {
       const data = d.data();
       const expiresAt = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : (data.expiresAt?.seconds ? data.expiresAt.seconds * 1000 : Infinity);
       if (expiresAt < now) return;
-      feed.push({ id: d.id, type: 'post', ...data, _sortTime: data.createdAt?.seconds || 0 });
+      feed.push({ id: d.id, type: 'post', ...data, _sortTime: cpHomeFeedRecordTime(data) });
     });
 
     // Keep the feed newest-first, with a modest fixed recency boost for friends'
@@ -20724,13 +20764,15 @@ fetchHomeFeed = async function() {
     // reordering while someone is scrolling.
     const friendIds = new Set(
       (Array.isArray(State.profile?.friends) ? State.profile.friends : [])
-        .filter(uid => typeof uid === 'string' && uid.length > 0)
+        .map(friend => typeof friend === 'string' ? friend : (friend?.uid || friend?.id || ''))
+        .map(uid => String(uid || '').trim())
+        .filter(Boolean)
     );
     const nowSeconds = Math.floor(now / 1000);
     const friendPostBoostSeconds = 90 * 60;
     feed.sort((a, b) => {
-      const aTime = Number(a._sortTime) || 0;
-      const bTime = Number(b._sortTime) || 0;
+      const aTime = Number(a._sortTime) || cpHomeFeedRecordTime(a) || 0;
+      const bTime = Number(b._sortTime) || cpHomeFeedRecordTime(b) || 0;
       const aBoost = a.type === 'post' && friendIds.has(String(a.uid || '')) && nowSeconds >= aTime && nowSeconds - aTime <= 24 * 60 * 60 ? friendPostBoostSeconds : 0;
       const bBoost = b.type === 'post' && friendIds.has(String(b.uid || '')) && nowSeconds >= bTime && nowSeconds - bTime <= 24 * 60 * 60 ? friendPostBoostSeconds : 0;
       return (bTime + bBoost) - (aTime + aBoost)
