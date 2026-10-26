@@ -24,7 +24,7 @@ export default {
       return json({
         status: 'ok',
         service: 'codmpanda-notify',
-        build: 'codmpanda-coach-briefings-v9',
+        build: 'codmpanda-main-v10',
         coachRouteConfigured: true,
         coachRootCompatibility: true,
         briefingDiscovery: 'official-html+sitemaps',
