@@ -245,7 +245,16 @@ function closeSheet() {
   c.innerHTML = '';
   if (wasPostDetail && window.__cpPostFeedScroll) {
     const saved = window.__cpPostFeedScroll; window.__cpPostFeedScroll = null;
-    requestAnimationFrame(() => { if (saved.el && saved.el.isConnected) { saved.el.scrollTop = saved.top; saved.el.scrollLeft = saved.x; } });
+    requestAnimationFrame(() => {
+      if (saved.el && saved.el.isConnected) { saved.el.scrollTop = saved.top; saved.el.scrollLeft = saved.x; }
+      if (Number.isFinite(saved.windowY)) {
+        const root = document.documentElement;
+        const oldBehavior = root.style.scrollBehavior;
+        root.style.scrollBehavior = 'auto';
+        window.scrollTo(0, saved.windowY);
+        root.style.scrollBehavior = oldBehavior;
+      }
+    });
   }
 }
 
@@ -19462,6 +19471,29 @@ function startHomeLiveUpdates() {
       () => { scheduleHomeRefresh(); },
       () => {}
     ));
+
+    // Refresh the Home feed when recent posts change; render logic preserves the reader's position.
+    homeLiveUnsubs.push(onSnapshot(
+      query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100)),
+      () => { scheduleHomeRefresh(); },
+      () => {}
+    ));
+
+    // Keep friend ranking based on the live relationship document, not a stale sign-in snapshot.
+    if (State.user?.uid) {
+      homeLiveUnsubs.push(onSnapshot(doc(db, 'users', State.user.uid), (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() || {};
+        const nextFriends = Array.isArray(data.friends) ? data.friends : [];
+        const currentFriends = Array.isArray(State.profile?.friends) ? State.profile.friends : [];
+        const nextKey = JSON.stringify([...nextFriends].map(String).sort());
+        const currentKey = JSON.stringify([...currentFriends].map(String).sort());
+        if (nextKey !== currentKey) {
+          State.profile = { ...(State.profile || {}), friends: nextFriends };
+          scheduleHomeRefresh();
+        }
+      }, () => {}));
+    }
   } catch (e) {
     console.warn('Live updates failed:', e);
   }
@@ -20654,7 +20686,7 @@ fetchHomeFeed = async function() {
       getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'clips'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'leaks'), limit(20))).catch(() => ({ forEach: () => {} })),
-      getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} }))
+      getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100))).catch(() => getDocs(query(collection(db, 'posts'), limit(100))).catch(() => ({ forEach: () => {} })))
     ]);
 
     const feed = [];
@@ -20694,12 +20726,13 @@ fetchHomeFeed = async function() {
       (Array.isArray(State.profile?.friends) ? State.profile.friends : [])
         .filter(uid => typeof uid === 'string' && uid.length > 0)
     );
-    const friendPostBoostSeconds = 45 * 60;
+    const nowSeconds = Math.floor(now / 1000);
+    const friendPostBoostSeconds = 90 * 60;
     feed.sort((a, b) => {
       const aTime = Number(a._sortTime) || 0;
       const bTime = Number(b._sortTime) || 0;
-      const aBoost = a.type === 'post' && friendIds.has(String(a.uid || '')) ? friendPostBoostSeconds : 0;
-      const bBoost = b.type === 'post' && friendIds.has(String(b.uid || '')) ? friendPostBoostSeconds : 0;
+      const aBoost = a.type === 'post' && friendIds.has(String(a.uid || '')) && nowSeconds >= aTime && nowSeconds - aTime <= 24 * 60 * 60 ? friendPostBoostSeconds : 0;
+      const bBoost = b.type === 'post' && friendIds.has(String(b.uid || '')) && nowSeconds >= bTime && nowSeconds - bTime <= 24 * 60 * 60 ? friendPostBoostSeconds : 0;
       return (bTime + bBoost) - (aTime + aBoost)
         || bTime - aTime
         || String(a.id || '').localeCompare(String(b.id || ''));
@@ -25496,8 +25529,13 @@ window.performGlobalSearch = performGlobalSearch;
 
   // Post detail view (fullscreen-ish sheet)
   window.openPostDetail = function(post) {
-    const feedScroller = document.querySelector('#content .overflow-y-auto, #content [data-feed-scroll], #content');
-    if (feedScroller) window.__cpPostFeedScroll = { el: feedScroller, top: feedScroller.scrollTop, x: feedScroller.scrollLeft };
+    const feedScroller = document.querySelector('#content [data-feed-scroll], #content .overflow-y-auto') || document.getElementById('content');
+    if (feedScroller) window.__cpPostFeedScroll = {
+      el: feedScroller,
+      top: feedScroller.scrollTop || 0,
+      x: feedScroller.scrollLeft || 0,
+      windowY: window.scrollY || document.documentElement.scrollTop || 0
+    };
     const isLiked = State.likedItems?.post?.[post.id] || false;
     const isMine = !!State.user && post.uid === State.user.uid;
 
@@ -28742,7 +28780,8 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
     r.__cpPPHistoryPushed=false;
     r.remove();
     try { if(history.state?.cpPublicProfilePage) history.replaceState({__codm:true},'',location.href); } catch (_) {}
-    if(typeof switchTab==='function') switchTab('home');
+    // Keep the original Home/Play/etc. DOM mounted; changing tabs here destroys scroll and feed state.
+    if (typeof window.__cpFlushHomeFeedRenderPending === 'function') window.__cpFlushHomeFeedRenderPending();
   }
   async function canView(u,uid) {
     if(uid===State.user?.uid||u.privateProfile!==true)return true;
@@ -29166,4 +29205,178 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
   });
   observer.observe(document.documentElement, { childList:true, subtree:true });
   setTimeout(() => renderActions().catch(()=>{}), 500);
+})();
+
+
+/* CODMPanda: Android Back, exact Home scroll restoration, and stable friend-aware feed. */
+(function cpNavigationAndHomeFeedStabilityV2() {
+  'use strict';
+  if (window.__cpNavigationAndHomeFeedStabilityV2) return;
+  window.__cpNavigationAndHomeFeedStabilityV2 = true;
+
+  function isVisible(el) { return !!el && !el.classList.contains('hidden'); }
+  function scrollYNow() { return window.scrollY || document.documentElement.scrollTop || 0; }
+  function restoreWindowY(y) {
+    if (!Number.isFinite(y)) return;
+    const root = document.documentElement;
+    const oldBehavior = root.style.scrollBehavior;
+    root.style.scrollBehavior = 'auto';
+    window.scrollTo(0, y);
+    root.style.scrollBehavior = oldBehavior;
+  }
+
+  // Keep a visible card at the same viewport coordinate when Home refreshes/reorders.
+  const cpBaseRenderHomeFeedV2 = renderHomeFeed;
+  let cpLastHomeFilterV2 = null;
+  renderHomeFeed = function() {
+    const feedEl = document.getElementById('home-feed');
+    if (!feedEl) return cpBaseRenderHomeFeedV2.apply(this, arguments);
+
+    const sheet = document.getElementById('sheet-container');
+    const modal = document.getElementById('modal-container');
+    const profile = document.getElementById('cp-public-profile-page');
+    const viewer = document.getElementById('image-viewer');
+    if (State.currentTab === 'home' && (profile || isVisible(sheet) || isVisible(modal) || viewer)) {
+      window.__cpHomeFeedRenderPending = true;
+      return;
+    }
+
+    const filterChanged = cpLastHomeFilterV2 !== null && cpLastHomeFilterV2 !== homeFilter;
+    const oldY = scrollYNow();
+    let anchor = null;
+    let anchorTop = 0;
+    let anchorId = '';
+    let anchorType = '';
+    if (!filterChanged) {
+      const cards = Array.from(feedEl.querySelectorAll('.home-card[data-id]'));
+      anchor = cards.find(card => {
+        const rect = card.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+      }) || null;
+      if (anchor) {
+        anchorTop = anchor.getBoundingClientRect().top;
+        anchorId = anchor.dataset.id || '';
+        anchorType = anchor.dataset.type || '';
+      }
+    }
+
+    const result = cpBaseRenderHomeFeedV2.apply(this, arguments);
+    cpLastHomeFilterV2 = homeFilter;
+    if (!filterChanged) {
+      requestAnimationFrame(() => {
+        if (State.currentTab !== 'home') return;
+        const currentFeed = document.getElementById('home-feed');
+        if (!currentFeed) return;
+        if (anchorId) {
+          const nextAnchor = Array.from(currentFeed.querySelectorAll('.home-card[data-id]'))
+            .find(card => card.dataset.id === anchorId && (!anchorType || card.dataset.type === anchorType));
+          if (nextAnchor) {
+            const delta = nextAnchor.getBoundingClientRect().top - anchorTop;
+            if (Math.abs(delta) > 1) restoreWindowY(scrollYNow() + delta);
+            return;
+          }
+        }
+        restoreWindowY(oldY);
+      });
+    }
+    return result;
+  };
+  window.renderHomeFeed = renderHomeFeed;
+
+  function flushPendingHomeRender() {
+    if (!window.__cpHomeFeedRenderPending) return;
+    requestAnimationFrame(() => {
+      const sheet = document.getElementById('sheet-container');
+      const modal = document.getElementById('modal-container');
+      if (!window.__cpHomeFeedRenderPending || State.currentTab !== 'home' ||
+          !document.getElementById('home-feed') ||
+          document.getElementById('cp-public-profile-page') ||
+          isVisible(sheet) || isVisible(modal) || document.getElementById('image-viewer')) return;
+      window.__cpHomeFeedRenderPending = false;
+      renderHomeFeed();
+    });
+  }
+  window.__cpFlushHomeFeedRenderPending = flushPendingHomeRender;
+
+  // A post detail is a full-screen sheet; restore the window scroll as well as any inner scroller.
+  const cpBaseCloseSheetV2 = closeSheet;
+  closeSheet = function() {
+    const result = cpBaseCloseSheetV2.apply(this, arguments);
+    flushPendingHomeRender();
+    return result;
+  };
+  window.closeSheet = closeSheet;
+
+  const cpBaseCloseModalV2 = closeModal;
+  closeModal = function() {
+    const result = cpBaseCloseModalV2.apply(this, arguments);
+    flushPendingHomeRender();
+    return result;
+  };
+  window.closeModal = closeModal;
+
+  function rearmAppHistory() {
+    try {
+      const next = Object.assign({}, history.state || {}, { __codm: true });
+      if (document.getElementById('cp-public-profile-page')) next.cpPublicProfilePage = true;
+      else delete next.cpPublicProfilePage;
+      history.pushState(next, '', location.href);
+    } catch (_) {}
+  }
+  function consumeBack(event) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  // Capture phase is intentional: the legacy bubble listeners otherwise route Home Back to PLAY.
+  window.addEventListener('popstate', function cpHandleAndroidBack(event) {
+    const main = document.getElementById('main-app');
+    if (!main || main.classList.contains('hidden')) return;
+
+    const viewer = document.getElementById('image-viewer');
+    if (viewer) {
+      viewer.remove();
+      rearmAppHistory();
+      consumeBack(event);
+      flushPendingHomeRender();
+      return;
+    }
+
+    const modal = document.getElementById('modal-container');
+    if (isVisible(modal)) {
+      if (typeof closeModal === 'function') closeModal();
+      rearmAppHistory();
+      consumeBack(event);
+      return;
+    }
+
+    const sheet = document.getElementById('sheet-container');
+    if (isVisible(sheet)) {
+      if (typeof closeSheet === 'function') closeSheet();
+      rearmAppHistory();
+      consumeBack(event);
+      return;
+    }
+
+    if (window.voiceRoomState?.active && typeof window.closeVoiceRoom === 'function') {
+      window.closeVoiceRoom();
+      rearmAppHistory();
+      consumeBack(event);
+      return;
+    }
+
+    const profile = document.getElementById('cp-public-profile-page');
+    if (profile) {
+      profile.__cpPPHistoryPushed = false;
+      profile.remove();
+      consumeBack(event);
+      flushPendingHomeRender();
+      return;
+    }
+
+    // Never let a leftover Home history entry switch tabs and wipe the feed underneath.
+    if (State.currentTab === 'home') consumeBack(event);
+  }, true);
+
+  window.fetchHomeFeed = fetchHomeFeed;
 })();
