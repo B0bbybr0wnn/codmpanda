@@ -102,6 +102,11 @@
       delete nextState.cpPublicProfilePage;
       history.replaceState(nextState, '', location.href);
     } catch (_) {}
+    // Live feed updates are deferred while the profile overlay is open. Flush after
+    // closing it; the Home renderer restores the same visible card/scroll position.
+    if (typeof window.__cpFlushHomeFeedRenderPending === 'function') {
+      window.__cpFlushHomeFeedRenderPending();
+    }
   }, true);
 
   // Intercept Android/PWA Back before the legacy listeners. Close only the
@@ -140,6 +145,9 @@
       profile.remove();
       pushAppBaseState();
       event.stopImmediatePropagation();
+      if (typeof window.__cpFlushHomeFeedRenderPending === 'function') {
+        window.__cpFlushHomeFeedRenderPending();
+      }
       return;
     }
 
