@@ -2,7 +2,8 @@
 // Required secrets: GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON
 const BUILD = 'codmpanda-worker-v1';
 const APP_URL = 'https://codmpanda.pages.dev';
-const MODEL = 'gemini-3.8-flash';
+// Google-maintained alias that follows the latest stable Flash model.
+const MODEL = 'gemini-flash-latest';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
