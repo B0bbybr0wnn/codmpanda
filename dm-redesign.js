@@ -242,7 +242,7 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
     Array.from(messages.children).forEach(node=>{
       if(node.dataset.cpReplyTool==='1'||!node.innerText.trim())return;
       if(node.querySelector('button,input,textarea,a'))return;
-      const text=node.innerText.trim();if(!text||text.length>5000)return;
+      const text=(node.querySelector('.rounded-2xl > .text-xs')?.innerText||node.innerText).trim();if(!text||text.length>5000)return;
       node.dataset.cpReplyTool='1';
       const tools=document.createElement('div');tools.className='cp-dm-message-tools';
       const reply=document.createElement('button');reply.type='button';reply.className='cp-dm-reply-btn';reply.textContent='↩ Reply';reply.setAttribute('aria-label','Reply to message');
@@ -264,7 +264,7 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
       const applyReply=()=>{
         const quote=input.dataset.cpReplyText;
         if(!quote||!String(input.value||'').trim())return;
-        input.value='↪ '+quote+'\n'+input.value;
+        input.value=('↪ '+quote+'\n'+input.value).slice(0,500);
         delete input.dataset.cpReplyText;
         input.placeholder=input.dataset.cpOriginalPlaceholder||'Message…';
         sheet.querySelector('#cp-dm-reply-preview')?.remove();
