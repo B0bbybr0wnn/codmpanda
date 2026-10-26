@@ -148,13 +148,13 @@ async function getOfficialArticles() {
   const candidates = new Map();
   try {
     const html = await fetchText(listing.url);
-    const re = /<a\\b[^>]*href=["']([^"']+)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+    const re = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
     let m;
     while ((m = re.exec(html))) {
       const link = articleUrl(m[1], listing);
       const title = textOf(m[2]);
       if (!link || title.length < 18 || title.length > 220) continue;
-      if (!/(call of duty\\s*:\\s*mobile|call of duty mobile|cod mobile|\\bcodm\\b|mobile season|season \\d+.*mobile)/i.test(title)) continue;
+      if (!/(call of duty\s*:\s*mobile|call of duty mobile|cod mobile|\bcodm\b|mobile season|season \d+.*mobile)/i.test(title)) continue;
       if (/^(cod intel|news|blogs|guides|patch notes|call of duty mobile)$/i.test(title)) continue;
       if (!candidates.has(link)) candidates.set(link, { url: link, title, sourceName: 'Official CODM News' });
     }
@@ -165,25 +165,25 @@ async function getOfficialArticles() {
     try {
       const html = await fetchText(item.url);
       const title = textOf(meta(html, ['og:title', 'twitter:title']) ||
-        (html.match(/<h1\\b[^>]*>([\\s\\S]*?)<\\/h1>/i) || [])[1] || item.title);
+        (html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i) || [])[1] || item.title);
       const description = textOf(meta(html, ['og:description', 'description', 'twitter:description']));
-      const articleMatch = html.match(/<article\\b[^>]*>([\\s\\S]*?)<\\/article>/i);
-      const mainMatch = html.match(/<main\\b[^>]*>([\\s\\S]*?)<\\/main>/i);
+      const articleMatch = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+      const mainMatch = html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
       let rawBody = articleMatch?.[1] || mainMatch?.[1] || '';
       // Strip global navigation and page chrome before extracting prose.
       rawBody = rawBody
-        .replace(/<(script|style|nav|header|footer|aside|form|noscript|svg|button)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi, ' ')
-        .replace(/<(div|section)[^>]*(?:class|id)=["'][^"']*(?:nav|menu|header|footer|breadcrumb|cookie|modal|social|related|recommend|login|signup)[^"']*["'][^>]*>[\\s\\S]*?<\\/\\1>/gi, ' ');
-      const paragraphs = [...rawBody.matchAll(/<p\\b[^>]*>([\\s\\S]*?)<\\/p>/gi)]
+        .replace(/<(script|style|nav|header|footer|aside|form|noscript|svg|button)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+        .replace(/<(div|section)[^>]*(?:class|id)=["'][^"']*(?:nav|menu|header|footer|breadcrumb|cookie|modal|social|related|recommend|login|signup)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi, ' ');
+      const paragraphs = [...rawBody.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
         .map(x => textOf(x[1]))
-        .filter(x => x.length > 45 && !/^(games|news|blogs|guides|patch notes|login|sign up|profile|support|store|esports)\\b/i.test(x));
-      const body = paragraphs.join(' ').replace(/\\s+/g, ' ').trim();
+        .filter(x => x.length > 45 && !/^(games|news|blogs|guides|patch notes|login|sign up|profile|support|store|esports)\b/i.test(x));
+      const body = paragraphs.join(' ').replace(/\s+/g, ' ').trim();
       const summary = description.length >= 40 ? description : body;
       // Never publish a page if it looks like navigation or has no meaningful article copy.
       if (title.length < 15 || summary.length < 40) return null;
       if (/^(cod intel|latest source snapshot|official codm news)$/i.test(title)) return null;
       const publishedAt = meta(html, ['article:published_time', 'datePublished', 'date', 'publish-date']) ||
-        ((html.match(/<time\\b[^>]*datetime=["']([^"']+)["']/i) || [])[1] || '');
+        ((html.match(/<time\b[^>]*datetime=["']([^"']+)["']/i) || [])[1] || '');
       const date = Date.parse(publishedAt);
       if (date && (date < Date.now() - 365 * 86400000 || date > Date.now() + 45 * 86400000)) return null;
       return { sourceName: 'Official CODM News', title: title.slice(0, 180), summary: summary.slice(0, 560), aiSummary: false, url: item.url, publishedAt: publishedAt.slice(0, 40) };
@@ -198,11 +198,11 @@ function articleUrl(href, source) {
     const u = new URL(decode(href), source.url);
     if (u.protocol !== 'https:' || u.hostname.toLowerCase() !== source.host) return null;
     u.hash = '';
-    if (/\\.(png|jpe?g|gif|svg|webp|pdf|css|js|xml)(?:$|\\?)/i.test(u.pathname)) return null;
-    if (u.pathname.replace(/\\/$/, '') === new URL(source.url).pathname.replace(/\\/$/, '')) return null;
-    if (!/\\/blog\\//i.test(u.pathname)) return null;
+    if (/\.(png|jpe?g|gif|svg|webp|pdf|css|js|xml)(?:$|\?)/i.test(u.pathname)) return null;
+    if (u.pathname.replace(/\/$/, '') === new URL(source.url).pathname.replace(/\/$/, '')) return null;
+    if (!/\/blog\//i.test(u.pathname)) return null;
     if (!/call-of-duty-mobile|call-of-duty-mobile-season|cod-mobile|codm/i.test(u.href)) return null;
-    return u.href.replace(/\\/$/, '');
+    return u.href.replace(/\/$/, '');
   } catch { return null; }
 }
 async function fetchText(url) {
