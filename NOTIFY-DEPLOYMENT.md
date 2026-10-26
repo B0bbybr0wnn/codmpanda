@@ -1,31 +1,30 @@
-# CODMPanda Notify — production setup
+# CODMPanda Notify — clean Worker setup
 
-Use the repository's **main** branch and the root files `worker.js` and `wrangler.toml`.
-
-Do not deploy the experimental `codmpanda-notify-clean` branch or a nested copy. The existing production Worker name remains `codmpanda-notify`.
+Deploy only from the repository's `main` branch using the root `worker.js` and `wrangler.toml`.
 
 ## Cloudflare build settings
-For the `codmpanda-notify` Worker, set the deployment command to:
+
+Use this production deploy command:
 
     npx wrangler deploy
 
-Do not use `npx wrangler preview` for production deployment; it requires preview-specific configuration and is not the deployment command we want.
+## Required Worker secrets
 
-## Secrets
-In Cloudflare Dashboard → Workers & Pages → `codmpanda-notify` → Settings → Variables and Secrets, configure:
+In Cloudflare → Workers & Pages → `codmpanda-notify` → Settings → Variables and Secrets, configure these as secrets:
 
-- `GEMINI_API_KEY`: your Gemini API key, stored as a secret.
-- `FIREBASE_SERVICE_ACCOUNT_JSON`: the complete Firebase service-account JSON contents, stored as a secret.
-- Optional `OPENAI_API_KEY` only if you intend to use OpenAI instead of Gemini.
+- `GEMINI_API_KEY` — Gemini API key.
+- `FIREBASE_SERVICE_ACCOUNT_JSON` — complete Firebase service-account JSON.
 
-Secrets are scoped to a particular Worker/environment. A key configured for Pages or a different Worker is not automatically available to `codmpanda-notify`. Do not put key values in GitHub or send them in chat.
+Never commit secret values to GitHub or paste them into chat. Secrets must be attached to the `codmpanda-notify` Worker itself.
 
-## Health check
-After deployment, open the deployed Worker URL with `/health`. Expected fields include:
+## Verify after deployment
+
+Open the Worker URL followed by `/health`. Expected values:
+
 - `status: "ok"`
 - `service: "codmpanda-notify"`
-- `build: "codmpanda-main-v10"`
+- `build: "codmpanda-worker-v1"`
 - `aiConfigured: true`
 - `serviceAccountConfigured: true`
 
-These flags only confirm that secrets are present, not that external APIs are fully working. Test Coach and Intel summaries before changing the frontend endpoint.
+The health check only confirms the secrets are present. Then test `POST /coach`, `GET /briefings`, and push notifications to verify the external APIs work.
