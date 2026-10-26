@@ -16,7 +16,7 @@ const APP_SHELL = [
   '/app.js?v=20261026-public-profile-polish-v6',
   '/app.js?v=20261026-friend-requests-realtime-v1',
   '/app.js?v=20261026-friend-requests-realtime-v2',
-  '/app.js?v=20261026-profile-add-friend-shared-sender-v1',
+  '/app.js?v=20261026-profile-add-friend-click-fix-v2',
   '/badges.js?v=20261024-obsidian-spike-v4',
   '/manifest.json',
   '/icon-192.png',
