@@ -327,7 +327,112 @@ service cloud.firestore {
         && request.resource.data.chatId is string
         && request.resource.data.chatId.size() <= 140
         && (!('text' in request.resource.data) || request.resource.data.text is string)
-        && (!('imageUrl' in request.resource.data) || request.resource.data.imageUrl is string)
+        && (!('imageUrl' in request.resource.data) || (request.resource.data.imageUrl is string && request.resource.data.imageUrl.matches('^https://firebasestorage.googleapis.com/.*
+        // A block works in both directions: neither participant can send while the other has blocked them.
+        && !(request.resource.data.toUid in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('blockedUsers', []))
+        && !(request.auth.uid in get(/databases/$(database)/documents/users/$(request.resource.data.toUid)).data.get('blockedUsers', []));
+      // Sender retains existing edit behavior. Recipient may only mark a message as read.
+      allow update: if isSignedIn() && (
+        resource.data.fromUid == request.auth.uid
+        || isAdmin()
+        || (resource.data.toUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+          && request.resource.data.readAt is timestamp)
+      );
+      allow delete: if isSignedIn() && (resource.data.fromUid == request.auth.uid || isAdmin());
+    }
+
+    // ---------- REPORTS ----------
+    match /reports/{id} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- TOURNAMENTS ----------
+    match /tournaments/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.creatorUid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teams','bracket','currentRound','status','winner','completedAt'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.creatorUid == request.auth.uid);
+    }
+
+    // ---------- CLAN WARS ----------
+    match /clanWarsLog/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+    match /clanWarsHistory/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- SUBMISSIONS ----------
+    match /vault_submissions/{id} {
+      allow read: if isSignedIn() && (resource.data.submitterUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+    match /leak_submissions/{id} {
+      allow read: if isSignedIn() && (resource.data.submitterUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+    match /clip_submissions/{id} {
+      allow read: if isSignedIn() && (resource.data.submitterUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- PARTIES ----------
+    match /parties/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.leaderUid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+      );
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.leaderUid == request.auth.uid);
+    }
+
+    // ---------- CODMPANDA INTEL ARTICLES ----------
+    // Curated briefings are readable by authenticated users. Only the configured admin
+    // can publish, edit, or remove articles; users cannot self-publish news.
+    match /intelArticles/{articleId} {
+      allow get, list: if isSignedIn();
+      allow create: if isAdmin()
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 5
+        && request.resource.data.summary is string
+        && request.resource.data.summary.size() >= 12;
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- TIER VOTES ----------
+    match /tierVotes/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // ---------- RATINGS ----------
+    match /ratings/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
+      allow update, delete: if isAdmin() || resource.data.fromUid == request.auth.uid;
+    }
+
+    // ---------- DEFAULT DENY ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+)))
         // A block works in both directions: neither participant can send while the other has blocked them.
         && !(request.resource.data.toUid in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('blockedUsers', []))
         && !(request.auth.uid in get(/databases/$(database)/documents/users/$(request.resource.data.toUid)).data.get('blockedUsers', []));
