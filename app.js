@@ -27681,6 +27681,7 @@ window.performGlobalSearch = performGlobalSearch;
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     const coachUid = State.user?.uid || 'guest';
     const coachHistoryKey = 'cp_coach_history_v1_' + coachUid;
+    const coachGuestKey = 'cp_coach_history_v1_guest';
     const coachMaxAge = 7 * 24 * 60 * 60 * 1000;
     // Remove expired caches for every local account, not just the account currently signed in.
     try {
@@ -27695,7 +27696,9 @@ window.performGlobalSearch = performGlobalSearch;
     } catch (_) {}
     let history = [];
     try {
-      const saved = JSON.parse(localStorage.getItem(coachHistoryKey) || 'null');
+      let saved = JSON.parse(localStorage.getItem(coachHistoryKey) || 'null');
+      // If the visitor signed in after chatting as a guest, carry that recent chat into the account.
+      if (!saved && coachUid !== 'guest') saved = JSON.parse(localStorage.getItem(coachGuestKey) || 'null');
       if (saved && Number.isFinite(saved.updatedAt) && Date.now() - saved.updatedAt < coachMaxAge && Array.isArray(saved.messages)) {
         const now = Date.now();
         history = saved.messages
@@ -27703,6 +27706,10 @@ window.performGlobalSearch = performGlobalSearch;
           .map(m => ({ ...m, timestamp: Number.isFinite(m.timestamp) ? m.timestamp : saved.updatedAt }))
           .filter(m => now - m.timestamp < coachMaxAge)
           .slice(-20);
+        try {
+          localStorage.setItem(coachHistoryKey, JSON.stringify({ updatedAt: saved.updatedAt, messages: history }));
+          if (coachUid !== 'guest') localStorage.removeItem(coachGuestKey);
+        } catch (_) {}
         history.forEach(m => {
           const line = document.createElement('div');
           line.style.cssText = m.role === 'user' ? 'align-self:flex-end;max-width:90%;background:#71320d;border-radius:12px;padding:10px;font-size:13px;white-space:pre-wrap' : 'align-self:flex-start;max-width:95%;background:#20212a;border-radius:12px;padding:11px;font-size:13px;line-height:1.5;white-space:pre-wrap';
@@ -27710,6 +27717,10 @@ window.performGlobalSearch = performGlobalSearch;
         });
       } else if (saved) localStorage.removeItem(coachHistoryKey);
     } catch (_) { try { localStorage.removeItem(coachHistoryKey); } catch (_) {} }
+    const saveCoachHistory = (updatedAt = Date.now()) => {
+      history = history.filter(m => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && Number.isFinite(m.timestamp) && updatedAt - m.timestamp < coachMaxAge).slice(-20);
+      try { localStorage.setItem(coachHistoryKey, JSON.stringify({ updatedAt, messages: history })); } catch (_) {}
+    };
     const coachName = State.profile?.ign || State.profile?.displayName || State.user?.displayName || '';
     const welcome = overlay.querySelector('#cp-coach-chat')?.firstElementChild;
     if (welcome && coachName) welcome.textContent = `Yo ${coachName} 👋 Good to see you. What are we tuning today—aim, sensitivity, HUD, loadout, or movement?`;
@@ -27736,11 +27747,14 @@ window.performGlobalSearch = performGlobalSearch;
       chat.scrollTop=chat.scrollHeight;
       try {
         const currentCoachName = State.profile?.ign || State.profile?.displayName || State.user?.displayName || '';
-        const answer = await cpCoachReply(value, history, currentCoachName);
+        const previousHistory = history.slice();
+        const userTime = Date.now();
+        history.push({ role:'user', text:value, timestamp:userTime });
+        saveCoachHistory(userTime); // Persist the user's message immediately, even if the AI request fails.
+        const answer = await cpCoachReply(value, previousHistory, currentCoachName);
         const messageTime = Date.now();
-        history.push({ role:'user', text:value, timestamp:messageTime }, { role:'model', text:answer, timestamp:messageTime });
-        history = history.filter(m => Number.isFinite(m.timestamp) && messageTime - m.timestamp < coachMaxAge).slice(-20);
-        try { localStorage.setItem(coachHistoryKey, JSON.stringify({ updatedAt:messageTime, messages:history })); } catch (_) { /* local storage may be full or disabled */ }
+        history.push({ role:'model', text:answer, timestamp:messageTime });
+        saveCoachHistory(messageTime);
         reply.textContent=answer;
       } catch (error) {
         console.warn('[CODMPanda Coach] Request failed:', error);
