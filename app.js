@@ -12552,7 +12552,8 @@ messages.sort((a, b) => {
     if (e.key === 'Enter') sendMessage();
   };
 
-  // Image attachments use Firebase Storage, then the existing messages collection.
+  // DM images are resized/compressed in the browser and stored as Base64 in Firestore.
+  // Keep the encoded payload below 750 KB so the whole document stays safely under 1 MiB.
   const imagePick = document.getElementById('dm-image-pick');
   const imageFile = document.getElementById('dm-image-file');
   const uploadStatus = document.getElementById('dm-upload-status');
@@ -12561,24 +12562,29 @@ messages.sort((a, b) => {
     imageFile.onchange = async () => {
       const file = imageFile.files?.[0];
       if (!file) return;
-      if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+      if (!/^image\\/(jpeg|png|webp|gif)$/.test(file.type)) {
         toast('Choose a JPG, PNG, WEBP, or GIF image', 'error');
         imageFile.value = '';
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        toast('Images must be 5 MB or smaller', 'error');
+      if (file.size > 10 * 1024 * 1024) {
+        toast('Choose an image smaller than 10 MB', 'error');
         imageFile.value = '';
         return;
       }
       imagePick.disabled = true;
       imageFile.disabled = true;
-      if (uploadStatus) uploadStatus.textContent = 'Uploading image…';
+      if (uploadStatus) uploadStatus.textContent = 'Compressing image…';
       try {
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'image';
-        const path = `dm-images/${chatId}/${State.user.uid}/${Date.now()}-${safeName}`;
-        const uploaded = await uploadBytes(storageRef(storage, path), file, { contentType: file.type });
-        const imageUrl = await getDownloadURL(uploaded.ref);
+        // Existing helper downsizes the longest edge to 700 px and exports JPEG at 55% quality.
+        const imageData = await compressImage(file, 700, 0.55);
+        if (!imageData || !imageData.startsWith('data:image/jpeg;base64,')) {
+          throw new Error('Image compression failed');
+        }
+        if (imageData.length > 750000) {
+          throw new Error('This image is still too large after compression. Try a smaller image.');
+        }
+        if (uploadStatus) uploadStatus.textContent = 'Sending image…';
         await addDoc(collection(db, 'messages'), {
           chatId,
           fromUid: State.user.uid,
@@ -12587,8 +12593,7 @@ messages.sort((a, b) => {
           toIgn: friendIgn,
           text: '',
           type: 'image',
-          imageUrl,
-          imagePath: path,
+          imageUrl: imageData,
           createdAt: serverTimestamp()
         });
         try {
@@ -12597,9 +12602,11 @@ messages.sort((a, b) => {
         if (uploadStatus) uploadStatus.textContent = '';
         await loadMessages();
       } catch (e) {
-        console.error('DM image upload failed:', e);
-        toast('Image failed to send. Check Firebase Storage rules.', 'error');
-        if (uploadStatus) uploadStatus.textContent = 'Upload failed';
+        console.error('DM image compression/send failed:', e);
+        toast(e.message && e.message.includes('still too large')
+          ? e.message
+          : 'Image failed to send. Please try another image.', 'error');
+        if (uploadStatus) uploadStatus.textContent = 'Send failed';
       } finally {
         imagePick.disabled = false;
         imageFile.disabled = false;
