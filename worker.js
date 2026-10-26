@@ -1,6 +1,6 @@
 // CODMPanda Notify — clean Cloudflare Worker
 // Required secrets: GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON
-const BUILD = 'codmpanda-worker-v2';
+const BUILD = 'codmpanda-worker-v3';
 const APP_URL = 'https://codmpanda.pages.dev';
 // Google-maintained alias that follows the latest stable Flash model.
 const MODEL = 'gemini-flash-latest';
@@ -59,28 +59,43 @@ async function coachRoute(request, env) {
 
 async function gemini(env, payload) {
   if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY missing');
-  const model = MODEL;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  // Keep the whole operation comfortably below the app's ~30s request cutoff.
-  // Return well before the app/browser's ~30s request cutoff.
+  // If the main Flash endpoint is overloaded, switch to a separate stable Flash-Lite model.
+  const models = [MODEL, 'gemini-3.5-flash-lite'];
   const deadline = Date.now() + 15000;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const remaining = deadline - Date.now();
-    if (remaining < 1000) throw new Error('Gemini request timed out before the response was ready');
-    let response;
-    try { response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify(payload), signal: AbortSignal.timeout(Math.min(12000, remaining)) }); }
-    catch (e) { throw new Error('Gemini network/timeout error: ' + (e?.message || String(e))); }
-    const data = await response.json().catch(() => ({}));
-    if (response.ok) {
-      const answer = (data.candidates || []).flatMap(c => c.content?.parts || []).map(p => p.text || '').join('\n').trim();
-      if (answer) return answer;
-      throw new Error('Gemini returned no text' + (data.candidates?.[0]?.finishReason ? ` (${data.candidates[0].finishReason})` : ''));
+  let lastError = 'Gemini request failed';
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining < 1000) throw new Error(lastError + ' (fallback deadline reached)');
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+      let response;
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(Math.min(6000, remaining))
+        });
+      } catch (e) {
+        lastError = `Gemini ${model} network/timeout error: ${e?.message || String(e)}`;
+        break;
+      }
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        const answer = (data.candidates || []).flatMap(c => c.content?.parts || []).map(p => p.text || '').join('\\n').trim();
+        if (answer) return answer;
+        lastError = `Gemini ${model} returned no text` + (data.candidates?.[0]?.finishReason ? ` (${data.candidates[0].finishReason})` : '');
+        break;
+      }
+      const message = data.error?.message || `HTTP ${response.status}`;
+      lastError = `Gemini ${model} ${response.status}: ${message}`;
+      const retryable = response.status === 429 || [500, 502, 503, 504].includes(response.status);
+      if (!retryable) throw new Error(lastError);
+      if (attempt === 0 && Date.now() + 300 < deadline) await wait(250);
+      else break;
     }
-    const message = data.error?.message || `HTTP ${response.status}`;
-    if (!(response.status === 429 || [500, 502, 503, 504].includes(response.status)) || attempt === 1) throw new Error(`Gemini ${response.status}: ${message}`);
-    await wait(250);
   }
-  throw new Error('Gemini request failed');
+  throw new Error(lastError);
 }
 
 async function briefingsRoute(env) {
