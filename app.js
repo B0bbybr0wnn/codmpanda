@@ -14038,6 +14038,7 @@ if (!window.__backBtnHandlerAdded) {
     const sheet = document.getElementById('sheet-container');
     if (sheet && !sheet.classList.contains('hidden')) {
       closeSheet();
+      if (document.getElementById('cp-public-profile-page')) window.__cpProfileNestedBackHandled = true;
       try { history.pushState({ __codm: true }, ''); } catch (err) { /* silent */ }
       return;
     }
@@ -14046,6 +14047,17 @@ if (!window.__backBtnHandlerAdded) {
     const modal = document.getElementById('modal-container');
     if (modal && !modal.classList.contains('hidden')) {
       closeModal();
+      if (document.getElementById('cp-public-profile-page')) window.__cpProfileNestedBackHandled = true;
+      try { history.pushState({ __codm: true }, ''); } catch (err) { /* silent */ }
+      return;
+    }
+
+    // A public player profile is a full-screen destination; back always returns to HOME.
+    const cpPublicProfileBackRoot = document.getElementById('cp-public-profile-page');
+    if (cpPublicProfileBackRoot) {
+      cpPublicProfileBackRoot.__cpPPHistoryPushed = false;
+      cpPublicProfileBackRoot.remove();
+      if (typeof switchTab === 'function') switchTab('home');
       try { history.pushState({ __codm: true }, ''); } catch (err) { /* silent */ }
       return;
     }
@@ -28533,6 +28545,8 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       '.cp-pp-page .cp-pp-stat strong{display:block;font-size:16px;font-weight:900;line-height:1.1}.cp-pp-page .cp-pp-stat span{display:block;margin-top:5px;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#858585}',
       '.cp-pp-page .cp-pp-fact{padding:12px;border:1px solid #242424;border-radius:13px;background:#101010;min-width:0}.cp-pp-page .cp-pp-fact small{display:block;font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#737373;margin-bottom:5px}.cp-pp-page .cp-pp-fact strong{display:block;font-size:12px;line-height:1.45;overflow-wrap:anywhere}',
       '.cp-pp-page .cp-pp-name{overflow-wrap:anywhere;cursor:pointer}.cp-pp-page .cp-pp-avatar{display:flex;align-items:center;justify-content:center;flex:0 0 auto;overflow:visible}',
+      '.cp-pp-page #cp-pp-tab-content > .home-card,.cp-pp-page #cp-pp-tab-content > article{background:transparent!important;border:0!important;border-bottom:1px solid #242424!important;border-radius:0!important;box-shadow:none!important;margin:0!important;padding:16px 0!important;min-width:0!important;width:100%!important}',
+      '.cp-pp-page #cp-pp-tab-content > .home-card img{display:block;max-width:100%;height:auto}',
       '.cp-pp-page .cp-pp-empty{padding:30px 18px;text-align:center;border:1px solid #262626;border-radius:18px;background:#0d0d0d}',
       '.cp-pp-page .cp-pp-spinner{width:26px;height:26px;border:3px solid #282828;border-top-color:#ff6b00;border-radius:50%;margin:0 auto;animation:cpPPSpin .8s linear infinite}@keyframes cpPPSpin{to{transform:rotate(360deg)}}'
     ].join('');
@@ -28565,8 +28579,10 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
   }
   function goBack() {
     const r=document.getElementById('cp-public-profile-page'); if(!r)return;
-    if(r.__cpPPStack?.length){showProfile(r.__cpPPStack.pop(),false);return}
-    closeRoot();
+    r.__cpPPHistoryPushed=false;
+    r.remove();
+    try { if(history.state?.cpPublicProfilePage) history.replaceState({__codm:true},'',location.href); } catch (_) {}
+    if(typeof switchTab==='function') switchTab('home');
   }
   async function canView(u,uid) {
     if(uid===State.user?.uid||u.privateProfile!==true)return true;
@@ -28810,10 +28826,12 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
   openUserProfile=showProfile;window.openUserProfile=showProfile;
   document.addEventListener('click',globalProfileClick,true);
   window.addEventListener('popstate',function(){
-    const r=document.getElementById('cp-public-profile-page');if(!r)return;
-    if(r.__cpPPStack?.length){
-      showProfile(r.__cpPPStack.pop(),false).then(()=>{try{history.pushState({cpPublicProfilePage:true},'',location.href);const active=document.getElementById('cp-public-profile-page');if(active)active.__cpPPHistoryPushed=true}catch(_){}});
-    }else{r.__cpPPHistoryPushed=false;r.remove()}
+    if (window.__cpProfileNestedBackHandled) { window.__cpProfileNestedBackHandled = false; return; }
+    const r=document.getElementById('cp-public-profile-page');
+    if(!r) return;
+    r.__cpPPHistoryPushed=false;
+    r.remove();
+    if(typeof switchTab==='function') switchTab('home');
   });
   console.log('[CODMPanda] Full-screen public profile pages ready');
 })();
@@ -28831,11 +28849,13 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
     if (!root || !data || data.restricted || !data.user || !State.user) return;
     const uid = String(data.uid || '');
     if (!uid) return;
-    if (root.__cpPPActionUid === uid && root.querySelector('#cp-pp-actions')) return;
-    root.querySelector('#cp-pp-actions')?.remove();
+    if (root.__cpPPActionUid === uid && (root.querySelector('#cp-pp-actions') || root.__cpPPActionRenderingUid === uid)) return;
+    root.querySelectorAll('#cp-pp-actions').forEach(el => el.remove());
     root.__cpPPActionUid = uid;
-    const card = root.querySelector('#cp-pp-body > section:first-child');
-    if (!card) return;
+    root.__cpPPActionRenderingUid = uid;
+    try {
+      const card = root.querySelector('#cp-pp-body > section:first-child');
+      if (!card) return;
 
     const row = document.createElement('section');
     row.id = 'cp-pp-actions';
@@ -28877,6 +28897,9 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
     row.style.gridTemplateColumns = '1fr';
     row.innerHTML = primary;
     card.insertAdjacentElement('afterend', row);
+    } finally {
+      if (root.__cpPPActionRenderingUid === uid) root.__cpPPActionRenderingUid = '';
+    }
   }
 
   async function handleAction(event) {
@@ -28901,7 +28924,10 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
     }
     if (!uid || uid === State.user?.uid) return;
     if (action === 'add-friend') {
-      if (typeof sendFriendRequest !== 'function') return;
+      if (target.disabled) return;
+      if (typeof sendFriendRequest !== 'function') { toast('Friend requests are unavailable right now', 'error'); return; }
+      target.disabled = true;
+      target.textContent = 'Sending request…';
       await sendFriendRequest(uid, data.user.ign || data.user.displayName || 'Player');
       root.__cpPPActionUid = '';
       setTimeout(renderActions, 300);
