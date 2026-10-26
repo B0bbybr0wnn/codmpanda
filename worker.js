@@ -61,10 +61,14 @@ async function gemini(env, payload) {
   if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY missing');
   const model = MODEL;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  // Keep the whole operation comfortably below the app's ~30s request cutoff.
+  const deadline = Date.now() + 22000;
   for (let attempt = 0; attempt < 3; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining < 1000) throw new Error('Gemini request timed out before the response was ready');
     let response;
-    try { response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify(payload), signal: AbortSignal.timeout(25000) }); }
-    catch (e) { if (attempt === 2) throw e; await wait(500 * (attempt + 1)); continue; }
+    try { response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify(payload), signal: AbortSignal.timeout(Math.min(18000, remaining)) }); }
+    catch (e) { throw new Error('Gemini network/timeout error: ' + (e?.message || String(e))); }
     const data = await response.json().catch(() => ({}));
     if (response.ok) {
       const answer = (data.candidates || []).flatMap(c => c.content?.parts || []).map(p => p.text || '').join('\n').trim();
@@ -73,7 +77,7 @@ async function gemini(env, payload) {
     }
     const message = data.error?.message || `HTTP ${response.status}`;
     if (!(response.status === 429 || [500, 502, 503, 504].includes(response.status)) || attempt === 2) throw new Error(`Gemini ${response.status}: ${message}`);
-    await wait(attempt === 0 ? 700 : 1500);
+    await wait(attempt === 0 ? 300 : 500);
   }
   throw new Error('Gemini request failed');
 }
