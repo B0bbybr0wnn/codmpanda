@@ -333,8 +333,9 @@ service cloud.firestore {
         && !(request.auth.uid in get(/databases/$(database)/documents/users/$(request.resource.data.toUid)).data.get('blockedUsers', []));
       // Sender retains existing edit behavior. Recipient may only mark a message as read.
       allow update: if isSignedIn() && (
-        resource.data.fromUid == request.auth.uid
-        || isAdmin()
+        isAdmin()
+        || (resource.data.fromUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text','edited','editedAt']))
         || (resource.data.toUid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
           && request.resource.data.readAt is timestamp)
