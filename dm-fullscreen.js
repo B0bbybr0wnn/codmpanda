@@ -77,13 +77,16 @@
   }
 
   function goBack() {
-    if (nav.active && nav.historyPushed) {
-      try {
-        history.back();
-        return;
-      } catch (_) {}
-    }
+    // Close the chat in-place. history.back() here can invoke the app's
+    // legacy tab router and incorrectly send the user Home.
     closeChatScreen();
+    try {
+      history.replaceState(Object.assign({}, history.state || {}, {
+        __codm: true,
+        cpChatScreen: false,
+        cpChatKind: null
+      }), '', location.href);
+    } catch (_) {}
   }
 
   function styleDMFullScreen(friendIgn) {
@@ -243,6 +246,19 @@
       }), '', location.href);
     } catch (_) {}
   }, true);
+
+  // Coach is opened by a legacy lexical function in some app builds, so
+  // detect its overlay directly as well as wrapping any exported function.
+  const coachObserver = new MutationObserver(function(mutations) {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        const overlay = node.id === 'cp-ai-coach' ? node : node.querySelector?.('#cp-ai-coach');
+        if (overlay && (!nav.active || nav.kind !== 'coach')) activateCoach();
+      }
+    }
+  });
+  coachObserver.observe(document.body, { childList: true });
 
   // Keyboard Back/Escape mirrors the native Back button.
   document.addEventListener('keydown', function cpChatEscapeBack(event) {
