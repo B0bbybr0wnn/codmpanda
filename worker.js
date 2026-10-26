@@ -1,6 +1,6 @@
 // CODMPanda Notify — clean Cloudflare Worker
 // Required secrets: GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON
-const BUILD = 'codmpanda-worker-v1';
+const BUILD = 'codmpanda-worker-v2';
 const APP_URL = 'https://codmpanda.pages.dev';
 // Google-maintained alias that follows the latest stable Flash model.
 const MODEL = 'gemini-flash-latest';
@@ -62,12 +62,13 @@ async function gemini(env, payload) {
   const model = MODEL;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   // Keep the whole operation comfortably below the app's ~30s request cutoff.
-  const deadline = Date.now() + 22000;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Return well before the app/browser's ~30s request cutoff.
+  const deadline = Date.now() + 15000;
+  for (let attempt = 0; attempt < 2; attempt++) {
     const remaining = deadline - Date.now();
     if (remaining < 1000) throw new Error('Gemini request timed out before the response was ready');
     let response;
-    try { response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify(payload), signal: AbortSignal.timeout(Math.min(18000, remaining)) }); }
+    try { response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify(payload), signal: AbortSignal.timeout(Math.min(12000, remaining)) }); }
     catch (e) { throw new Error('Gemini network/timeout error: ' + (e?.message || String(e))); }
     const data = await response.json().catch(() => ({}));
     if (response.ok) {
@@ -76,8 +77,8 @@ async function gemini(env, payload) {
       throw new Error('Gemini returned no text' + (data.candidates?.[0]?.finishReason ? ` (${data.candidates[0].finishReason})` : ''));
     }
     const message = data.error?.message || `HTTP ${response.status}`;
-    if (!(response.status === 429 || [500, 502, 503, 504].includes(response.status)) || attempt === 2) throw new Error(`Gemini ${response.status}: ${message}`);
-    await wait(attempt === 0 ? 300 : 500);
+    if (!(response.status === 429 || [500, 502, 503, 504].includes(response.status)) || attempt === 1) throw new Error(`Gemini ${response.status}: ${message}`);
+    await wait(250);
   }
   throw new Error('Gemini request failed');
 }
