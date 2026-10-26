@@ -12579,7 +12579,7 @@ messages.sort((a, b) => {
     imageFile.onchange = async () => {
       const file = imageFile.files?.[0];
       if (!file) return;
-      if (!/^image\\/(jpeg|png|webp|gif)$/.test(file.type)) {
+      if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
         toast('Choose a JPG, PNG, WEBP, or GIF image', 'error');
         imageFile.value = '';
         return;
