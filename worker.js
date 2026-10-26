@@ -138,7 +138,7 @@ async function briefingsRoute(env) {
       const { articleText, ...rest } = article;
       return { ...rest, summary, aiSummary: false };
     });
-    return json({ success: output.length > 0, aiConfigured: Boolean(env.GEMINI_API_KEY || env.DEEPSEEK_API_KEY), sourcesChecked: 3, articlesFound: output.length, summariesGenerated: output.filter(x => x.summary).length, updatedAt: new Date().toISOString(), briefings: output });
+    return json({ success: output.length > 0, aiConfigured: Boolean(env.GEMINI_API_KEY || env.DEEPSEEK_API_KEY), sourcesChecked: 1, articlesFound: output.length, summariesGenerated: output.filter(x => x.summary).length, updatedAt: new Date().toISOString(), briefings: output });
   } catch (e) { console.error('[briefings]', errText(e)); return json({ success: false, error: 'Could not load official CODM briefings.', briefings: [] }, 502); }
 }
 
