@@ -65,3 +65,96 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
 })();
+
+
+/* Navigation preservation:
+   Keep profile/post overlays above the existing screen so Back never rebuilds
+   the feed or silently jumps to PLAY. This runs in capture phase before the
+   older app-level popstate handlers. */
+(function cpNavigationPreservationV1() {
+  'use strict';
+  if (window.__cpNavigationPreservationV1) return;
+  window.__cpNavigationPreservationV1 = true;
+
+  function pushAppBaseState() {
+    try { history.pushState({ __codm: true }, '', location.href); } catch (_) {}
+  }
+
+  function isVisible(el) {
+    return !!el && !el.classList.contains('hidden');
+  }
+
+  // A profile's own Back button must close only the overlay. Do not call the
+  // legacy goBack(), which switches tabs and destroys the originating screen.
+  document.addEventListener('click', function(event) {
+    const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const backButton = target?.closest('#cp-pp-back');
+    if (!backButton) return;
+    const root = document.getElementById('cp-public-profile-page');
+    if (!root) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    root.__cpPPHistoryPushed = false;
+    root.remove();
+    try {
+      const nextState = { ...(history.state || {}), __codm: true };
+      delete nextState.cpPublicProfilePage;
+      history.replaceState(nextState, '', location.href);
+    } catch (_) {}
+  }, true);
+
+  // Intercept Android/PWA Back before the legacy listeners. Close only the
+  // topmost overlay, preserving the underlying DOM and its current scroll.
+  document.addEventListener('popstate', function(event) {
+    const app = document.getElementById('main-app');
+    if (!app || app.classList.contains('hidden')) return;
+
+    const imageViewer = document.getElementById('image-viewer');
+    if (imageViewer) {
+      imageViewer.remove();
+      pushAppBaseState();
+      event.stopImmediatePropagation();
+      return;
+    }
+
+    const sheet = document.getElementById('sheet-container');
+    if (isVisible(sheet)) {
+      if (typeof window.closeSheet === 'function') window.closeSheet();
+      pushAppBaseState();
+      event.stopImmediatePropagation();
+      return;
+    }
+
+    const modal = document.getElementById('modal-container');
+    if (isVisible(modal)) {
+      if (typeof window.closeModal === 'function') window.closeModal();
+      pushAppBaseState();
+      event.stopImmediatePropagation();
+      return;
+    }
+
+    const profile = document.getElementById('cp-public-profile-page');
+    if (profile) {
+      profile.__cpPPHistoryPushed = false;
+      profile.remove();
+      pushAppBaseState();
+      event.stopImmediatePropagation();
+      return;
+    }
+
+    if (window.voiceRoomState?.active && typeof window.closeVoiceRoom === 'function') {
+      window.closeVoiceRoom();
+      pushAppBaseState();
+      event.stopImmediatePropagation();
+      return;
+    }
+
+    // The old smart-back handler incorrectly sends HOME to PLAY because it
+    // treats every non-PLAY tab as a request to open PLAY.
+    if (window.State?.currentTab === 'home') {
+      pushAppBaseState();
+      event.stopImmediatePropagation();
+    }
+  }, true);
+})();
