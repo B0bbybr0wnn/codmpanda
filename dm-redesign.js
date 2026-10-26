@@ -142,6 +142,8 @@ import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayU
       statusWrap.appendChild(status);
     }
     const status=header.querySelector('#cp-dm-presence');
+    if(input.dataset.cpTypingTarget===target.uid)return;
+    input.dataset.cpTypingTarget=target.uid;
     if(window.__cpTypingUnsub){try{window.__cpTypingUnsub()}catch(_){}window.__cpTypingUnsub=null}
     if(status){
       window.__cpTypingUnsub=onSnapshot(doc(fb.db,'users',target.uid),snap=>{
