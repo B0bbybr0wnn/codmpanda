@@ -20654,7 +20654,7 @@ fetchHomeFeed = async function() {
       getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'clips'), limit(30))).catch(() => ({ forEach: () => {} })),
       getDocs(query(collection(db, 'leaks'), limit(20))).catch(() => ({ forEach: () => {} })),
-      getDocs(query(collection(db, 'posts'), limit(30))).catch(() => ({ forEach: () => {} }))
+      getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} }))
     ]);
 
     const feed = [];
@@ -20687,7 +20687,23 @@ fetchHomeFeed = async function() {
       feed.push({ id: d.id, type: 'post', ...data, _sortTime: data.createdAt?.seconds || 0 });
     });
 
-    feed.sort((a, b) => b._sortTime - a._sortTime);
+    // Keep the feed newest-first, with a modest fixed recency boost for friends'
+    // posts so they appear near the top without random shuffling or unstable
+    // reordering while someone is scrolling.
+    const friendIds = new Set(
+      (Array.isArray(State.profile?.friends) ? State.profile.friends : [])
+        .filter(uid => typeof uid === 'string' && uid.length > 0)
+    );
+    const friendPostBoostSeconds = 45 * 60;
+    feed.sort((a, b) => {
+      const aTime = Number(a._sortTime) || 0;
+      const bTime = Number(b._sortTime) || 0;
+      const aBoost = a.type === 'post' && friendIds.has(String(a.uid || '')) ? friendPostBoostSeconds : 0;
+      const bBoost = b.type === 'post' && friendIds.has(String(b.uid || '')) ? friendPostBoostSeconds : 0;
+      return (bTime + bBoost) - (aTime + aBoost)
+        || bTime - aTime
+        || String(a.id || '').localeCompare(String(b.id || ''));
+    });
 
     homeCache.feed = feed;
     homeCache.lastFetch = now;
