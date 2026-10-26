@@ -2,7 +2,7 @@
    Uses the site's existing Firebase app and DM thread function; no duplicate messaging backend. */
 import { getApps } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, collection, getDocs, limit, query } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 (() => {
   'use strict';
@@ -88,6 +88,33 @@ import { getFirestore, collection, getDocs, limit, query } from 'https://www.gst
     });
   }
 
+
+  async function toggleBlockCurrentUser(button){
+    const target=window.__cpCurrentDMTarget;
+    const fb=appDb();
+    if(!target?.uid||!fb?.auth.currentUser){alert('Sign in to manage blocked players.');return}
+    if(target.uid===fb.auth.currentUser.uid)return;
+    button.disabled=true;
+    try{
+      const selfRef=doc(fb.db,'users',fb.auth.currentUser.uid);
+      const selfSnap=await getDoc(selfRef);
+      const blocked=Array.isArray(selfSnap.data()?.blockedUsers)?selfSnap.data().blockedUsers:[];
+      const isBlocked=blocked.includes(target.uid);
+      const verb=isBlocked?'unblock':'block';
+      if(!confirm((isBlocked?'Unblock ':'Block ')+target.ign+'?'+(isBlocked?'':' They will not be able to message you.')))return;
+      await updateDoc(selfRef,{blockedUsers:isBlocked?arrayRemove(target.uid):arrayUnion(target.uid)});
+      window.__cpBlockedUsers=window.__cpBlockedUsers||new Set();
+      if(isBlocked)window.__cpBlockedUsers.delete(target.uid);else window.__cpBlockedUsers.add(target.uid);
+      button.textContent=isBlocked?'Block':'Unblock';
+      const input=document.getElementById('dm-input');
+      if(input)input.disabled=!isBlocked;
+      if(!isBlocked&&input)input.placeholder='You blocked this player';
+      else if(input)input.placeholder=input.dataset.cpOriginalPlaceholder||'Message…';
+      alert(isBlocked?'Player unblocked.':'Player blocked.');
+    }catch(err){console.error('[CODMPanda DM] Block update failed',err);alert('Could not update block settings. Please try again.')}
+    finally{button.disabled=false}
+  }
+
   function enhanceThread(){
     const sheet=document.getElementById('sheet-container');
     if(!sheet||sheet.dataset.cpDmFullscreen!=='1')return;
@@ -97,9 +124,10 @@ import { getFirestore, collection, getDocs, limit, query } from 'https://www.gst
     if(!header||!messages||!input)return;
     if(!header.querySelector('#cp-dm-thread-search-toggle')){
       const actions=document.createElement('div');actions.style.cssText='display:flex;gap:6px;align-items:center;margin-left:auto';
-      actions.innerHTML='<button type="button" id="cp-dm-thread-search-toggle" class="cp-dm-action" aria-label="Search messages" title="Search messages">⌕</button>';
+      actions.innerHTML='<button type="button" id="cp-dm-thread-search-toggle" class="cp-dm-action" aria-label="Search messages" title="Search messages">⌕</button><button type="button" id="cp-dm-block-user" class="cp-dm-action" title="Block or unblock this player">Block</button>';
       header.appendChild(actions);
-      actions.querySelector('button').addEventListener('click',()=>{
+      actions.querySelector('#cp-dm-block-user').addEventListener('click',e=>toggleBlockCurrentUser(e.currentTarget));
+      actions.querySelector('#cp-dm-thread-search-toggle').addEventListener('click',()=>{
         let search=sheet.querySelector('#cp-dm-thread-search');
         if(search){search.remove();messages.querySelectorAll('[data-cp-search-hidden]').forEach(n=>{n.style.display='';delete n.dataset.cpSearchHidden});return}
         search=document.createElement('div');search.style.cssText='padding:10px 16px;background:#080808;border-bottom:1px solid #222';
@@ -146,6 +174,13 @@ import { getFirestore, collection, getDocs, limit, query } from 'https://www.gst
         sheet.querySelector('#cp-dm-reply-preview')?.remove();
       },true);
     }
+  }
+
+
+  if(typeof window.openDMThread==='function'&&!window.__cpDMRefreshWrapped){
+    const originalOpen=window.openDMThread;
+    window.openDMThread=function(uid,ign){window.__cpCurrentDMTarget={uid:String(uid||''),ign:String(ign||'Player')};return originalOpen.apply(this,arguments)};
+    window.__cpDMRefreshWrapped=true;
   }
 
   function install(){
