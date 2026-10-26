@@ -332,7 +332,9 @@ service cloud.firestore {
           && request.resource.data.imageUrl.size() <= 750000
           && (
             request.resource.data.imageUrl.matches('^https://firebasestorage.googleapis.com/.*')
-            || request.resource.data.imageUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+
+            || request.resource.data.imageUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
+          )
+        ))
         // A block works in both directions: neither participant can send while the other has blocked them.
         && !(request.resource.data.toUid in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('blockedUsers', []))
         && !(request.auth.uid in get(/databases/$(database)/documents/users/$(request.resource.data.toUid)).data.get('blockedUsers', []));
