@@ -522,31 +522,78 @@ async function fetchOfficialBriefings() {
 // ============================================
 // GEMINI AI HELPERS
 // ============================================
+function getAIProvider(env) {
+  const generic = String(env.API_KEY || env.AI_API_KEY || '');
+  if (env.GEMINI_API_KEY || env.GOOGLE_GEMINI_API_KEY || env.GOOGLE_API_KEY || generic.startsWith('AIza')) return 'gemini';
+  if (env.OPENAI_API_KEY || generic.startsWith('sk-')) return 'openai';
+  return 'none';
+}
+
+function hasAIKey(env) {
+  return getAIProvider(env) !== 'none';
+}
+
+function getGeminiKey(env) {
+  const generic = String(env.API_KEY || env.AI_API_KEY || '');
+  return env.GEMINI_API_KEY || env.GOOGLE_GEMINI_API_KEY || env.GOOGLE_API_KEY || (generic.startsWith('AIza') ? generic : '');
+}
+
+function getOpenAIKey(env) {
+  const generic = String(env.API_KEY || env.AI_API_KEY || '');
+  return env.OPENAI_API_KEY || (generic.startsWith('sk-') ? generic : '');
+}
+
 async function callGemini(env, payload) {
-  const model = String(env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//, '');
+  const provider = getAIProvider(env);
+  let endpoint, headers, requestBody, providerLabel;
+  if (provider === 'openai') {
+    const model = String(env.OPENAI_MODEL || 'gpt-4o-mini');
+    const messages = [];
+    const systemText = payload.systemInstruction?.parts?.map(part => part.text || '').join('\\n').trim();
+    if (systemText) messages.push({ role: 'system', content: systemText });
+    for (const item of payload.contents || []) {
+      const role = item.role === 'model' || item.role === 'assistant' ? 'assistant' : 'user';
+      const content = (item.parts || []).map(part => part.text || '').join('\\n').trim();
+      if (content) messages.push({ role, content });
+    }
+    endpoint = 'https://api.openai.com/v1/chat/completions';
+    headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getOpenAIKey(env) };
+    requestBody = { model, messages, temperature: payload.generationConfig?.temperature ?? 0.4,
+      max_tokens: payload.generationConfig?.maxOutputTokens ?? 500 };
+    providerLabel = 'OpenAI';
+  } else if (provider === 'gemini') {
+    const model = String(env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\\//, '');
+    endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+    headers = { 'Content-Type': 'application/json', 'x-goog-api-key': getGeminiKey(env) };
+    requestBody = payload;
+    providerLabel = 'Gemini';
+  } else {
+    throw new Error('No supported AI API key is configured');
+  }
+
   let response, data = {};
   for (let attempt = 0; attempt < 3; attempt++) {
-    response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': env.GEMINI_API_KEY
-      },
-      body: JSON.stringify(payload)
-    });
+    response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(requestBody) });
     data = await response.json().catch(() => ({}));
     if (response.ok) break;
     const retryable = response.status === 429 || [500, 502, 503, 504].includes(response.status);
     if (!retryable || attempt === 2) {
-      console.error('[Gemini] API status:', response.status, data?.error?.message || '');
-      throw new Error('Gemini API returned ' + response.status);
+      console.error('[' + providerLabel + '] API status:', response.status, data?.error?.message || data?.message || '');
+      throw new Error(providerLabel + ' API returned ' + response.status);
     }
     await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 650 : 1400));
   }
-  const text = (data.candidates || []).flatMap(candidate => candidate.content?.parts || [])
-    .map(part => part.text || '').join('\n').trim();
-  if (!text) throw new Error('Gemini returned an empty response');
-  return text;
+
+  let answer = '';
+  if (provider === 'openai') {
+    const content = data.choices?.[0]?.message?.content;
+    answer = Array.isArray(content) ? content.map(part => part.text || '').join('\\n').trim() : String(content || '').trim();
+  } else {
+    answer = (data.candidates || []).flatMap(candidate => candidate.content?.parts || [])
+      .map(part => part.text || '').join('\\n').trim();
+  }
+  if (!answer) throw new Error(providerLabel + ' returned an empty response');
+  return answer;
 }
 
 async function summarizeOfficialBriefings(items, env) {
