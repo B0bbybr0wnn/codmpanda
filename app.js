@@ -28623,7 +28623,21 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
     const host=r.querySelector('#cp-pp-tab-content'); if(!host)return;
     if(tab==='posts'){
       if(!data.posts.length){host.innerHTML='<div class="cp-pp-empty mt-2"><div style="font-size:34px;margin-bottom:8px">📝</div><div class="text-sm font-black">No posts yet</div><p class="text-xs text-gray-500 mt-2">When this player shares something with the community, it will appear here.</p></div>';return}
-      host.innerHTML=data.posts.map(post=>{try{return renderHomePostCard(post)}catch(err){console.warn('[CODMPanda] Profile post render failed',err);return '<article class="bg-card border border-border rounded-2xl p-4 mb-3"><p class="text-sm whitespace-pre-wrap break-words">'+esc(post.text||post.caption||'Community post')+'</p><p class="text-[10px] text-gray-500 mt-2">'+esc(timeAgo(post.createdAt))+'</p></article>'}}).join('');
+      host.innerHTML=data.posts.map(post=>{try{
+        let card=renderHomePostCard(post);
+        const uid=esc(post.uid||data.uid||'');
+        const avatarPattern=new RegExp('<div data-uid="[^"]*" class="w-11 h-11[^"]*">[\\\\s\\\\S]*?</div>');
+        if(avatarPattern.test(card)){
+          card=card.replace(avatarPattern,'<div data-uid="'+uid+'" data-profile-link="true" class="w-11 h-11 rounded-full flex items-center justify-center overflow-visible flex-shrink-0 cursor-pointer">'+avatarHTML(post,44)+'</div>');
+        }
+        const namePattern=new RegExp('(<span data-uid="[^"]*" class="font-bold text-sm cursor-pointer">[\\\\s\\\\S]*?</span>)');
+        if(namePattern.test(card)){
+          const earned=Array.isArray(post.badges)?post.badges.slice(0,3).map(value=>{const badge=badgeLabel(value);return '<span class="text-[11px] leading-none" title="'+esc(badge[1])+'" aria-label="'+esc(badge[1])+'" role="img">'+badge[0]+'</span>'}).join(''):'';
+          const profileBadge=post.profileBadge?'<span class="text-[9px] font-black rounded px-1.5 py-0.5 bg-primary/15 text-primary">'+esc(String(post.profileBadge))+'</span>':'';
+          card=card.replace(namePattern,'$1'+(typeof renderVerifiedBadge==='function'?renderVerifiedBadge(post):'')+earned+profileBadge);
+        }
+        return card;
+      }catch(err){console.warn('[CODMPanda] Profile post render failed',err);return '<article class="bg-card border border-border rounded-2xl p-4 mb-3"><p class="text-sm whitespace-pre-wrap break-words">'+esc(post.text||post.caption||'Community post')+'</p><p class="text-[10px] text-gray-500 mt-2">'+esc(timeAgo(post.createdAt))+'</p></article>'}}).join('');
       if(window.lucide)window.lucide.createIcons();
       if(typeof window.__codmpandaRefreshNamesAndAvatars==='function')setTimeout(window.__codmpandaRefreshNamesAndAvatars,100);
       return;
@@ -28749,7 +28763,7 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
           avatarFrame:user.avatarFrame||user.equippedAvatarFrame||user.equippedFrame||raw.avatarFrame||'none',
           equippedAvatarFrame:user.equippedAvatarFrame||user.avatarFrame||raw.equippedAvatarFrame||'none',
           isPro:user.isPro===true||user.pro===true||user.subscription==='pro'||user.proStatus==='active',
-          verified:user.verified===true,likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0
+          verified:user.verified===true,badges:Array.isArray(user.badges)?user.badges:(Array.isArray(raw.badges)?raw.badges:[]),profileBadge:user.profileBadge||user.badge||raw.profileBadge||raw.badge||'',likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0
         });
         postMap.set(String(post.id),post);return post;
       }).sort((a,b)=>millis(b.createdAt)-millis(a.createdAt));
