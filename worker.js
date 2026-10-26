@@ -1,6 +1,6 @@
 // CODMPanda Notify — clean Cloudflare Worker
 // Required secrets: GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON
-const BUILD = 'codmpanda-worker-v3';
+const BUILD = 'codmpanda-worker-v4';
 const APP_URL = 'https://codmpanda.pages.dev';
 // Google-maintained alias that follows the latest stable Flash model.
 const MODEL = 'gemini-flash-latest';
@@ -18,9 +18,10 @@ export default {
     const path = url.pathname.replace(/\/+$/, '') || '/';
     if (request.method === 'GET' && path === '/health') return json({
       status: 'ok', service: 'codmpanda-notify', build: BUILD,
-      aiConfigured: Boolean(env.GEMINI_API_KEY),
+      aiConfigured: Boolean(env.GEMINI_API_KEY || env.DEEPSEEK_API_KEY),
+      deepseekConfigured: Boolean(env.DEEPSEEK_API_KEY),
       serviceAccountConfigured: Boolean(env.FIREBASE_SERVICE_ACCOUNT_JSON),
-      aiProvider: env.GEMINI_API_KEY ? 'gemini' : 'none',
+      aiProvider: env.GEMINI_API_KEY && env.DEEPSEEK_API_KEY ? 'gemini+deepseek-fallback' : env.GEMINI_API_KEY ? 'gemini' : env.DEEPSEEK_API_KEY ? 'deepseek' : 'none',
       geminiModel: MODEL,
       routes: ['GET /health', 'GET /briefings', 'POST /coach', 'POST /send'],
     });
@@ -58,43 +59,62 @@ async function coachRoute(request, env) {
 }
 
 async function gemini(env, payload) {
-  if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY missing');
-  // If the main Flash endpoint is overloaded, switch to a separate stable Flash-Lite model.
-  const models = [MODEL, 'gemini-3.5-flash-lite'];
+  if (!env.GEMINI_API_KEY && !env.DEEPSEEK_API_KEY) throw new Error('No AI provider API key configured');
   const deadline = Date.now() + 15000;
-  let lastError = 'Gemini request failed';
-  for (const model of models) {
-    for (let attempt = 0; attempt < 2; attempt++) {
+  let lastError = 'All AI providers failed';
+
+  // Try Gemini models first. Move quickly to the next provider when one is overloaded.
+  if (env.GEMINI_API_KEY) {
+    for (const model of [MODEL, 'gemini-3.5-flash-lite']) {
       const remaining = deadline - Date.now();
-      if (remaining < 1000) throw new Error(lastError + ' (fallback deadline reached)');
+      if (remaining < 1500) break;
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-      let response;
       try {
-        response = await fetch(endpoint, {
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
           body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(Math.min(6000, remaining))
+          signal: AbortSignal.timeout(Math.min(4500, remaining))
         });
-      } catch (e) {
-        lastError = `Gemini ${model} network/timeout error: ${e?.message || String(e)}`;
-        break;
-      }
-      const data = await response.json().catch(() => ({}));
-      if (response.ok) {
-        const answer = (data.candidates || []).flatMap(c => c.content?.parts || []).map(p => p.text || '').join('\\n').trim();
-        if (answer) return answer;
-        lastError = `Gemini ${model} returned no text` + (data.candidates?.[0]?.finishReason ? ` (${data.candidates[0].finishReason})` : '');
-        break;
-      }
-      const message = data.error?.message || `HTTP ${response.status}`;
-      lastError = `Gemini ${model} ${response.status}: ${message}`;
-      const retryable = response.status === 429 || [500, 502, 503, 504].includes(response.status);
-      if (!retryable) throw new Error(lastError);
-      if (attempt === 0 && Date.now() + 300 < deadline) await wait(250);
-      else break;
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) {
+          const answer = (data.candidates || []).flatMap(x => x.content?.parts || []).map(x => x.text || '').join('\\n').trim();
+          if (answer) return answer;
+          lastError = `Gemini ${model} returned no text`;
+        } else {
+          lastError = `Gemini ${model} ${response.status}: ${data.error?.message || 'Request failed'}`;
+          if (![429, 500, 502, 503, 504].includes(response.status)) break;
+        }
+      } catch (e) { lastError = `Gemini ${model}: ${e?.message || String(e)}`; }
     }
   }
+
+  // DeepSeek uses an OpenAI-compatible chat-completions endpoint.
+  if (env.DEEPSEEK_API_KEY && Date.now() < deadline - 500) {
+    const messages = [];
+    const system = payload.systemInstruction?.parts?.map(x => x.text || '').join('\\n').trim();
+    if (system) messages.push({ role: 'system', content: system });
+    for (const item of payload.contents || []) {
+      const content = (item.parts || []).map(x => x.text || '').join('\\n').trim();
+      if (content) messages.push({ role: item.role === 'model' ? 'assistant' : 'user', content });
+    }
+    try {
+      const remaining = deadline - Date.now();
+      const response = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${env.DEEPSEEK_API_KEY}` },
+        body: JSON.stringify({ model: 'deepseek-flash', messages, stream: false, max_tokens: 650, thinking: { type: 'disabled' } }),
+        signal: AbortSignal.timeout(Math.min(5000, remaining))
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        const answer = String(data.choices?.[0]?.message?.content || '').trim();
+        if (answer) return answer;
+        lastError = 'DeepSeek returned no text';
+      } else lastError = `DeepSeek ${response.status}: ${data.error?.message || 'Request failed'}`;
+    } catch (e) { lastError = `DeepSeek: ${e?.message || String(e)}`; }
+  }
+
   throw new Error(lastError);
 }
 
