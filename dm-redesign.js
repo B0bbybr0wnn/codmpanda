@@ -115,6 +115,18 @@ import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayU
     finally{button.disabled=false}
   }
 
+  async function syncBlockState(button,input){
+    const target=window.__cpCurrentDMTarget,fb=appDb();
+    if(!target?.uid||!fb?.auth.currentUser||target.uid===fb.auth.currentUser.uid)return;
+    try{
+      const snap=await getDoc(doc(fb.db,'users',fb.auth.currentUser.uid));
+      const blocked=Array.isArray(snap.data()?.blockedUsers)?snap.data().blockedUsers:[];
+      const isBlocked=blocked.includes(target.uid);
+      button.textContent=isBlocked?'Unblock':'Block';
+      if(input){input.disabled=isBlocked;input.placeholder=isBlocked?'You blocked this player':(input.dataset.cpOriginalPlaceholder||'Message…')}
+    }catch(_){}
+  }
+
   function enhanceThread(){
     const sheet=document.getElementById('sheet-container');
     if(!sheet||sheet.dataset.cpDmFullscreen!=='1')return;
@@ -127,6 +139,7 @@ import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayU
       actions.innerHTML='<button type="button" id="cp-dm-thread-search-toggle" class="cp-dm-action" aria-label="Search messages" title="Search messages">⌕</button><button type="button" id="cp-dm-block-user" class="cp-dm-action" title="Block or unblock this player">Block</button>';
       header.appendChild(actions);
       actions.querySelector('#cp-dm-block-user').addEventListener('click',e=>toggleBlockCurrentUser(e.currentTarget));
+      syncBlockState(actions.querySelector('#cp-dm-block-user'),input);
       actions.querySelector('#cp-dm-thread-search-toggle').addEventListener('click',()=>{
         let search=sheet.querySelector('#cp-dm-thread-search');
         if(search){search.remove();messages.querySelectorAll('[data-cp-search-hidden]').forEach(n=>{n.style.display='';delete n.dataset.cpSearchHidden});return}
