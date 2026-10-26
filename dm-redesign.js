@@ -2,7 +2,7 @@
    Uses the site's existing Firebase app and DM thread function; no duplicate messaging backend. */
 import { getApps } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayUnion, arrayRemove, getDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc, arrayUnion, arrayRemove, getDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 (() => {
   'use strict';
@@ -10,6 +10,7 @@ import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayU
   window.__cpDMRefreshV1 = true;
 
   const css = `
+    .cp-dm-unread{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#ff6b00;color:#fff;font-size:10px;font-weight:900;white-space:nowrap}
     .cp-dm-action{border:1px solid #303030;background:#141414;color:#f4f4f5;border-radius:11px;padding:9px 12px;font-size:12px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px}
     .cp-dm-action.primary{background:#ff6b00;border-color:#ff6b00;color:#fff}
     .cp-dm-action:disabled{opacity:.5;cursor:not-allowed}
@@ -72,6 +73,31 @@ import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayU
     });
   }
 
+
+  let cpUnreadUnsub=null;
+  function installUnreadBadge(top){
+    const fb=appDb();
+    if(!fb?.auth.currentUser)return;
+    if(!top.querySelector('#cp-dm-unread-badge')){
+      const badge=document.createElement('span');
+      badge.id='cp-dm-unread-badge';
+      badge.className='cp-dm-unread';
+      badge.textContent='0 unread';
+      badge.title='Unread messages';
+      top.appendChild(badge);
+    }
+    if(window.__cpUnreadUnsub){try{window.__cpUnreadUnsub()}catch(_){}}
+    window.__cpUnreadUnsub=onSnapshot(
+      query(collection(fb.db,'messages'),where('toUid','==',fb.auth.currentUser.uid),limit(100)),
+      snap=>{
+        const count=snap.docs.reduce((n,d)=>n+(d.data().readAt?0:1),0);
+        const badge=document.getElementById('cp-dm-unread-badge');
+        if(badge){badge.textContent=count?count+' unread':'All caught up';badge.style.background=count?'#ff6b00':'#242424';badge.style.color=count?'#fff':'#aaa'}
+      },
+      err=>console.warn('[CODMPanda DM] Unread counter unavailable',err)
+    );
+  }
+
   function enhanceInbox(){
     const body=document.getElementById('inbox-full-body');
     if(!body||body.dataset.cpDmRefresh==='1')return;
@@ -80,6 +106,7 @@ import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayU
     top.style.cssText='display:flex;gap:8px;align-items:center;padding:12px 12px 8px;position:sticky;top:0;z-index:3;background:#050505';
     top.innerHTML='<input class="cp-dm-search" id="cp-dm-inbox-search" placeholder="Search conversations…" aria-label="Search conversations" style="flex:1;min-width:0"/><button type="button" class="cp-dm-action primary" id="cp-dm-new-chat-btn">＋ New chat</button>';
     body.prepend(top);
+    installUnreadBadge(top);
     top.querySelector('#cp-dm-new-chat-btn').addEventListener('click',openNewChat);
     top.querySelector('#cp-dm-inbox-search').addEventListener('input',e=>{
       const q=e.target.value.trim().toLocaleLowerCase();
@@ -213,6 +240,20 @@ import { getFirestore, collection, getDocs, limit, query, doc, updateDoc, arrayU
       });
       tools.appendChild(reply);node.appendChild(tools);
     });
+    // Inject the quoted message before the existing app's send handler runs.
+    if(!input.dataset.cpReplySendBound){
+      input.dataset.cpReplySendBound='1';
+      const applyReply=()=>{
+        const quote=input.dataset.cpReplyText;
+        if(!quote||!String(input.value||'').trim())return;
+        input.value='↪ '+quote+'\n'+input.value;
+        delete input.dataset.cpReplyText;
+        input.placeholder=input.dataset.cpOriginalPlaceholder||'Message…';
+        sheet.querySelector('#cp-dm-reply-preview')?.remove();
+      };
+      sheet.querySelector('#dm-send')?.addEventListener('click',applyReply,true);
+      input.addEventListener('keypress',e=>{if(e.key==='Enter')applyReply()},true);
+    }
     // Keep reply UI in sync when the original app re-renders messages.
     const form=input.closest('form')||input.parentElement?.parentElement;
     if(form&&!form.dataset.cpReplySubmitBound){
