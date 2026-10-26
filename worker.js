@@ -29,7 +29,8 @@ export default {
         coachRootCompatibility: true,
         briefingDiscovery: 'official-html+sitemaps',
         serviceAccountConfigured: !!env.FIREBASE_SERVICE_ACCOUNT_JSON,
-        aiConfigured: !!env.GEMINI_API_KEY,
+        aiConfigured: hasAIKey(env),
+        aiProvider: getAIProvider(env),
         routes: ['GET /health', 'GET /briefings', 'POST /coach', 'POST /send'],
         geminiModel: String(env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//, '')
       });
@@ -136,7 +137,7 @@ export default {
 
 // Shared Coach handler keeps /coach and legacy root requests on the same Gemini path.
 async function handleCoach(request, env) {
-  if (!env.GEMINI_API_KEY) {
+  if (!hasAIKey(env)) {
     return json({ success: false, error: 'AI is not configured. Check the GEMINI_API_KEY Worker secret.' }, 503);
   }
   try {
@@ -549,7 +550,8 @@ async function callGemini(env, payload) {
 }
 
 async function summarizeOfficialBriefings(items, env) {
-  if (!env.GEMINI_API_KEY) {
+  if (!hasAIKey(env)) {
+    console.warn('[briefings] No supported AI API key is bound to this Worker.');
     return items.map(item => ({ ...item, summary: '', aiSummary: false }));
   }
   const summarizeOne = async item => {
