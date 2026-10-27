@@ -19532,7 +19532,7 @@ function wireHomeCards(items) {
       const type = card.dataset.type;
       const id = card.dataset.id;
       if (type === 'vault') openVaultDetail(id);
-      else if (type === 'clip') { squadSubTab = 'clips'; switchTab('squad'); }
+      else if (type === 'clip') { if (typeof openPostComments === 'function') openPostComments(id); }
       else if (type === 'leak') { intelSubTab = 'leaks'; switchTab('intel'); }
       else if (type === 'lobby') { /* lobbies are self-contained */ }
     };
@@ -20017,7 +20017,7 @@ wireHomeCards = function(items) {
       const type = card.dataset.type;
       const id = card.dataset.id;
       if (type === 'vault') openVaultDetail(id);
-      else if (type === 'clip') { squadSubTab = 'clips'; switchTab('squad'); }
+      else if (type === 'clip') { if (typeof openPostComments === 'function') openPostComments(id); }
       else if (type === 'leak') { intelSubTab = 'leaks'; switchTab('intel'); }
     };
   });
