@@ -481,28 +481,30 @@ if ('serviceWorker' in navigator) {
 
 
 <style id="cp-home-brief-flat-links">
-  .cp-daily-brief-flat, .cp-daily-brief-flat * {
-    box-shadow: none !important;
-  }
   .cp-daily-brief-flat {
     background: transparent !important;
     border: 0 !important;
     border-radius: 0 !important;
+    box-shadow: none !important;
     padding: 0 !important;
-    margin-top: 8px !important;
-    margin-bottom: 8px !important;
+    margin: 8px 0 !important;
   }
-  .cp-daily-brief-flat .cp-daily-brief-links {
-    display: flex !important;
+  .cp-daily-brief-flat > div:first-child { margin-bottom: 8px !important; }
+  .cp-daily-brief-flat > div:first-child > span { display: none !important; }
+  .cp-daily-brief-flat > div:last-child {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     align-items: center !important;
-    flex-wrap: wrap !important;
-    gap: 14px !important;
+    gap: 12px !important;
+    width: 100% !important;
   }
-  .cp-daily-brief-flat .cp-daily-brief-links button,
-  .cp-daily-brief-flat .cp-daily-brief-links a {
+  .cp-daily-brief-flat .cp-v4-daily-go {
     display: inline-flex !important;
     align-items: center !important;
+    justify-content: center !important;
+    white-space: nowrap !important;
     width: auto !important;
+    min-width: 0 !important;
     min-height: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
@@ -511,7 +513,7 @@ if ('serviceWorker' in navigator) {
     background: transparent !important;
     box-shadow: none !important;
     color: #c8c8c8 !important;
-    font-size: 12px !important;
+    font-size: clamp(9px, 2.7vw, 11px) !important;
     font-weight: 600 !important;
     line-height: 1.4 !important;
   }
@@ -548,47 +550,22 @@ if ('serviceWorker' in navigator) {
 
   // Flatten the Daily Companion Brief without replacing its controls or click handlers.
   function flattenDailyBrief() {
-    const all = Array.from(document.querySelectorAll('body *'));
-    const heading = all.find(el => el.children.length === 0 &&
-      /DAILY COMPANION BRIEF/i.test((el.textContent || '').trim()));
-    if (!heading) return;
-    const candidates = [];
-    let node = heading;
-    while (node && node !== document.body) {
-      const text = (node.innerText || node.textContent || '');
-      if (/CODM Intel/i.test(text) && /Weapon Meta/i.test(text) && /Find Squad/i.test(text)) candidates.push(node);
-      node = node.parentElement;
-    }
-    if (!candidates.length) return;
-    const card = candidates[0];
+    // Keep the title/subtitle visible and only flatten the card's presentation.
+    const card = document.getElementById('cp-v4-daily-brief');
+    if (!card) return;
     card.classList.add('cp-daily-brief-flat');
-    const headingBlock = heading.closest('h1,h2,h3,h4,p,div,span') || heading;
-    headingBlock.style.setProperty('display', 'none', 'important');
-    const desc = Array.from(card.querySelectorAll('p,small,div,span'))
-      .find(el => el.children.length === 0 && /Three useful things to check before your next match/i.test((el.textContent || '').trim()));
-    if (desc) desc.style.setProperty('display', 'none', 'important');
-
-    const controls = Array.from(card.querySelectorAll('button,a,[role="button"]')).filter(el =>
-      /CODM Intel|Weapon Meta|Find Squad/i.test(el.innerText || el.textContent || ''));
-    if (controls.length) {
-      let links = card.querySelector('.cp-daily-brief-links');
-      if (!links) {
-        links = document.createElement('div');
-        links.className = 'cp-daily-brief-links';
-        controls[0].parentElement.insertBefore(links, controls[0]);
-      }
-      controls.forEach(el => {
-        el.style.setProperty('background', 'transparent', 'important');
-        el.style.setProperty('border', '0', 'important');
-        el.style.setProperty('border-radius', '0', 'important');
-        el.style.setProperty('box-shadow', 'none', 'important');
-        el.style.setProperty('padding', '0', 'important');
-        el.style.setProperty('min-height', '0', 'important');
-        el.style.setProperty('width', 'auto', 'important');
-        el.style.setProperty('display', 'inline-flex', 'important');
-        if (el.parentElement !== links) links.appendChild(el);
-      });
-    }
+    const controls = card.querySelectorAll('.cp-v4-daily-go');
+    controls.forEach(el => {
+      el.style.setProperty('background', 'transparent', 'important');
+      el.style.setProperty('border', '0', 'important');
+      el.style.setProperty('border-radius', '0', 'important');
+      el.style.setProperty('box-shadow', 'none', 'important');
+      el.style.setProperty('padding', '0', 'important');
+      el.style.setProperty('min-height', '0', 'important');
+      el.style.setProperty('width', 'auto', 'important');
+      el.style.setProperty('white-space', 'nowrap', 'important');
+      el.style.setProperty('display', 'inline-flex', 'important');
+    });
   }
 
   // Make the comment action icon + count only, even when a component nests its label.
@@ -674,7 +651,7 @@ if ('serviceWorker' in navigator) {
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      window.openPostComments(id);
+      window.openClipPostDetail(id);
     }, true);
   }
 
