@@ -10805,7 +10805,7 @@ async function notifySubmissionApproved(submitterUid, contentType, itemName) {
       submitterUid,
       '✅ Submission Approved',
       `Your ${contentType} "${itemName}" was approved and is now live!`,
-      { type: 'approval', contentType }
+      { type: 'approval', contentType, eventId: `approval:${contentType}:${itemName}` }
     );
   } catch (e) { /* silent */ }
 }
@@ -13846,14 +13846,13 @@ showMainApp = function() {
 // Log notifications whenever major events happen
 const _origNotifySubmissionApprovedFinal = notifySubmissionApproved;
 notifySubmissionApproved = async function(uid, contentType, itemName) {
-  await logInAppNotification(uid, 'approval', '✅ Submission Approved', `Your ${contentType} "${itemName}" is now live!`, { contentType });
+  // The original sender logs the in-app notification; do not log it a second time here.
   return _origNotifySubmissionApprovedFinal(uid, contentType, itemName);
 };
 
 const _origNotifyBadgeEarnedFinal = notifyBadgeEarned;
 notifyBadgeEarned = async function(uid, badge) {
-  const labels = { first_leak: '🥉 First Leak', rising: '🥈 Rising', legend: '🥇 Legend', elite: '💎 Elite' };
-  await logInAppNotification(uid, 'badge', '🏆 New Badge!', `You earned: ${labels[badge] || badge}`, { badge });
+  // The original sender logs the in-app notification; do not log it a second time here.
   return _origNotifyBadgeEarnedFinal(uid, badge);
 };
 
@@ -13864,7 +13863,7 @@ notifyNewLeakPosted = async function(title) {
     const snap = await getDocs(query(collection(db, 'users'), limit(500)));
     const batch = [];
     snap.forEach(d => {
-      batch.push(logInAppNotification(d.id, 'leak', '🔥 New Leak', title, {}));
+      batch.push(logInAppNotification(d.id, 'leak', '🔥 New Leak', title, { eventId: `leak:${title}` }));
     });
     await Promise.all(batch.slice(0, 100)); // cap at 100 writes
   } catch (e) { /* silent */ }
