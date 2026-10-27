@@ -23,7 +23,7 @@ Open the Worker URL followed by `/health`. Expected values:
 
 - `status: "ok"`
 - `service: "codmpanda-notify"`
-- `build: "codmpanda-worker-v1"`
+- `build: "codmpanda-worker-v8"`
 - `aiConfigured: true`
 - `serviceAccountConfigured: true`
 
