@@ -14573,7 +14573,7 @@ renderLobbies = function() {
 
   feed.innerHTML = lobbies.map(l => {
     const isExpired = cpLobbyIsExpired(l);
-    const isMine = l.uid === State.user.uid;
+    const isMine = l.uid === State.user?.uid;
     const playersText = `${l.players || 1}/5`;
 
     return `
@@ -20974,7 +20974,7 @@ function cpPostTextWithoutHashtags(value) {
 }
 
 function renderHomePostCard(post) {
-  const isMine = post.uid === State.user.uid;
+  const isMine = post.uid === State.user?.uid;
   const isLiked = State.likedItems?.post?.[post.id] || false;
   const wasEdited = !!post.editedAt;
 
