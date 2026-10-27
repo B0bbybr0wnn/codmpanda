@@ -345,11 +345,10 @@ service cloud.firestore {
     // ---------- LIKES / REACTIONS ----------
     match /likes/{id} {
       allow read: if isSignedIn();
-      // Allow every reaction offered by the UI and preserve the exact selected value.
       allow create, update: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
-        && request.resource.data.get('reaction', '') is string
-        && request.resource.data.get('reaction', '').size() > 0;
+        && (!(request.resource.data.get('reaction', '') in ['goat', 'crown'])
+            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isPro == true);
       allow delete: if isSignedIn()
         && resource.data.userId == request.auth.uid;
     }
