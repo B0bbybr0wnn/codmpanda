@@ -19383,9 +19383,9 @@ function renderHomeClipCard(c) {
         </div>
         <div class="flex items-center gap-2">
           <div data-uid="${esc(c.submittedByUid || c.uid || c.userId || c.authorUid || '')}" class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0 cursor-pointer">
-            ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...c, avatar: c.submittedByAvatar || c.avatar || '', ign: authorName, avatarFrame: c.avatarFrame || c.equippedAvatarFrame || c.equippedFrame || 'none'}, 44) : ((c.submittedByAvatar || c.avatar || c.photoURL) ? `<img src="${esc(c.submittedByAvatar || c.avatar || c.photoURL)}" class="w-full h-full object-cover" />` : getInitials(authorName))}
+            ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...c, avatar: c.submittedByAvatar || c.avatar || c.photoURL || '', ign: authorName, avatarFrame: c.avatarFrame || c.equippedAvatarFrame || c.equippedFrame || 'none'}, 44) : ((c.submittedByAvatar || c.avatar || c.photoURL) ? `<img src="${esc(c.submittedByAvatar || c.avatar || c.photoURL)}" class="w-full h-full object-cover" />` : getInitials(authorName))}
           </div>
-          <div class="text-xs text-gray-400">by <span data-uid="${esc(c.submittedByUid || c.uid || c.userId || c.authorUid || '')}" class="text-white font-bold">${esc(authorName)}</span> · ${esc(c.gunTag || 'CODM')}</div>
+          <div class="text-xs text-gray-400">by <span data-uid="${esc(c.submittedByUid || c.uid || c.userId || c.authorUid || '')}" class="text-white font-bold cursor-pointer">${esc(authorName)}</span> · ${esc(c.gunTag || 'CODM')}</div>
         </div>
         ${c.caption ? `<p class="text-xs text-gray-300 mt-2 break-words">${esc(c.caption)}</p>` : ''}
       </div>
@@ -21212,23 +21212,7 @@ wireHomeEmpty = function() {
 };
 
 
-/* Home feed clip comments + database-backed hashtag suggestions. */
-function cpRenderInlineClipComment(c) {
-  const user={...c,avatarFrame:c.avatarFrame||c.equippedAvatarFrame||c.equippedFrame||'none'};
-  const avatar=window.CODMRenderFramedAvatar?window.CODMRenderFramedAvatar(user,30):(c.avatar?`<img src="${esc(c.avatar)}" class="w-full h-full object-cover rounded-full" />`:getInitials(c.ign));
-  return `<div class="flex items-start gap-2.5"><div data-uid="${esc(c.uid||'')}" class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-visible flex-shrink-0">${avatar}</div><div class="min-w-0 flex-1 rounded-xl bg-cardAlt border border-border px-3 py-2"><div class="text-[10px] font-bold text-primary mb-1">${esc(c.ign||'Player')}</div><div class="text-xs text-gray-200 break-words whitespace-pre-wrap">${esc(c.text||'')}</div><div class="text-[9px] text-gray-600 mt-1">${cpDateTimeHTML(c.createdAt)}</div></div></div>`;
-}
-async function cpLoadHomeClipComments(feed,clipId){
-  const section=[...feed.querySelectorAll('[data-cp-clip-comments]')].find(el=>el.dataset.cpClipComments===String(clipId));
-  const list=section?.querySelector('.cp-home-clip-comments-list');if(!list)return;
-  try{
-    const snap=await getDocs(query(collection(db,'comments'),where('contentId','==',String(clipId)),limit(100)));
-    if(!list.isConnected)return;
-    const comments=snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>!c.contentType||c.contentType==='clip').sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
-    const count=section.closest('.home-card')?.querySelector('.cp-home-clip-comment-count');if(count)count.textContent=String(comments.length);
-    list.innerHTML=comments.length?comments.slice(-12).map(cpRenderInlineClipComment).join(''):'<div class="text-[10px] text-gray-500">No comments yet. Be the first to reply.</div>';
-  }catch(error){console.warn('[Home clip comments] Load failed',error);list.innerHTML='<div class="text-[10px] text-gray-500">Comments could not load. Try again shortly.</div>';}
-}
+/* Home feed clips use the shared PostCard comment flow. */
 function wireHomeClipComments(feed,items){
   feed.querySelectorAll('.post-comments-btn[data-content-type="clip"]').forEach(button=>{
     button.onclick=event=>{
