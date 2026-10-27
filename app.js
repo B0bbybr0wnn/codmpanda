@@ -13332,10 +13332,9 @@ async function logInAppNotification(userId, type, title, body, data) {
     const dedupeWindow=explicitEvent?'':String(Math.floor(Date.now()/60000));
     const identity=JSON.stringify([String(userId||''),String(type||'default'),String(title||''),String(body||''),eventData,explicitEvent?'':dedupeWindow]);
     const notificationId='evt_'+cpNotificationHash(identity);
-    const notificationRef=doc(db,'notifications',notificationId);
-    const existing=await getDoc(notificationRef);
-    if(existing.exists())return notificationId;
-    await setDoc(notificationRef,{
+    // A deterministic document ID makes duplicate calls converge on one document.
+    // Do not read first: notification rules intentionally restrict reads to the recipient.
+    await setDoc(doc(db,'notifications',notificationId),{
       userId,
       type:type||'default',
       title:title||'',
