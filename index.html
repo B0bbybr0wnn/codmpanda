@@ -480,43 +480,175 @@ if ('serviceWorker' in navigator) {
 </style>
 
 
-<script id="cp-comment-count-only-actions">
+<style id="cp-home-brief-flat-links">
+  .cp-daily-brief-flat, .cp-daily-brief-flat * {
+    box-shadow: none !important;
+  }
+  .cp-daily-brief-flat {
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin-top: 8px !important;
+    margin-bottom: 8px !important;
+  }
+  .cp-daily-brief-flat .cp-daily-brief-links {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 14px !important;
+  }
+  .cp-daily-brief-flat .cp-daily-brief-links button,
+  .cp-daily-brief-flat .cp-daily-brief-links a {
+    display: inline-flex !important;
+    align-items: center !important;
+    width: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #c8c8c8 !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    line-height: 1.4 !important;
+  }
+</style>
+<script id="cp-home-feed-targeted-fixes">
 (function () {
-  // Keep every feed's comment action compact: comment icon + numeric count only.
+  'use strict';
+
+  // Flatten the Daily Companion Brief without replacing its controls or click handlers.
+  function flattenDailyBrief() {
+    const all = Array.from(document.querySelectorAll('body *'));
+    const heading = all.find(el => el.children.length === 0 &&
+      /DAILY COMPANION BRIEF/i.test((el.textContent || '').trim()));
+    if (!heading) return;
+    const candidates = [];
+    let node = heading;
+    while (node && node !== document.body) {
+      const text = (node.innerText || node.textContent || '');
+      if (/CODM Intel/i.test(text) && /Weapon Meta/i.test(text) && /Find Squad/i.test(text)) candidates.push(node);
+      node = node.parentElement;
+    }
+    if (!candidates.length) return;
+    const card = candidates[0];
+    card.classList.add('cp-daily-brief-flat');
+    const headingBlock = heading.closest('h1,h2,h3,h4,p,div,span') || heading;
+    headingBlock.style.setProperty('display', 'none', 'important');
+    const desc = Array.from(card.querySelectorAll('p,small,div,span'))
+      .find(el => el.children.length === 0 && /Three useful things to check before your next match/i.test((el.textContent || '').trim()));
+    if (desc) desc.style.setProperty('display', 'none', 'important');
+
+    const controls = Array.from(card.querySelectorAll('button,a,[role="button"]')).filter(el =>
+      /CODM Intel|Weapon Meta|Find Squad/i.test(el.innerText || el.textContent || ''));
+    if (controls.length) {
+      let links = card.querySelector('.cp-daily-brief-links');
+      if (!links) {
+        links = document.createElement('div');
+        links.className = 'cp-daily-brief-links';
+        controls[0].parentElement.insertBefore(links, controls[0]);
+      }
+      controls.forEach(el => {
+        el.style.setProperty('background', 'transparent', 'important');
+        el.style.setProperty('border', '0', 'important');
+        el.style.setProperty('border-radius', '0', 'important');
+        el.style.setProperty('box-shadow', 'none', 'important');
+        el.style.setProperty('padding', '0', 'important');
+        el.style.setProperty('min-height', '0', 'important');
+        el.style.setProperty('width', 'auto', 'important');
+        el.style.setProperty('display', 'inline-flex', 'important');
+        links.appendChild(el);
+      });
+    }
+  }
+
+  // Make the comment action icon + count only, even when a component nests its label.
   function normalizeCommentActions(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('.home-card button, [data-feed-card] button').forEach(function (button) {
-      const icon = button.querySelector('[data-lucide="message-circle"], i[data-lucide="message-circle"], svg');
+    const buttons = [];
+    if (scope.matches && scope.matches('button')) buttons.push(scope);
+    scope.querySelectorAll('button').forEach(button => buttons.push(button));
+    buttons.forEach(button => {
+      if (!button.closest('.home-card,[data-feed-card],#home-feed')) return;
+      const label = (button.innerText || button.textContent || '').trim();
+      const commentLike = /comment/i.test(label) ||
+        button.matches('.post-comments-btn,.cp-home-clip-comments-toggle,[data-action="comments"]');
+      if (!commentLike) return;
+      const icon = button.querySelector('svg,[data-lucide],i');
       if (!icon) return;
-      const label = (button.textContent || '').trim();
-      if (!/comment/i.test(label) && !button.matches('.post-comments-btn,.cp-home-clip-comments-toggle')) return;
-      const countNode = button.querySelector('[data-cp-clip-count], .cp-home-clip-comment-count, [data-comment-count], .comment-count, .cp-comment-action-count');
-      let count = countNode ? String(countNode.textContent || '').trim() : ((label.match(/\d+/) || ['0'])[0]);
-      if (!/^\d+$/.test(count)) count = '0';
-      Array.from(button.childNodes).forEach(function (node) {
-        if (node.nodeType === 3) node.remove();
-      });
-      if (countNode) {
-        // Move the count only when needed; avoid triggering the observer repeatedly.
-        if (countNode.parentElement !== button || countNode !== button.lastElementChild) button.appendChild(countNode);
-      } else {
-        const number = document.createElement('span');
-        number.className = 'cp-comment-action-count';
-        number.textContent = count;
-        button.appendChild(number);
-      }
+      const match = label.match(/\d+/);
+      const countNode = button.querySelector('[data-cp-clip-count],.cp-home-clip-comment-count,[data-comment-count],.comment-count,.cp-comment-action-count');
+      let count = countNode ? String(countNode.textContent || '').trim() : (match ? match[0] : '0');
+      if (!/^\d+$/.test(count)) count = match ? match[0] : '0';
+      const hasOnlyIconAndCount = button.children.length === 2 &&
+        button.children[0] === icon && button.children[1].classList.contains('cp-comment-action-count') &&
+        !/comment/i.test(button.textContent || '');
+      if (hasOnlyIconAndCount) return;
+      const savedIcon = icon.cloneNode(true);
+      button.replaceChildren(savedIcon);
+      const number = document.createElement('span');
+      number.className = 'cp-comment-action-count';
+      number.textContent = count;
+      number.style.cssText = 'display:inline-block;margin-left:4px;font-size:12px;line-height:1;font-weight:600;';
+      button.appendChild(number);
       button.setAttribute('aria-label', count + ' comments');
       button.setAttribute('title', count + ' comments');
     });
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { normalizeCommentActions(document); });
-  else normalizeCommentActions(document);
-  const observer = new MutationObserver(function (records) {
-    records.forEach(function (record) {
-      record.addedNodes.forEach(function (node) {
-        if (node.nodeType === 1) normalizeCommentActions(node);
+
+  // A tap on the clip card itself opens the shared full post-detail view.
+  // Controls inside the card retain their own actions.
+  function installClipCardNavigation() {
+    if (document.documentElement.dataset.cpClipDetailCapture === '1') return;
+    document.documentElement.dataset.cpClipDetailCapture = '1';
+    document.addEventListener('click', function (event) {
+      const target = event.target && event.target.nodeType === 1 ? event.target : event.target?.parentElement;
+      if (!target) return;
+      if (target.closest('button,a,[role="button"],input,textarea,select,[contenteditable="true"]')) return;
+      const card = target.closest('.home-card,[data-feed-card],[data-post-id],[data-post-type="clip"],[data-type="clip"],.clip-card,.home-clip-card');
+      if (!card || !card.closest('#home-feed') && !card.matches('[data-feed-card]')) return;
+      const signature = [
+        card.className || '', card.getAttribute('data-type') || '',
+        card.getAttribute('data-post-type') || '', card.getAttribute('data-content-type') || ''
+      ].join(' ').toLowerCase();
+      const isClip = /clip|video/.test(signature) ||
+        card.querySelector('video,[data-post-type="clip"],[data-type="clip"],.cp-home-clip-comments-toggle') ||
+        /\bclip\b/i.test(card.innerText || '');
+      if (!isClip) return;
+      const idNode = card.matches('[data-post-id],[data-id]') ? card :
+        card.querySelector('[data-post-id],[data-id],.cp-home-clip-comments-toggle');
+      const id = idNode && (idNode.getAttribute('data-post-id') || idNode.getAttribute('data-id'));
+      if (!id || typeof window.openPostComments !== 'function') return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      window.openPostComments(id);
+    }, true);
+  }
+
+  function run() {
+    flattenDailyBrief();
+    normalizeCommentActions(document);
+    installClipCardNavigation();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+
+  const observer = new MutationObserver(records => {
+    records.forEach(record => {
+      record.addedNodes.forEach(node => {
+        if (node.nodeType === 1) {
+          flattenDailyBrief();
+          normalizeCommentActions(node);
+        }
       });
-      if (record.target && record.target.nodeType === 1) normalizeCommentActions(record.target.closest('.home-card') || record.target);
+      if (record.type === 'characterData') {
+        flattenDailyBrief();
+        normalizeCommentActions(record.target.parentElement || document);
+      }
     });
   });
   observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
