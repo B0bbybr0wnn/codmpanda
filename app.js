@@ -29621,6 +29621,23 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       return;
     }
 
+    const coachOverlay = document.getElementById('cp-ai-coach');
+    if (isVisible(coachOverlay)) {
+      coachOverlay.style.display = 'none';
+      rearmAppHistory();
+      consumeBack(event);
+      return;
+    }
+
+    const inboxOverlay = document.getElementById('inbox-overlay');
+    if (isVisible(inboxOverlay)) {
+      if (typeof window.closeInboxOverlay === 'function') window.closeInboxOverlay();
+      else inboxOverlay.remove();
+      rearmAppHistory();
+      consumeBack(event);
+      return;
+    }
+
     const modal = document.getElementById('modal-container');
     if (isVisible(modal)) {
       if (typeof closeModal === 'function') closeModal();
