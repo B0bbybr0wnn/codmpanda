@@ -13401,7 +13401,7 @@ function startNotifCountListener() {
         collection(db, 'notifications'),
         where('userId', '==', State.user.uid),
         where('read', '==', false),
-        limit(20)
+        limit(50)
       ),
       (snap) => {
         if (notifFallbackInterval) { clearInterval(notifFallbackInterval); notifFallbackInterval = null; }
@@ -17369,7 +17369,7 @@ async function renderMessagesTabFast() {
       const otherUid = parts.find(p => p !== State.user.uid);
       if (!otherUid) continue;
 
-show non-friend conversations      conversations.push({
+      conversations.push({
         chatId,
         otherUid,
         lastMessage: last,
