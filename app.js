@@ -16094,6 +16094,13 @@ async function openCommentsSheet(contentType, contentId, contentTitle) {
       const comments = [];
       snap.forEach(d => comments.push({ id: d.id, ...d.data() }));
       comments.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+      if (contentType === 'clip') {
+        document.querySelectorAll('.home-card[data-type="clip"]').forEach(card => {
+          if (String(card.dataset.id) !== String(contentId)) return;
+          const count = card.querySelector('[data-cp-clip-count]');
+          if (count) count.textContent = String(comments.length);
+        });
+      }
 
       if (comments.length === 0) {
         commentsList.innerHTML = `
@@ -16110,8 +16117,8 @@ async function openCommentsSheet(contentType, contentId, contentTitle) {
         const isMine = !!State.user && c.uid === State.user.uid;
         return `
           <div class="flex items-start gap-2.5 ${isMine ? 'flex-row-reverse' : ''}">
-            <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
-              ${c.avatar ? `<img src="${esc(c.avatar)}" class="w-full h-full object-cover" />` : getInitials(c.ign)}
+            <div data-uid="${esc(c.uid || '')}" class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-visible flex-shrink-0 cursor-pointer">
+              ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...c, avatarFrame: c.avatarFrame || c.equippedAvatarFrame || c.equippedFrame || 'none'}, 32) : (c.avatar ? '<img src="' + esc(c.avatar) + '" class="w-full h-full object-cover rounded-full" />' : getInitials(c.ign))}
             </div>
             <div class="flex-1 min-w-0 ${isMine ? 'text-right' : ''}">
               <div class="inline-block max-w-full ${isMine ? 'bg-primary text-white' : 'bg-card border border-border'} rounded-2xl px-3 py-2 text-left">
@@ -16168,7 +16175,9 @@ async function openCommentsSheet(contentType, contentId, contentTitle) {
         contentType,
         uid: State.user.uid,
         ign: State.profile.ign,
-        avatar: State.profile.avatar || '',
+        avatar: State.profile.avatar || State.profile.photoURL || '',
+        avatarFrame: State.profile.avatarFrame || State.profile.equippedAvatarFrame || State.profile.equippedFrame || 'none',
+        equippedAvatarFrame: State.profile.equippedAvatarFrame || State.profile.avatarFrame || 'none',
         text,
         createdAt: serverTimestamp()
       });
@@ -19357,7 +19366,9 @@ function renderHomeVaultCard(v) {
 }
 
 function renderHomeClipCard(c) {
-  const embedUrl = getYouTubeEmbed(c.youtubeUrl);
+  const youtubeEmbed = getYouTubeEmbed(c.youtubeUrl);
+  const tiktokMatch = String(c.youtubeUrl || '').match(/tiktok\.com\/(?:@[^/]+\/video\/|embed\/v2\/)(\d+)/i);
+  const embedUrl = youtubeEmbed || (tiktokMatch ? 'https://www.tiktok.com/embed/v2/' + tiktokMatch[1] : String(c.youtubeUrl || ''));
   const isApproved = !!c.approved;
   const isLiked = State.likedItems?.clip?.[c.id] || false;
   const authorName = c.submittedByIgn || c.ign || 'CODMPanda';
@@ -19371,8 +19382,8 @@ function renderHomeClipCard(c) {
           <span class="text-[10px] text-gray-500 ml-auto">${cpDateTimeHTML(c.createdAt)}</span>
         </div>
         <div class="flex items-center gap-2">
-          <div data-uid="${esc(c.submittedByUid || c.uid || c.userId || c.authorUid || '')}" class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-visible flex-shrink-0">
-            ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...c, avatar: c.submittedByAvatar || c.avatar || '', ign: authorName, avatarFrame: c.avatarFrame || c.equippedAvatarFrame || c.equippedFrame || 'none'}, 32) : (c.submittedByAvatar ? `<img src="${esc(c.submittedByAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName))}
+          <div data-uid="${esc(c.submittedByUid || c.uid || c.userId || c.authorUid || '')}" class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0 cursor-pointer">
+            ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...c, avatar: c.submittedByAvatar || c.avatar || '', ign: authorName, avatarFrame: c.avatarFrame || c.equippedAvatarFrame || c.equippedFrame || 'none'}, 44) : ((c.submittedByAvatar || c.avatar || c.photoURL) ? `<img src="${esc(c.submittedByAvatar || c.avatar || c.photoURL)}" class="w-full h-full object-cover" />` : getInitials(authorName))}
           </div>
           <div class="text-xs text-gray-400">by <span data-uid="${esc(c.submittedByUid || c.uid || c.userId || c.authorUid || '')}" class="text-white font-bold">${esc(authorName)}</span> · ${esc(c.gunTag || 'CODM')}</div>
         </div>
@@ -19396,19 +19407,12 @@ function renderHomeClipCard(c) {
         <button class="home-like-btn btn-press flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'}" data-type="clip" data-id="${c.id}">
           <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i> ${c.likes || 0}
         </button>
-        <button class="cp-home-clip-comments-toggle btn-press flex items-center gap-1.5 text-xs text-gray-400" data-id="${c.id}" type="button">
-          <i data-lucide="message-circle" class="w-4 h-4"></i> <span class="cp-home-clip-comment-count">${Number(c.commentCount) || 0}</span> Comments
+        <button class="post-comments-btn btn-press flex items-center gap-1.5 text-xs text-gray-400" data-id="${c.id}" data-content-type="clip" type="button">
+          <i data-lucide="message-circle" class="w-4 h-4"></i> <span data-cp-clip-count>${Number(c.commentCount) || 0}</span> Comments
         </button>
         <button class="home-share-btn btn-press text-primary" data-type="clip" data-id="${c.id}">
           <i data-lucide="share-2" class="w-4 h-4"></i>
         </button>
-      </div>
-      <div class="border-t border-border px-3 py-3" data-cp-clip-comments="${esc(c.id)}">
-        <div class="cp-home-clip-comments-list space-y-3 mb-3" aria-live="polite"><div class="text-[10px] text-gray-500">Loading comments…</div></div>
-        <div class="flex gap-2">
-          <input class="cp-home-clip-comment-input flex-1 min-w-0" data-id="${esc(c.id)}" maxlength="300" placeholder="Write a comment…" aria-label="Write a clip comment" />
-          <button class="cp-home-clip-comment-send btn-press px-3 rounded-xl bg-primary text-white text-xs font-bold" data-id="${esc(c.id)}" type="button">Send</button>
-        </div>
       </div>
     </div>
   `;
@@ -20702,8 +20706,15 @@ function openWritePostSheet() {
 
       <div>
         <textarea id="post-text" rows="6" maxlength="${limit}" placeholder="What's on your mind, Panda?" style="font-size: 15px; line-height: 1.5;"></textarea>
-        <div class="text-[10px] text-gray-500 mt-1">Tip: type <span class="text-primary font-bold">#</span> to discover popular hashtags.</div>
-        <div id="post-hashtag-suggestions" class="hidden rounded-xl border border-white/10 bg-[#111] mt-2 overflow-hidden" role="listbox" aria-label="Hashtag suggestions"></div>
+        <div class="mt-3 rounded-xl border border-white/10 bg-[#0d0d0d] p-3">
+          <label for="post-hashtag-input" class="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Hashtags</label>
+          <div class="flex items-center gap-2">
+            <button id="post-hashtag-trigger" type="button" aria-label="Insert hashtag" class="w-10 h-10 flex-shrink-0 rounded-lg border border-primary/40 bg-primary/10 text-primary text-lg font-black">#</button>
+            <input id="post-hashtag-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type to find hashtags…" aria-label="Add hashtags" class="flex-1 min-w-0" />
+          </div>
+          <div class="text-[10px] text-gray-600 mt-2">Choose popular tags or type a hashtag. They’ll be saved separately from your post text.</div>
+          <div id="post-hashtag-suggestions" class="hidden rounded-xl border border-white/10 bg-[#111] mt-2 overflow-hidden" role="listbox" aria-label="Hashtag suggestions"></div>
+        </div>
         <div class="flex items-center justify-between mt-2">
           <span id="post-counter" class="text-[10px] text-gray-500">0 / ${limit}</span>
           ${!isPro ? `<span id="pro-hint" class="text-[10px] text-gold font-bold hidden"> Upgrade for unlimited</span>` : ''}
@@ -20756,7 +20767,11 @@ function openWritePostSheet() {
       }
 
       const expiresAt = Timestamp.fromMillis(Date.now() + 90 * 24 * 60 * 60 * 1000);
-      const hashtags = [...new Set((text.match(/#[\p{L}\p{N}_]{2,30}/gu) || []).map(tag => tag.toLowerCase()))].slice(0, 10);
+      const hashtagField = document.getElementById('post-hashtag-input')?.value || '';
+      const hashtags = [...new Set([
+        ...((hashtagField.match(/#[\p{L}\p{N}_]{2,30}/gu) || []).map(tag => tag.toLowerCase())),
+        ...((text.match(/#[\p{L}\p{N}_]{2,30}/gu) || []).map(tag => tag.toLowerCase()))
+      ])].slice(0, 10);
 
       await addDoc(collection(db, 'posts'), {
         uid: State.user.uid,
@@ -21224,24 +21239,13 @@ async function cpLoadHomeClipComments(feed,clipId){
   }catch(error){console.warn('[Home clip comments] Load failed',error);list.innerHTML='<div class="text-[10px] text-gray-500">Comments could not load. Try again shortly.</div>';}
 }
 function wireHomeClipComments(feed,items){
-  feed.querySelectorAll('[data-cp-clip-comments]').forEach(section=>{
-    const clipId=String(section.dataset.cpClipComments||'');if(!clipId)return;
-    cpLoadHomeClipComments(feed,clipId);
-    const input=section.querySelector('.cp-home-clip-comment-input'),send=section.querySelector('.cp-home-clip-comment-send');
-    const submit=async()=>{
-      if(!State.user||!State.profile){if(typeof showAuthGate==='function')showAuthGate();return;}
-      const text=String(input?.value||'').trim();if(!text)return;if(text.length>300){toast('Comment too long','error');return;}
-      if(!input||!send||send.disabled)return;input.disabled=true;send.disabled=true;
-      try{
-        await addDoc(collection(db,'comments'),{contentId:clipId,contentType:'clip',uid:State.user.uid,ign:State.profile.ign||State.profile.displayName||'Player',avatar:State.profile.avatar||State.profile.photoURL||'',avatarFrame:State.profile.avatarFrame||State.profile.equippedAvatarFrame||State.profile.equippedFrame||'none',equippedAvatarFrame:State.profile.equippedAvatarFrame||State.profile.avatarFrame||'none',text,likes:0,createdAt:serverTimestamp()});
-        input.value='';await cpLoadHomeClipComments(feed,clipId);
-        const clip=items.find(item=>String(item.id)===clipId),ownerUid=clip?.submittedByUid||clip?.uid||clip?.userId||clip?.authorUid;
-        if(ownerUid&&ownerUid!==State.user.uid&&typeof sendNotificationToUser==='function')sendNotificationToUser(ownerUid,`💬 ${State.profile.ign||'Player'}`,text.length>60?text.slice(0,60)+'…':text,{type:'comment',contentType:'clip',contentId:clipId,eventId:`clip-comment:${clipId}:${State.user.uid}:${Date.now()}`}).catch(()=>{});
-      }catch(error){console.error('[Home clip comments] Send failed',error);toast('Could not send comment','error');}
-      finally{input.disabled=false;send.disabled=false;input.focus();}
+  feed.querySelectorAll('.post-comments-btn[data-content-type="clip"]').forEach(button=>{
+    button.onclick=event=>{
+      event.preventDefault();
+      event.stopPropagation();
+      const clip=items.find(item=>String(item.id)===String(button.dataset.id)) || homeCache.feed.find(item=>String(item.id)===String(button.dataset.id));
+      if(typeof openCommentsSheet==='function') openCommentsSheet('clip',button.dataset.id,clip?.caption||'Clip comments');
     };
-    send.onclick=submit;input.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();submit();}};
-    section.closest('.home-card')?.querySelector('.cp-home-clip-comments-toggle')?.addEventListener('click',()=>input.focus());
   });
 }
 function cpCleanHashtag(value){return String(value||'').replace(/^#+/,'').replace(/[^\p{L}\p{N}_]/gu,'').toLowerCase().slice(0,30);}
@@ -29915,23 +29919,75 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
 const _cpOriginalOpenWritePostSheetHashtags = openWritePostSheet;
 openWritePostSheet = function() {
   _cpOriginalOpenWritePostSheetHashtags();
-  const textarea=document.getElementById('post-text'), menu=document.getElementById('post-hashtag-suggestions');
-  if(!textarea||!menu)return;
-  let request=0, tokenStart=-1;
-  const hide=()=>{menu.classList.add('hidden');menu.innerHTML='';tokenStart=-1;};
-  const show=async(prefix,start)=>{
-    const id=++request;tokenStart=start;menu.classList.remove('hidden');menu.innerHTML='<div class="px-3 py-3 text-[10px] text-gray-500">Finding hashtags…</div>';
-    const results=await cpGetHashtagSuggestions(prefix);if(id!==request||!menu.isConnected)return;
-    const items=results.length?results:(prefix?[{tag:cpCleanHashtag(prefix),count:0}].filter(x=>x.tag):[]);
-    if(!items.length){menu.innerHTML='<div class="px-3 py-3 text-[10px] text-gray-500">No popular hashtags yet.</div>';return;}
-    menu.innerHTML='<div class="px-3 pt-2 pb-1 text-[9px] uppercase tracking-wider text-gray-500 font-bold">Popular hashtags</div>'+items.map(x=>'<button type="button" role="option" class="cp-hashtag-option w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-white/5" data-tag="'+esc(x.tag)+'"><span class="text-xs font-bold text-primary">#'+esc(x.tag)+'</span><span class="text-[9px] text-gray-500">'+(x.count?x.count.toLocaleString()+' posts':'Add hashtag')+'</span></button>').join('');
-    menu.querySelectorAll('.cp-hashtag-option').forEach(button=>button.onclick=()=>{
-      const tag=cpCleanHashtag(button.dataset.tag),caret=textarea.selectionStart,before=textarea.value.slice(0,caret),match=before.match(/#([\p{L}\p{N}_]*)$/u),start=match?caret-match[0].length:tokenStart;
-      if(!tag)return;textarea.value=textarea.value.slice(0,Math.max(0,start))+'#'+tag+' '+textarea.value.slice(textarea.selectionEnd);
-      const next=Math.max(0,start)+tag.length+2;textarea.setSelectionRange(next,next);textarea.dispatchEvent(new Event('input',{bubbles:true}));textarea.focus();
+  const input = document.getElementById('post-hashtag-input');
+  const trigger = document.getElementById('post-hashtag-trigger');
+  const menu = document.getElementById('post-hashtag-suggestions');
+  if (!input || !trigger || !menu) return;
+  let request = 0;
+  let tokenStart = 0;
+  const hide = () => { menu.classList.add('hidden'); menu.innerHTML = ''; };
+  const show = async (prefix, start) => {
+    const requestId = ++request;
+    tokenStart = Math.max(0, start);
+    menu.classList.remove('hidden');
+    menu.innerHTML = '<div class="px-3 py-3 text-[10px] text-gray-500">Finding hashtags…</div>';
+    const results = await cpGetHashtagSuggestions(prefix);
+    if (requestId !== request || !menu.isConnected) return;
+    const items = results.length ? results : (prefix ? [{ tag: cpCleanHashtag(prefix), count: 0 }].filter(item => item.tag) : []);
+    if (!items.length) { menu.innerHTML = '<div class="px-3 py-3 text-[10px] text-gray-500">No popular hashtags yet. Type a tag to create one.</div>'; return; }
+    menu.innerHTML = '<div class="px-3 pt-2 pb-1 text-[9px] uppercase tracking-wider text-gray-500 font-bold">Popular hashtags</div>' +
+      items.map(item => '<button type="button" role="option" class="cp-hashtag-option w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-white/5" data-tag="' + esc(item.tag) + '"><span class="text-xs font-bold text-primary">#' + esc(item.tag) + '</span><span class="text-[9px] text-gray-500">' + (item.count ? item.count.toLocaleString() + ' posts' : 'Add hashtag') + '</span></button>').join('');
+    menu.querySelectorAll('.cp-hashtag-option').forEach(button => {
+      button.onclick = () => {
+        const tag = cpCleanHashtag(button.dataset.tag);
+        if (!tag) return;
+        const value = input.value;
+        const caret = input.selectionStart ?? value.length;
+        const before = value.slice(0, caret);
+        const match = before.match(/(?:^|\s)(#?[\p{L}\p{N}_]*)$/u);
+        const start = match ? caret - match[1].length : tokenStart;
+        input.value = value.slice(0, Math.max(0, start)) + '#' + tag + ' ' + value.slice(input.selectionEnd ?? caret);
+        const next = Math.max(0, start) + tag.length + 2;
+        input.setSelectionRange(next, next);
+        input.focus();
+        hide();
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      };
     });
   };
-  const update=()=>{const caret=textarea.selectionStart,match=textarea.value.slice(0,caret).match(/#([\p{L}\p{N}_]*)$/u);if(match)show(match[1],caret-match[0].length);else hide();};
-  textarea.addEventListener('input',update);textarea.addEventListener('click',update);
-  document.addEventListener('click',event=>{if(!event.target.closest('#post-hashtag-suggestions')&&event.target!==textarea)hide();});
+  const update = () => {
+    const caret = input.selectionStart ?? input.value.length;
+    const before = input.value.slice(0, caret);
+    const match = before.match(/(?:^|\s)(#?[\p{L}\p{N}_]*)$/u);
+    if (!match) { hide(); return; }
+    const token = match[1] || '';
+    show(cpCleanHashtag(token), caret - token.length);
+  };
+  trigger.onclick = () => {
+    const value = input.value;
+    const caret = input.selectionStart ?? value.length;
+    input.value = value.slice(0, caret) + '#' + value.slice(input.selectionEnd ?? caret);
+    const next = caret + 1;
+    input.setSelectionRange(next, next);
+    input.focus();
+    show('', next);
+  };
+  input.addEventListener('input', update);
+  input.addEventListener('focus', () => { if (!input.value.trim()) show('', input.selectionStart ?? 0); else update(); });
+  input.addEventListener('click', update);
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !menu.classList.contains('hidden')) {
+      const first = menu.querySelector('.cp-hashtag-option');
+      if (first) { event.preventDefault(); first.click(); }
+    }
+  });
+  if (!document.documentElement.dataset.cpHashtagPickerBound) {
+    document.documentElement.dataset.cpHashtagPickerBound = '1';
+    document.addEventListener('click', event => {
+      const currentMenu = document.getElementById('post-hashtag-suggestions');
+      const currentInput = document.getElementById('post-hashtag-input');
+      const currentTrigger = document.getElementById('post-hashtag-trigger');
+      if (currentMenu && !event.target.closest('#post-hashtag-suggestions') && event.target !== currentInput && event.target !== currentTrigger) currentMenu.classList.add('hidden');
+    });
+  }
 };
