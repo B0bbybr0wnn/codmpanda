@@ -29671,6 +29671,29 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
   if(window.__cpAppRecoveryV1)return;
   window.__cpAppRecoveryV1=true;
 
+  const cpBaseFetchHomeRecovery = fetchHomeFeed;
+  let cpHomeFetchInFlight = null;
+  fetchHomeFeed = function() {
+    if (cpHomeFetchInFlight) return cpHomeFetchInFlight;
+    const pending = Promise.resolve().then(() => cpBaseFetchHomeRecovery.apply(this, arguments)).then(feed => {
+      if (State.currentTab === 'home' && document.getElementById('home-feed')) {
+        requestAnimationFrame(() => {
+          if (State.currentTab === 'home' && document.getElementById('home-feed') && typeof window.renderHomeFeed === 'function') {
+            window.renderHomeFeed();
+            if (window.lucide) window.lucide.createIcons();
+          }
+        });
+      }
+      return feed;
+    }).catch(error => {
+      console.error('[CODMPanda] Home feed refresh failed:', error);
+      return homeCache.feed || [];
+    }).finally(() => { if (cpHomeFetchInFlight === pending) cpHomeFetchInFlight = null; });
+    cpHomeFetchInFlight = pending;
+    return pending;
+  };
+  window.fetchHomeFeed = fetchHomeFeed;
+
   const readPlayer=async uid=>{
     try {
       const snap=await getDoc(doc(db,'users',uid));
