@@ -100,9 +100,21 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
 
   function enhanceInbox(){
     const body=document.getElementById('inbox-full-body');
-    if(!body||body.dataset.cpDmRefresh==='1')return;
-    body.dataset.cpDmRefresh='1';
+    if(!body)return;
+
+    // DM-only controls belong on the Messages tab, not the Notifications tab.
+    const messagesTab=document.querySelector('.inbox-tab-btn[data-tab="messages"]');
+    const messagesActive=!!messagesTab&&/#ff6b00/i.test(messagesTab.getAttribute('style')||'');
+    if(!messagesActive){
+      body.querySelector('#cp-dm-inbox-toolbar')?.remove();
+      return;
+    }
+    // The legacy inbox renderer replaces body.innerHTML during loading and after
+    // results arrive. Re-create the toolbar whenever that happens.
+    if(body.querySelector('#cp-dm-inbox-toolbar'))return;
+
     const top=document.createElement('div');
+    top.id='cp-dm-inbox-toolbar';
     top.style.cssText='display:flex;gap:8px;align-items:center;padding:12px 12px 8px;position:sticky;top:0;z-index:3;background:#050505';
     top.innerHTML='<input class="cp-dm-search" id="cp-dm-inbox-search" placeholder="Search conversations…" aria-label="Search conversations" style="flex:1;min-width:0"/><button type="button" class="cp-dm-action primary" id="cp-dm-new-chat-btn">＋ New chat</button>';
     body.prepend(top);
@@ -114,7 +126,6 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
       const coach=body.querySelector('#cp-coach-pinned-row');if(coach)coach.style.display=(!q||coach.innerText.toLocaleLowerCase().includes(q))?'':'none';
     });
   }
-
 
   async function toggleBlockCurrentUser(button){
     const target=window.__cpCurrentDMTarget;
@@ -196,11 +207,13 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
 
   function enhanceThread(){
     const sheet=document.getElementById('sheet-container');
-    if(!sheet||sheet.dataset.cpDmFullscreen!=='1')return;
-    const header=sheet.querySelector('.sheet')?.firstElementChild;
+    if(!sheet)return;
     const messages=sheet.querySelector('#dm-messages');
     const input=sheet.querySelector('#dm-input');
-    if(!header||!messages||!input)return;
+    // The composer and message list uniquely identify the actual DM thread.
+    if(!messages||!input)return;
+    const header=sheet.querySelector('.sheet')?.firstElementChild;
+    if(!header)return;
     installTypingPresence(input,header);
     const fb=appDb(),target=window.__cpCurrentDMTarget;
     if(fb?.auth.currentUser&&target?.uid){
@@ -297,7 +310,20 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
 
   function install(){
     addStyles();
-    const observer=new MutationObserver(()=>{enhanceInbox();enhanceThread()});
+    const observer=new MutationObserver(()=>{
+      enhanceInbox();
+      enhanceThread();
+      if(!document.getElementById('inbox-full-body')&&window.__cpUnreadUnsub){
+        try{window.__cpUnreadUnsub()}catch(_){}
+        window.__cpUnreadUnsub=null;
+      }
+      const activeDM=document.getElementById('sheet-container')?.querySelector('#dm-messages');
+      if(!activeDM){
+        if(window.__cpTypingUnsub){try{window.__cpTypingUnsub()}catch(_){}window.__cpTypingUnsub=null}
+        if(window.__cpDMReceiptUnsub){try{window.__cpDMReceiptUnsub()}catch(_){}window.__cpDMReceiptUnsub=null}
+        if(cpTypingTimer){clearTimeout(cpTypingTimer);cpTypingTimer=null}
+      }
+    });
     observer.observe(document.body,{childList:true,subtree:true});
     enhanceInbox();enhanceThread();
   }
