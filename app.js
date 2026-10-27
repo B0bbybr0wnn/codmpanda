@@ -20048,7 +20048,7 @@ wireHomeCards = function(items) {
       const type = card.dataset.type;
       const id = card.dataset.id;
       if (type === 'vault') openVaultDetail(id);
-      else if (type === 'clip') { if (typeof openPostComments === 'function') openPostComments(id); }
+      else if (type === 'clip') { if (typeof window.openClipPostDetail === 'function') window.openClipPostDetail(id); }
       else if (type === 'leak') { intelSubTab = 'leaks'; switchTab('intel'); }
     };
   });
