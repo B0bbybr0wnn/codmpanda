@@ -654,7 +654,9 @@ if ('serviceWorker' in navigator) {
     document.addEventListener('click', function (event) {
       const target = event.target && event.target.nodeType === 1 ? event.target : event.target?.parentElement;
       if (!target) return;
-      if (target.closest('button,a,[role="button"],input,textarea,select,[contenteditable="true"]')) return;
+      if (target.closest('button,[role="button"],input,textarea,select,[contenteditable="true"]')) return;
+      const tappedLink = target.closest('a');
+      if (tappedLink && tappedLink.closest('[data-uid],.post-author,.cp-post-author,[data-profile-link]')) return;
       const card = target.closest('.home-card,[data-feed-card],[data-post-id],[data-post-type="clip"],[data-type="clip"],.clip-card,.home-clip-card');
       if (!card || !card.closest('#home-feed') && !card.matches('[data-feed-card]')) return;
       const signature = [
