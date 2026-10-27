@@ -287,7 +287,7 @@ service cloud.firestore {
     match /clans/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update: if isAdmin() || clanMembershipUpdateAllowed();
+      allow update: if isAdmin() || resource.data.ownerUid == request.auth.uid || clanMembershipUpdateAllowed();
       allow delete: if isSignedIn() && (isAdmin() || resource.data.ownerUid == request.auth.uid);
     }
 
