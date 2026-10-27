@@ -27927,6 +27927,7 @@ window.performGlobalSearch = performGlobalSearch;
       });
       chat.scrollTop = chat.scrollHeight;
     };
+    renderCoachHistory(); // Restore the locally saved transcript immediately, without waiting for cloud sync.
     if (coachCloudRef) getDoc(coachCloudRef).then(snapshot => {
       if (!snapshot.exists()) return;
       const remote=snapshot.data()?.aiCoachHistory;
