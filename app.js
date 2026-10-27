@@ -1501,6 +1501,8 @@ function openPostLobbySheet() {
         rank, mode, region, role, mic, note,
         avatar: State.profile.avatar || '',
         players: 1,
+        memberUids: [State.user.uid],
+        removedMemberUids: [],
         jitsiLink,
         createdAt: serverTimestamp(),
         expiresAt
@@ -2278,7 +2280,7 @@ function renderClans() {
     const isMember = (c.members || []).includes(State.user.uid);
     const isOwner = c.ownerUid === State.user.uid;
     return `
-      <div class="bg-card border border-border rounded-2xl p-4 fade-in">
+      <div class="bg-card border border-border rounded-2xl p-4 fade-in" data-clan-id="${c.id}">
         <div class="flex items-start gap-3 mb-3">
           <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-xl flex-shrink-0 overflow-hidden">
             ${c.logoUrl ? `<img src="${esc(c.logoUrl)}" class="w-full h-full rounded-2xl object-cover" />` : esc((c.name || '?')[0])}
@@ -2299,9 +2301,8 @@ function renderClans() {
           </div>
         ` : ''}
         <div class="flex gap-2">
-          ${isOwner ? `
-            <button class="flex-1 py-2.5 rounded-xl bg-gold/15 border border-gold/30 text-gold text-xs font-bold">You own this</button>
-          ` : isMember ? `
+          <button class="view-clan-btn flex-1 py-2.5 rounded-xl bg-cardAlt border border-border text-xs font-bold" data-id="${c.id}">${isOwner ? 'Manage Clan' : 'View Clan'}</button>
+          ${isOwner ? '' : isMember ? `
             <button class="leave-clan-btn flex-1 py-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs font-bold" data-id="${c.id}">Leave Clan</button>
           ` : `
             <button class="apply-clan-btn flex-1 py-2.5 rounded-xl bg-primary text-xs font-bold" data-id="${c.id}">Apply to Join</button>
@@ -2323,6 +2324,9 @@ function renderClans() {
     };
   });
 
+  feed.querySelectorAll('.view-clan-btn').forEach(btn => {
+    btn.onclick = () => window.openClanDetails?.(btn.dataset.id);
+  });
   feed.querySelectorAll('.leave-clan-btn').forEach(btn => {
     btn.onclick = async () => {
       confirmDialog('Leave Clan', 'Are you sure you want to leave?', async () => {
@@ -20805,6 +20809,13 @@ function cpHomeFeedRecordTime(data) {
   return 0;
 }
 
+function cpHomeFeedRead(request, label, timeoutMs = 8000) {
+  let timer;
+  return Promise.race([
+    Promise.resolve(request),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(label + ' timed out')), timeoutMs); })
+  ]).finally(() => clearTimeout(timer));
+}
 var _origFetchHomeFeedWithPosts = fetchHomeFeed;
 fetchHomeFeed = async function() {
   if (homeCache.isLoading) return homeCache.feed;
@@ -20814,11 +20825,11 @@ fetchHomeFeed = async function() {
     const now = Date.now();
 
     const [lobbiesSnap, vaultsSnap, clipsSnap, leaksSnap, postsSnap] = await Promise.all([
-      getDocs(query(collection(db, 'lobbies'), where('createdAt', '>', Timestamp.fromMillis(now - 2 * 60 * 60 * 1000)), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
-      getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))).catch(() => ({ forEach: () => {} })),
-      getDocs(query(collection(db, 'clips'), limit(30))).catch(() => ({ forEach: () => {} })),
-      getDocs(query(collection(db, 'leaks'), limit(20))).catch(() => ({ forEach: () => {} })),
-      getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100))).catch(() => getDocs(query(collection(db, 'posts'), limit(100))).catch(() => ({ forEach: () => {} })))
+      cpHomeFeedRead(getDocs(query(collection(db, 'lobbies'), where('createdAt', '>', Timestamp.fromMillis(now - 2 * 60 * 60 * 1000)), orderBy('createdAt', 'desc'), limit(30))), 'Lobbies').catch(() => ({ forEach: () => {} })),
+      cpHomeFeedRead(getDocs(query(collection(db, 'vaults'), orderBy('createdAt', 'desc'), limit(30))), 'Builds').catch(() => ({ forEach: () => {} })),
+      cpHomeFeedRead(getDocs(query(collection(db, 'clips'), limit(30))), 'Clips').catch(() => ({ forEach: () => {} })),
+      cpHomeFeedRead(getDocs(query(collection(db, 'leaks'), limit(20))), 'Intel').catch(() => ({ forEach: () => {} })),
+      cpHomeFeedRead(getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100))), 'Posts').catch(() => cpHomeFeedRead(getDocs(query(collection(db, 'posts'), limit(100))), 'Posts fallback').catch(() => ({ forEach: () => {} })))
     ]);
 
     const feed = [];
@@ -21827,12 +21838,14 @@ console.log('✅ Chunk 51b: Upgraded comments loaded');
 
 var voiceRoomState = {
   active: false,
+  minimized: false,
   lobbyId: null,
   lobby: null,
   jitsiApi: null,
   isMuted: false,
   participants: 0
 };
+window.voiceRoomState = voiceRoomState;
 
 // ============================================
 // PART 2: VOICE ROOM OVERLAY (replace joinLobby behavior)
@@ -21840,21 +21853,32 @@ var voiceRoomState = {
 
 const _origJoinLobbyVoice = joinLobby;
 joinLobby = async function(lobbyId) {
-  const lobby = State.cache.lobbies.find(l => l.id === lobbyId);
+  const lobby = (State.cache.lobbies || []).find(l => l.id === lobbyId)
+    || (homeCache.feed || []).find(item => item.type === 'lobby' && item.id === lobbyId);
   if (!lobby) { toast('Lobby not found', 'error'); return; }
   if (cpLobbyIsExpired(lobby)) {
-    State.cache.lobbies = State.cache.lobbies.filter(item => item.id !== lobbyId && !cpLobbyIsExpired(item));
+    State.cache.lobbies = (State.cache.lobbies || []).filter(item => item.id !== lobbyId && !cpLobbyIsExpired(item));
+    homeCache.feed = (homeCache.feed || []).filter(item => item.id !== lobbyId || item.type !== 'lobby');
     if (document.getElementById('lobbies-feed')) renderLobbies();
+    if (document.getElementById('home-feed')) renderHomeFeed();
     toast('This lobby has expired.', 'warning');
     return;
   }
-
-  // Increment player count
-  try {
-    if ((lobby.players || 1) < 5) {
-      await updateDoc(doc(db, 'lobbies', lobbyId), { players: increment(1) });
+  const ownerUid = String(lobby.uid || '');
+  const members = Array.isArray(lobby.memberUids) ? lobby.memberUids.map(String) : [ownerUid].filter(Boolean);
+  const removed = Array.isArray(lobby.removedMemberUids) ? lobby.removedMemberUids.map(String) : [];
+  if (removed.includes(String(State.user.uid))) { toast('The lobby owner removed you from this room.', 'error'); return; }
+  const alreadyJoined = members.includes(String(State.user.uid)) || ownerUid === String(State.user.uid);
+  if (!alreadyJoined && Number(lobby.players || 1) >= 5) { toast('This lobby is full.', 'error'); return; }
+  if (!alreadyJoined) {
+    try {
+      await updateDoc(doc(db, 'lobbies', lobbyId), { players: increment(1), memberUids: arrayUnion(ownerUid, State.user.uid) });
+    } catch (e) {
+      console.warn('[CODMPanda] Could not save lobby participant roster:', e);
+      toast('Could not join this lobby. Refresh and try again.', 'error');
+      return;
     }
-  } catch (e) { /* silent */ }
+  }
 
   // Notify creator
   if (lobby.uid && lobby.uid !== State.user.uid) {
@@ -21881,6 +21905,7 @@ function openVoiceRoom(lobby) {
   if (voiceRoomState.active) closeVoiceRoom();
 
   voiceRoomState.active = true;
+  voiceRoomState.minimized = false;
   voiceRoomState.lobbyId = lobby.id;
   voiceRoomState.lobby = lobby;
   voiceRoomState.isMuted = !lobby.mic;
@@ -21919,7 +21944,7 @@ function openVoiceRoom(lobby) {
     "></div>
 
     <!-- Content -->
-    <div style="
+    <div id="voice-room-full-content" style="
       position: relative;
       z-index: 10;
       display: flex;
@@ -22035,6 +22060,16 @@ function openVoiceRoom(lobby) {
       </div>
     </div>
 
+    <div id="voice-mini-dock" style="display:none;position:relative;z-index:10;pointer-events:auto;align-items:center;gap:10px;padding:10px 12px;background:rgba(15,15,18,.97);border:1px solid rgba(255,107,0,.75);border-radius:16px;box-shadow:0 8px 28px rgba(0,0,0,.55);color:#fff">
+      <button id="voice-mini-expand" type="button" aria-label="Expand voice room" title="Return to voice room" style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:#282015;color:#ff9c5b;font-weight:900">↗</button>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:9px;color:#ff9b56;font-weight:900;letter-spacing:.08em">VOICE CHAT ACTIVE</div>
+        <div id="voice-mini-title" style="font-size:12px;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(lobby.mode)} · ${esc(lobby.region)}</div>
+        <div id="voice-mini-status" style="font-size:10px;color:#aaa;margin-top:2px">Connecting…</div>
+      </div>
+      <button id="voice-mini-mute-btn" type="button" aria-label="Mute microphone" title="Mute or unmute" style="width:38px;height:38px;border-radius:50%;background:#222;border:1px solid #414141;color:#fff;font-size:16px">🎙️</button>
+      <button id="voice-mini-leave-btn" type="button" aria-label="Leave voice chat" title="Hang up" style="width:38px;height:38px;border-radius:50%;background:#ff3b30;color:#fff;font-size:21px;font-weight:900">×</button>
+    </div>
     <style>
       @keyframes voiceSlideIn {
         from { opacity: 0; transform: translateY(30px); }
@@ -22054,9 +22089,12 @@ function openVoiceRoom(lobby) {
   document.body.appendChild(overlay);
 
   // Wire buttons
-  document.getElementById('voice-close-btn').onclick = closeVoiceRoom;
+  document.getElementById('voice-close-btn').onclick = minimizeVoiceRoom;
   document.getElementById('voice-mute-btn').onclick = toggleVoiceMute;
   document.getElementById('voice-leave-btn').onclick = closeVoiceRoom;
+  document.getElementById('voice-mini-expand').onclick = restoreVoiceRoom;
+  document.getElementById('voice-mini-mute-btn').onclick = toggleVoiceMute;
+  document.getElementById('voice-mini-leave-btn').onclick = closeVoiceRoom;
 
   // Load Jitsi hidden
   loadHiddenJitsi(roomName, overlay);
@@ -22157,6 +22195,8 @@ function initHiddenJitsi(roomName, overlay) {
         statusEl.textContent = '🎤 Connected to voice';
         statusEl.style.color = '#22C55E';
       }
+      const miniStatus = document.getElementById('voice-mini-status');
+      if (miniStatus) miniStatus.textContent = 'Connected · microphone stays live';
       toast('Voice connected 🎤', 'success', 2000);
     });
 
@@ -22240,6 +22280,12 @@ function updateMuteButtonUI() {
       <span style="font-size: 8px; font-weight: 800; color: #fff;">MUTE</span>
     `;
   }
+  const miniMute = document.getElementById('voice-mini-mute-btn');
+  if (miniMute) {
+    miniMute.textContent = voiceRoomState.isMuted ? '🔇' : '🎙️';
+    miniMute.style.background = voiceRoomState.isMuted ? '#b91c1c' : '#222';
+    miniMute.setAttribute('aria-label', voiceRoomState.isMuted ? 'Unmute microphone' : 'Mute microphone');
+  }
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -22248,9 +22294,44 @@ function updateParticipantCount() {
   if (el) {
     el.textContent = `${voiceRoomState.participants || 1}/5 players`;
   }
+  const miniStatus = document.getElementById('voice-mini-status');
+  if (miniStatus && voiceRoomState.active) {
+    const stateText = document.getElementById('voice-status-text')?.textContent || 'Connected';
+    miniStatus.textContent = stateText + ' · ' + (voiceRoomState.participants || 1) + '/5';
+  }
 }
 
+function minimizeVoiceRoom() {
+  const overlay = document.getElementById('voice-room-overlay');
+  const fullContent = document.getElementById('voice-room-full-content');
+  const miniDock = document.getElementById('voice-mini-dock');
+  const jitsiContainer = document.getElementById('jitsi-hidden-container');
+  if (!overlay || !fullContent || !miniDock || !voiceRoomState.active) return;
+  voiceRoomState.minimized = true;
+  fullContent.style.display = 'none';
+  overlay.style.cssText = 'position:fixed;inset:auto;top:calc(env(safe-area-inset-top, 0px) + 8px);left:12px;right:12px;z-index:99999;display:block;background:transparent;pointer-events:none;animation:none;overflow:visible';
+  miniDock.style.display = 'flex';
+  if (jitsiContainer) jitsiContainer.style.cssText = 'position:fixed;inset:0;width:100vw;height:100dvh;z-index:1;opacity:0;pointer-events:none';
+  const title = document.getElementById('voice-mini-title');
+  if (title && voiceRoomState.lobby) title.textContent = (voiceRoomState.lobby.ign || 'Squad') + ' · ' + (voiceRoomState.lobby.mode || 'Voice');
+  const status = document.getElementById('voice-mini-status');
+  if (status) status.textContent = document.getElementById('voice-status-text')?.textContent || 'Connecting…';
+  updateMuteButtonUI();
+}
+function restoreVoiceRoom() {
+  const overlay = document.getElementById('voice-room-overlay');
+  const fullContent = document.getElementById('voice-room-full-content');
+  const miniDock = document.getElementById('voice-mini-dock');
+  const jitsiContainer = document.getElementById('jitsi-hidden-container');
+  if (!overlay || !fullContent || !voiceRoomState.active) return;
+  voiceRoomState.minimized = false;
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9200;background:#050505;display:flex;flex-direction:column;animation:none';
+  fullContent.style.display = 'flex';
+  if (miniDock) miniDock.style.display = 'none';
+  if (jitsiContainer) jitsiContainer.style.cssText = 'position:absolute;inset:0;z-index:1;opacity:0;pointer-events:none';
+}
 function closeVoiceRoom() {
+  voiceRoomState.minimized = false;
   try {
     if (voiceRoomState.jitsiApi) {
       voiceRoomState.jitsiApi.dispose();
@@ -22307,6 +22388,9 @@ window.addEventListener('popstate', () => {
 
 window.openVoiceRoom = openVoiceRoom;
 window.closeVoiceRoom = closeVoiceRoom;
+window.minimizeVoiceRoom = minimizeVoiceRoom;
+window.restoreVoiceRoom = restoreVoiceRoom;
+window.voiceRoomState = voiceRoomState;
 window.toggleVoiceMute = toggleVoiceMute;
 
 console.log('✅ Chunk 51.5: Hidden Jitsi voice room loaded');
@@ -27774,6 +27858,8 @@ window.performGlobalSearch = performGlobalSearch;
     const coachUid = State.user?.uid || 'guest';
     const coachHistoryKey = 'cp_coach_history_v1_' + coachUid;
     const coachGuestKey = 'cp_coach_history_v1_guest';
+    const coachCloudRef = coachUid !== 'guest' && db ? doc(db, 'users', coachUid) : null;
+    let coachCloudSaveQueue = Promise.resolve();
     const coachMaxAge = 7 * 24 * 60 * 60 * 1000;
     // Remove expired caches for every local account, not just the account currently signed in.
     try {
@@ -27787,11 +27873,13 @@ window.performGlobalSearch = performGlobalSearch;
       }
     } catch (_) {}
     let history = [];
+    let coachLocalUpdatedAt = 0;
     try {
       let saved = JSON.parse(localStorage.getItem(coachHistoryKey) || 'null');
       // If the visitor signed in after chatting as a guest, carry that recent chat into the account.
       if (!saved && coachUid !== 'guest') saved = JSON.parse(localStorage.getItem(coachGuestKey) || 'null');
       if (saved && Number.isFinite(saved.updatedAt) && Date.now() - saved.updatedAt < coachMaxAge && Array.isArray(saved.messages)) {
+        coachLocalUpdatedAt = saved.updatedAt;
         const now = Date.now();
         history = saved.messages
           .filter(m => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string')
@@ -27810,12 +27898,48 @@ window.performGlobalSearch = performGlobalSearch;
       } else if (saved) localStorage.removeItem(coachHistoryKey);
     } catch (_) { try { localStorage.removeItem(coachHistoryKey); } catch (_) {} }
     const saveCoachHistory = (updatedAt = Date.now()) => {
-      history = history.filter(m => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && Number.isFinite(m.timestamp) && updatedAt - m.timestamp < coachMaxAge).slice(-20);
-      try { localStorage.setItem(coachHistoryKey, JSON.stringify({ updatedAt, messages: history })); } catch (_) {}
+      coachLocalUpdatedAt = Math.max(coachLocalUpdatedAt, updatedAt);
+      history = history.filter(m => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && Number.isFinite(m.timestamp) && updatedAt - m.timestamp < coachMaxAge)
+        .map(m => ({ role: m.role, text: String(m.text).slice(0, 2500), timestamp: m.timestamp })).slice(-20);
+      const payload = { updatedAt: coachLocalUpdatedAt, messages: history };
+      try { localStorage.setItem(coachHistoryKey, JSON.stringify(payload)); } catch (_) {}
+      if (coachCloudRef) {
+        const writeCloud = () => updateDoc(coachCloudRef, { aiCoachHistory: payload });
+        coachCloudSaveQueue = coachCloudSaveQueue.then(writeCloud, writeCloud).catch(error => console.warn('[CODMPanda Coach] Cloud history save failed:', error));
+      }
     };
     const coachName = State.profile?.ign || State.profile?.displayName || State.user?.displayName || '';
     const welcome = overlay.querySelector('#cp-coach-chat')?.firstElementChild;
     if (welcome && coachName) welcome.textContent = `Yo ${coachName} 👋 Good to see you. What are we tuning today—aim, sensitivity, HUD, loadout, or movement?`;
+    const renderCoachHistory = () => {
+      if (!overlay.isConnected) return;
+      const chat = overlay.querySelector('#cp-coach-chat'); if (!chat) return;
+      chat.innerHTML = '';
+      if (!history.length) {
+        const intro = document.createElement('div');
+        intro.style.cssText = 'background:#20212a;border-radius:12px;padding:11px;font-size:13px';
+        intro.textContent = coachName ? `Yo ${coachName} 👋 Good to see you. What are we tuning today—aim, sensitivity, HUD, loadout, or movement?` : 'Yo operator 👋 What are we tuning today—sensitivity, HUD, gunsmith, aim, or movement?';
+        chat.appendChild(intro);
+      } else history.forEach(m => {
+        const line = document.createElement('div');
+        line.style.cssText = m.role === 'user' ? 'align-self:flex-end;max-width:90%;background:#71320d;border-radius:12px;padding:10px;font-size:13px;white-space:pre-wrap' : 'align-self:flex-start;max-width:95%;background:#20212a;border-radius:12px;padding:11px;font-size:13px;line-height:1.5;white-space:pre-wrap';
+        line.textContent = m.text; chat.appendChild(line);
+      });
+      chat.scrollTop = chat.scrollHeight;
+    };
+    if (coachCloudRef) getDoc(coachCloudRef).then(snapshot => {
+      if (!snapshot.exists()) return;
+      const remote=snapshot.data()?.aiCoachHistory;
+      if(!remote||!Number.isFinite(remote.updatedAt)||Date.now()-remote.updatedAt>=coachMaxAge||!Array.isArray(remote.messages))return;
+      const before=JSON.stringify(history);
+      const combined=[...history,...remote.messages].filter(m=>m&&(m.role==='user'||m.role==='model')&&typeof m.text==='string')
+        .map(m=>({role:m.role,text:String(m.text).slice(0,2500),timestamp:Number.isFinite(m.timestamp)?m.timestamp:remote.updatedAt}))
+        .filter(m=>Date.now()-m.timestamp<coachMaxAge);
+      const unique=new Map();combined.forEach(m=>unique.set(m.role+'|'+m.timestamp+'|'+m.text,m));
+      history=Array.from(unique.values()).sort((a,b)=>a.timestamp-b.timestamp).slice(-20);
+      const newest=Math.max(coachLocalUpdatedAt,remote.updatedAt,...history.map(m=>m.timestamp||0));
+      if(JSON.stringify(history)!==before||remote.updatedAt>coachLocalUpdatedAt){saveCoachHistory(newest);renderCoachHistory();}
+    }).catch(error=>console.warn('[CODMPanda Coach] Cloud history load failed:',error));
     overlay.querySelector('#cp-coach-form').onsubmit = async e => {
       e.preventDefault();
       const input = overlay.querySelector('#cp-coach-input');
@@ -29512,8 +29636,8 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       return;
     }
 
-    if (window.voiceRoomState?.active && typeof window.closeVoiceRoom === 'function') {
-      window.closeVoiceRoom();
+    if (window.voiceRoomState?.active && !window.voiceRoomState.minimized && typeof window.minimizeVoiceRoom === 'function') {
+      window.minimizeVoiceRoom();
       rearmAppHistory();
       consumeBack(event);
       return;
@@ -29528,9 +29652,142 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       return;
     }
 
-    // Never let a leftover Home history entry switch tabs and wipe the feed underneath.
-    if (State.currentTab === 'home') consumeBack(event);
+    const cpBackStack = window.__cpTabBackStackV1;
+    if (Array.isArray(cpBackStack) && cpBackStack.length) {
+      const previousTab = cpBackStack.pop();
+      window.__cpHandlingTabBackV1 = true;
+      try { switchTab(previousTab || 'home'); } finally { window.__cpHandlingTabBackV1 = false; }
+      rearmAppHistory();
+      consumeBack(event);
+      return;
+    }
+    if (State.currentTab === 'home') { rearmAppHistory(); consumeBack(event); }
   }, true);
 
   window.fetchHomeFeed = fetchHomeFeed;
+})();
+
+(function cpAppRecoveryV1(){
+  if(window.__cpAppRecoveryV1)return;
+  window.__cpAppRecoveryV1=true;
+
+  const readPlayer=async uid=>{
+    try {
+      const snap=await getDoc(doc(db,'users',uid));
+      const d=snap.exists()?snap.data():{};
+      return {uid:uid,ign:d.ign||d.displayName||d.username||('Player '+String(uid).slice(0,6)),avatar:d.avatar||d.photoURL||d.photoUrl||''};
+    } catch (_) { return {uid:uid,ign:'Player '+String(uid).slice(0,6),avatar:''}; }
+  };
+
+  async function openClanDetails(clanId){
+    if(!State.user){toast('Sign in to view clans','info');return;}
+    let clan=(State.cache.clans||[]).find(c=>c.id===clanId);
+    if(!clan){
+      try{const snap=await getDoc(doc(db,'clans',clanId));if(snap.exists())clan={id:snap.id,...snap.data()};}
+      catch(_){toast('Could not load this clan','error');return;}
+    }
+    if(!clan){toast('Clan not found','error');return;}
+    const owner=String(clan.ownerUid||'')===String(State.user.uid);
+    const ids=Array.isArray(clan.members)?Array.from(new Set(clan.members.map(String))):[];
+    openSheet('<div style="padding:28px;text-align:center"><div class="spinner" style="margin:auto"></div><div style="color:#888;font-size:12px;margin-top:10px">Loading members…</div></div>',owner?'Manage Clan':'Clan Details');
+    const players=await Promise.all(ids.slice(0,50).map(readPlayer));
+    const body=document.querySelector('#sheet-container .px-5');if(!body)return;
+    const latest=(State.cache.clans||[]).find(c=>c.id===clanId)||clan;
+    const canManage=String(latest.ownerUid||'')===String(State.user.uid);
+    let html='<div class="space-y-3"><div class="flex items-center gap-3 rounded-xl bg-card border border-border p-3"><div class="w-14 h-14 rounded-xl bg-cardAlt flex items-center justify-center overflow-hidden text-xl font-black">'+(latest.logoUrl?'<img src="'+esc(latest.logoUrl)+'" alt="" style="width:100%;height:100%;object-fit:cover">':esc((latest.name||'?').slice(0,1)))+'</div><div class="min-w-0 flex-1"><div class="font-black text-base">'+esc(latest.name||'Clan')+'</div><div class="text-xs text-gray-500 mt-1">'+players.length+'/50 members · '+esc(latest.region||'Global')+' · Lv '+(Number(latest.level)||1)+'</div></div></div><div class="text-[10px] uppercase tracking-wider font-black text-gray-500">Members</div>';
+    if(players.length){
+      html+=players.map(p=>'<div class="flex items-center gap-3 bg-card border border-border rounded-xl p-3"><div class="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center overflow-hidden font-bold">'+(p.avatar?'<img src="'+esc(p.avatar)+'" alt="" style="width:100%;height:100%;object-fit:cover">':esc(p.ign.slice(0,1).toUpperCase()))+'</div><div class="min-w-0 flex-1"><div class="text-sm font-bold truncate">'+esc(p.ign)+'</div><div class="text-[10px] text-gray-500">'+(String(p.uid)===String(latest.ownerUid)?'Clan leader':'Member')+'</div></div>'+(canManage&&String(p.uid)!==String(latest.ownerUid)?'<button type="button" class="cp-clan-remove-member px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-300 text-[11px] font-bold" data-uid="'+esc(p.uid)+'">Remove</button>':'')+'</div>').join('');
+    }else html+='<div class="text-xs text-gray-500 rounded-xl bg-card p-4">No members listed yet.</div>';
+    if(canManage)html+='<button id="cp-clan-delete" type="button" class="w-full py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm font-bold">Delete Clan</button>';
+    html+='</div>';body.innerHTML=html;
+    body.querySelectorAll('.cp-clan-remove-member').forEach(btn=>btn.onclick=()=>confirmDialog('Remove Clan Member','Remove this player from '+(latest.name||'the clan')+'?',async()=>{
+      try{
+        await updateDoc(doc(db,'clans',clanId),{members:arrayRemove(btn.dataset.uid)});
+        State.cache.clans=(State.cache.clans||[]).map(c=>c.id===clanId?{...c,members:(c.members||[]).filter(uid=>String(uid)!==String(btn.dataset.uid))}:c);
+        toast('Member removed','success');openClanDetails(clanId);if(document.getElementById('clans-feed'))renderClans();
+      }catch(error){console.error('[CODMPanda] Clan member remove failed',error);toast('Could not remove member','error');}
+    },'Remove',true));
+    const del=body.querySelector('#cp-clan-delete');
+    if(del)del.onclick=()=>confirmDialog('Delete Clan','Permanently delete '+(latest.name||'this clan')+'?',async()=>{
+      try{await deleteDoc(doc(db,'clans',clanId));State.cache.clans=(State.cache.clans||[]).filter(c=>c.id!==clanId);closeSheet();if(document.getElementById('clans-feed'))renderClans();toast('Clan deleted','success');}
+      catch(error){console.error('[CODMPanda] Clan delete failed',error);toast('Could not delete clan','error');}
+    },'Delete',true);
+  }
+  window.openClanDetails=openClanDetails;
+
+  async function openLobbyDetails(lobbyId){
+    if(!State.user){toast('Sign in to view lobby players','info');return;}
+    let lobby=(State.cache.lobbies||[]).find(l=>l.id===lobbyId)||(homeCache.feed||[]).find(l=>l.type==='lobby'&&l.id===lobbyId);
+    if(!lobby){
+      try{const snap=await getDoc(doc(db,'lobbies',lobbyId));if(snap.exists())lobby={id:snap.id,...snap.data()};}
+      catch(_){toast('Could not load lobby','error');return;}
+    }
+    if(!lobby){toast('Lobby not found','error');return;}
+    const owner=String(lobby.uid||'')===String(State.user.uid);
+    const ids=Array.isArray(lobby.memberUids)?Array.from(new Set(lobby.memberUids.map(String))):[String(lobby.uid||'')].filter(Boolean);
+    openSheet('<div style="padding:28px;text-align:center"><div class="spinner" style="margin:auto"></div><div style="color:#888;font-size:12px;margin-top:10px">Loading players…</div></div>',owner?'Manage Lobby':'Lobby Players');
+    const players=await Promise.all(ids.slice(0,5).map(readPlayer));
+    const body=document.querySelector('#sheet-container .px-5');if(!body)return;
+    let html='<div class="space-y-3"><div class="bg-card border border-border rounded-xl p-3"><div class="flex items-center justify-between gap-2"><div class="font-black">'+esc(lobby.ign||'Squad')+'’s lobby</div><div class="text-primary text-xs font-black">'+(Number(lobby.players)||1)+'/5</div></div><div class="text-xs text-gray-500 mt-1">'+esc(lobby.mode||'Any')+' · '+esc(lobby.region||'Global')+' · '+esc(lobby.rank||'Any rank')+'</div>'+(lobby.note?'<p class="text-xs text-gray-400 mt-2">'+esc(lobby.note)+'</p>':'')+'</div><div class="text-[10px] uppercase tracking-wider font-black text-gray-500">Players in this lobby</div>';
+    if(players.length){
+      html+=players.map(p=>'<div class="flex items-center gap-3 bg-card border border-border rounded-xl p-3"><div class="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center overflow-hidden font-bold">'+(p.avatar?'<img src="'+esc(p.avatar)+'" alt="" style="width:100%;height:100%;object-fit:cover">':esc(p.ign.slice(0,1).toUpperCase()))+'</div><div class="min-w-0 flex-1"><div class="text-sm font-bold truncate">'+esc(p.ign)+'</div><div class="text-[10px] text-gray-500">'+(String(p.uid)===String(lobby.uid)?'Lobby owner':'Player')+'</div></div>'+(owner&&String(p.uid)!==String(lobby.uid)?'<button type="button" class="cp-lobby-remove-member px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-300 text-[11px] font-bold" data-uid="'+esc(p.uid)+'">Remove</button>':'')+'</div>').join('');
+    }else html+='<div class="text-xs text-gray-500 rounded-xl bg-card p-4">No member roster is stored for this older lobby.</div>';
+    if((Number(lobby.players)||1)>players.length)html+='<div class="text-[10px] text-gray-500">Older lobbies may show a player count without having all player names saved.</div>';
+    if(owner)html+='<button id="cp-lobby-delete" type="button" class="w-full py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm font-bold">Delete Lobby</button>';
+    html+='</div>';body.innerHTML=html;
+    body.querySelectorAll('.cp-lobby-remove-member').forEach(btn=>btn.onclick=()=>confirmDialog('Remove Lobby Player','Remove this player from your lobby?',async()=>{
+      try{
+        const current=Number(lobby.players)||players.length||1;
+        await updateDoc(doc(db,'lobbies',lobbyId),{memberUids:arrayRemove(btn.dataset.uid),removedMemberUids:arrayUnion(btn.dataset.uid),players:Math.max(1,current-1)});
+        const patch=list=>list.map(x=>x.id===lobbyId?{...x,memberUids:(Array.isArray(x.memberUids)?x.memberUids:ids).filter(uid=>String(uid)!==String(btn.dataset.uid)),removedMemberUids:[...(x.removedMemberUids||[]),btn.dataset.uid],players:Math.max(1,(Number(x.players)||players.length||1)-1)}:x);
+        State.cache.lobbies=patch(State.cache.lobbies||[]);homeCache.feed=patch(homeCache.feed||[]);
+        toast('Player removed','success');openLobbyDetails(lobbyId);if(document.getElementById('lobbies-feed'))renderLobbies();if(document.getElementById('home-feed'))renderHomeFeed();
+      }catch(error){console.error('[CODMPanda] Lobby member remove failed',error);toast('Could not remove player; check the new Firestore lobby join rule','error');}
+    },'Remove',true));
+    const del=body.querySelector('#cp-lobby-delete');
+    if(del)del.onclick=()=>confirmDialog('Delete Lobby','Permanently delete this lobby?',async()=>{
+      try{await deleteDoc(doc(db,'lobbies',lobbyId));State.cache.lobbies=(State.cache.lobbies||[]).filter(x=>x.id!==lobbyId);homeCache.feed=(homeCache.feed||[]).filter(x=>x.id!==lobbyId||x.type!=='lobby');closeSheet();if(document.getElementById('lobbies-feed'))renderLobbies();if(document.getElementById('home-feed'))renderHomeFeed();toast('Lobby deleted','success');}
+      catch(error){console.error('[CODMPanda] Lobby delete failed',error);toast('Could not delete lobby','error');}
+    },'Delete',true);
+  }
+  window.openLobbyDetails=openLobbyDetails;
+
+  function addLobbyButtons(root){
+    if(!root)return;
+    root.querySelectorAll('.join-btn').forEach(join=>{
+      const card=join.closest('.bg-card');if(!card||card.querySelector('.cp-lobby-details-btn'))return;
+      const id=join.dataset.id;if(!id)return;
+      const lobby=(State.cache.lobbies||[]).find(x=>x.id===id)||(homeCache.feed||[]).find(x=>x.type==='lobby'&&x.id===id);
+      const owner=String(lobby?.uid||'')===String(State.user?.uid||'');
+      const row=join.parentElement;if(!row)return;
+      const btn=document.createElement('button');btn.type='button';btn.className='cp-lobby-details-btn w-10 h-10 rounded-xl bg-cardAlt border border-border text-xs font-black';btn.textContent=owner?'•••':'👥';btn.title=owner?'Manage lobby':'View players';btn.setAttribute('aria-label',btn.title);
+      btn.onclick=e=>{e.preventDefault();e.stopPropagation();openLobbyDetails(id);};row.appendChild(btn);
+    });
+    root.querySelectorAll('.home-card[data-type="lobby"]').forEach(card=>{
+      if(card.querySelector('.cp-home-lobby-details-btn'))return;
+      const id=card.dataset.id;if(!id)return;
+      const lobby=(homeCache.feed||[]).find(x=>x.type==='lobby'&&x.id===id);
+      const row=card.querySelector('.home-join-btn')?.parentElement;if(!row)return;
+      const btn=document.createElement('button');btn.type='button';btn.className='cp-home-lobby-details-btn w-10 h-10 rounded-xl bg-cardAlt border border-border text-xs font-black';btn.textContent=String(lobby?.uid||'')===String(State.user?.uid||'')?'•••':'👥';btn.title='View players / manage lobby';btn.setAttribute('aria-label',btn.title);
+      btn.onclick=e=>{e.preventDefault();e.stopPropagation();openLobbyDetails(id);};row.appendChild(btn);
+    });
+  }
+  const originalRenderLobbies=renderLobbies;
+  renderLobbies=function(){const result=originalRenderLobbies.apply(this,arguments);addLobbyButtons(document.getElementById('lobbies-feed'));return result;};
+  window.renderLobbies=renderLobbies;
+  const originalRenderHome=renderHomeFeed;
+  renderHomeFeed=function(){const result=originalRenderHome.apply(this,arguments);addLobbyButtons(document.getElementById('home-feed'));return result;};
+  window.renderHomeFeed=renderHomeFeed;
+
+  const stack=window.__cpTabBackStackV1=window.__cpTabBackStackV1||[];
+  const baseSwitchTab=switchTab;
+  window.__cpHandlingTabBackV1=false;
+  switchTab=function(tab){
+    const main=document.getElementById('main-app'), old=State.currentTab;
+    if(!window.__cpHandlingTabBackV1&&tab&&tab!==old&&main&&!main.classList.contains('hidden')){
+      stack.push(old);if(stack.length>40)stack.shift();
+    }
+    return baseSwitchTab.apply(this,arguments);
+  };
+  window.switchTab=switchTab;
 })();
