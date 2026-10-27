@@ -12449,10 +12449,11 @@ async function openDMThread(friendUid, friendIgn) {
       // Firestore rules authorize only conversations where the signed-in user
       // is sender or recipient. Query each side explicitly instead of querying
       // by chatId alone (which caused normal-account permission errors).
-      const [sentSnap, receivedSnap] = await Promise.all([
+      const [sentSnap, receivedSnap] = await inboxWithTimeout(Promise.all([
         getDocs(query(collection(db, 'messages'), where('chatId', '==', chatId), where('fromUid', '==', State.user.uid), limit(100))),
         getDocs(query(collection(db, 'messages'), where('chatId', '==', chatId), where('toUid', '==', State.user.uid), limit(100)))
-      ]);
+      ]), 'Chat messages');
+      if (document.getElementById('dm-messages') !== messagesContainer) return;
       const docsById = new Map();
       sentSnap.forEach(d => docsById.set(d.id, d));
       receivedSnap.forEach(d => docsById.set(d.id, d));
@@ -13347,9 +13348,9 @@ async function updateNotifBadge() {
       collection(db, 'notifications'),
       where('userId', '==', State.user.uid),
       where('read', '==', false),
-      limit(20)
+      limit(50)
     ));
-    unreadNotifCount = snap.size;
+    unreadNotifCount = snap.docs.filter(d => d.data().type !== 'dm').length;
 
     const bellBtn = document.getElementById('btn-notifications');
     if (!bellBtn) return;
@@ -13404,7 +13405,7 @@ function startNotifCountListener() {
       ),
       (snap) => {
         if (notifFallbackInterval) { clearInterval(notifFallbackInterval); notifFallbackInterval = null; }
-        unreadNotifCount = snap.size;
+        unreadNotifCount = snap.docs.filter(d => d.data().type !== 'dm').length;
         const bellBtn = document.getElementById('btn-notifications');
         if (!bellBtn) return;
         const existing = bellBtn.querySelector('.notif-badge');
@@ -17133,6 +17134,33 @@ function renderInboxBody() {
 // PART 3: FAST NOTIFICATIONS TAB
 // ============================================
 
+function inboxWithTimeout(request, label, ms = 12000) {
+  let timeoutId;
+  return Promise.race([
+    Promise.resolve(request),
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(label + ' request timed out. Check your connection and try again.')), ms);
+    })
+  ]).finally(() => clearTimeout(timeoutId));
+}
+
+function inboxRenderIsCurrent(body) {
+  return Boolean(body && document.getElementById('inbox-full-body') === body);
+}
+
+function showInboxLoadError(body, label, error) {
+  if (!inboxRenderIsCurrent(body)) return;
+  const detail = String(error?.message || 'Please check your connection and try again.');
+  body.innerHTML = `
+    <div role="alert" style="padding:40px 20px;text-align:center;">
+      <div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:8px;">Couldn't load ${esc(label)}.</div>
+      <div style="font-size:12px;color:#888;margin-bottom:16px;">${esc(detail)}</div>
+      <button id="inbox-load-retry" type="button" style="padding:10px 18px;border-radius:10px;background:#ff6b00;color:#fff;border:0;font-weight:800;cursor:pointer;">Try again</button>
+    </div>
+  `;
+  body.querySelector('#inbox-load-retry')?.addEventListener('click', () => renderInboxBody());
+}
+
 async function renderNotificationsTabFast() {
   const body = document.getElementById('inbox-full-body');
   if (!body) return;
@@ -17144,13 +17172,13 @@ async function renderNotificationsTabFast() {
     const now = Date.now();
     let notifs;
     if (inboxCache.notifications && now - inboxCache.lastFetch < 30000) {
-      notifs = inboxCache.notifications;
+      notifs = inboxCache.notifications.filter(n => n.type !== 'dm');
     } else {
-      const snap = await getDocs(query(
+      const snap = await inboxWithTimeout(getDocs(query(
         collection(db, 'notifications'),
         where('userId', '==', State.user.uid),
         limit(50)
-      ));
+      )), 'Notifications');
       notifs = [];
       snap.forEach(d => {
         const data = d.data();
@@ -17162,6 +17190,8 @@ async function renderNotificationsTabFast() {
       inboxCache.notifications = notifs;
       inboxCache.lastFetch = now;
     }
+
+    if (!inboxRenderIsCurrent(body)) return;
 
     if (notifs.length === 0) {
       body.innerHTML = `
@@ -17291,7 +17321,7 @@ async function renderNotificationsTabFast() {
     if (window.lucide) window.lucide.createIcons();
   } catch (e) {
     console.error('Inbox notif error:', e);
-    body.innerHTML = '<div style="text-align: center; padding: 40px; color: #f44; font-size: 13px;">Failed to load</div>';
+    showInboxLoadError(body, 'notifications', e);
   }
 }
 
@@ -17306,47 +17336,17 @@ async function renderMessagesTabFast() {
   body.innerHTML = '<div style="text-align: center; padding: 40px 0;"><div class="spinner" style="margin: 0 auto;"></div></div>';
 
   try {
-    // Get my friends list (cached in State.profile)
-    const mySnap = await getDoc(doc(db, 'users', State.user.uid));
-    const myData = mySnap.exists() ? mySnap.data() : {};
-    const friendUids = myData.friends || [];
-
-    if (friendUids.length === 0) {
-      body.innerHTML = `
-        <div style="text-align: center; padding: 60px 20px;">
-          <div style="font-size: 60px; margin-bottom: 12px;">💬</div>
-          <div style="font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 6px;">No conversations yet</div>
-          <div style="font-size: 12px; color: #666; margin-bottom: 20px;">Add friends to start chatting</div>
-          <button id="inbox-find-friends" class="btn-press" style="
-            padding: 12px 24px;
-            border-radius: 12px;
-            background: #FF6B00;
-            border: none;
-            color: #fff;
-            font-weight: 800;
-            font-size: 13px;
-            font-family: Inter;
-            cursor: pointer;
-          ">Find Friends</button>
-        </div>
-      `;
-      const btn = document.getElementById('inbox-find-friends');
-      if (btn) btn.onclick = () => {
-        closeInboxOverlay();
-        setTimeout(showFriendsPanel, 300);
-      };
-      return;
-    }
-
-    // OPTIMIZED: Query only last 100 messages that involve me
+    // Players can start or continue a DM with any CODMPanda player, not only friends.
+    // OPTIMIZED: Query only the latest messages involving the signed-in user
     // Single query using array-contains on a `participants` field
     // Since old messages don't have this field, fallback to 2 queries
     let allMessages = [];
 
-    const [snap1, snap2] = await Promise.all([
+    const [snap1, snap2] = await inboxWithTimeout(Promise.all([
       getDocs(query(collection(db, 'messages'), where('fromUid', '==', State.user.uid), limit(100))),
       getDocs(query(collection(db, 'messages'), where('toUid', '==', State.user.uid), limit(100)))
-    ]);
+    ]), 'Messages');
+    if (!inboxRenderIsCurrent(body)) return;
 
     const seen = new Set();
     snap1.forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); allMessages.push({ id: d.id, ...d.data() }); } });
@@ -17369,10 +17369,7 @@ async function renderMessagesTabFast() {
       const otherUid = parts.find(p => p !== State.user.uid);
       if (!otherUid) continue;
 
-      // Only include if it's a friend
-      if (!friendUids.includes(otherUid)) continue;
-
-      conversations.push({
+show non-friend conversations      conversations.push({
         chatId,
         otherUid,
         lastMessage: last,
@@ -17381,6 +17378,8 @@ async function renderMessagesTabFast() {
     }
 
     conversations.sort((a, b) => b.lastTime - a.lastTime);
+    // Keep profile lookups bounded so a long history cannot stall the inbox.
+    conversations.splice(50);
 
     if (conversations.length === 0) {
       body.innerHTML = `
@@ -17411,11 +17410,12 @@ async function renderMessagesTabFast() {
     }
 
     // Fetch friend data in parallel (much faster)
-    const friendData = await Promise.all(
+    const friendData = await inboxWithTimeout(Promise.all(
       conversations.map(c =>
         getDoc(doc(db, 'users', c.otherUid)).then(s => s.exists() ? { id: c.otherUid, ...s.data() } : null).catch(() => null)
       )
-    );
+    ), 'Conversation profiles');
+    if (!inboxRenderIsCurrent(body)) return;
 
     // Render
     body.innerHTML = `
@@ -17429,7 +17429,8 @@ async function renderMessagesTabFast() {
           if (!f) return '';
           const lastMsg = c.lastMessage;
           const isMine = lastMsg.fromUid === State.user.uid;
-          const preview = (isMine ? 'You: ' : '') + (lastMsg.text || '').slice(0, 60);
+          const messagePreview = lastMsg.imageUrl || lastMsg.type === 'image' ? '📷 Image' : (lastMsg.text || '').slice(0, 60);
+          const preview = (isMine ? 'You: ' : '') + messagePreview;
           const isOnline = f.lastSeen?.seconds && (Date.now() / 1000 - f.lastSeen.seconds) < 300;
 
           return `
@@ -17497,7 +17498,7 @@ async function renderMessagesTabFast() {
     if (window.lucide) window.lucide.createIcons();
   } catch (e) {
     console.error('Messages tab error:', e);
-    body.innerHTML = '<div style="text-align: center; padding: 40px; color: #f44; font-size: 13px;">Failed to load: ' + esc(e.message) + '</div>';
+    showInboxLoadError(body, 'messages', e);
   }
 }
 
@@ -17511,7 +17512,7 @@ sendNotificationToUser = async function(uid, title, body, data) {
   if (data && data.type === 'dm') {
     // Only send push, no in-app notification entry
     try {
-      return await _origSendNotificationToUserInbox(uid, title, body, data);
+      return await _origSendNotificationToUser(uid, title, body, data);
     } catch (e) { /* silent */ }
     return;
   }
