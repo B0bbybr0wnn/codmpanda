@@ -141,14 +141,13 @@
     ranking = true;
     try {
       // Replace only the positions occupied by posts; lobbies/builds/clips keep their slots.
-      const slots = cards.map(card => card.parentNode);
-      const positions = cards.map(card => card.nextSibling);
-      cards.forEach(card => card.remove());
-      ordered.forEach((card, i) => {
-        const parent = slots[i];
-        const before = positions[i] && positions[i].parentNode === parent ? positions[i] : null;
-        parent.insertBefore(card, before);
+      const placeholders = cards.map(card => {
+        const marker = document.createComment('codmpanda-smart-feed-slot');
+        card.parentNode.insertBefore(marker, card);
+        card.remove();
+        return marker;
       });
+      ordered.forEach((card, i) => placeholders[i].replaceWith(card));
     } catch (error) {
       console.warn('[CODMPanda Smart Feed] Could not reorder posts safely:', error);
     } finally {
