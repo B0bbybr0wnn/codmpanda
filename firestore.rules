@@ -198,6 +198,32 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
     }
 
+    // A non-owner may join once. Record the participant UID as well as the count,
+    // so owners can remove a participant and avoid double-counting repeat taps.
+    function lobbyMemberJoinAllowed() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldMembers = resource.data.get('memberUids', []);
+      let newMembers = request.resource.data.get('memberUids', []);
+      let oldPlayers = resource.data.get('players', 1);
+      let newPlayers = request.resource.data.get('players', oldPlayers);
+      return isSignedIn()
+        && changed.hasOnly(['players', 'memberUids'])
+        && oldMembers is list
+        && newMembers is list
+        && newMembers.size() <= 5
+        && newMembers.hasAll(oldMembers)
+        && newMembers.hasAny([request.auth.uid])
+        && newPlayers == oldPlayers + 1
+        && (
+          newMembers.size() == oldMembers.size() + 1
+          || (!('memberUids' in resource.data)
+            && oldMembers.size() == 0
+            && newMembers.size() == 2
+            && newMembers.hasAny([resource.data.get('uid', '')])
+            && newMembers.hasAny([request.auth.uid]))
+        );
+    }
+
     // ---------- LOBBIES ----------
     match /lobbies/{id} {
       allow read: if isSignedIn();
@@ -205,6 +231,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isAdmin() || resource.data.uid == request.auth.uid
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['players','isPro','reactions'])
+        || lobbyMemberJoinAllowed()
       );
       allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
     }
