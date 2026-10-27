@@ -213,6 +213,7 @@ service cloud.firestore {
         && newMembers.size() <= 5
         && newMembers.hasAll(oldMembers)
         && newMembers.hasAny([request.auth.uid])
+        && !(request.auth.uid in resource.data.get('removedMemberUids', []))
         && newPlayers == oldPlayers + 1
         && (
           newMembers.size() == oldMembers.size() + 1
