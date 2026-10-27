@@ -29228,11 +29228,11 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       if(!data.posts.length){host.innerHTML='<div class="cp-pp-empty mt-2"><div style="font-size:34px;margin-bottom:8px">📝</div><div class="text-sm font-black">No posts yet</div><p class="text-xs text-gray-500 mt-2">When this player shares something with the community, it will appear here.</p></div>';return}
       host.innerHTML=data.posts.map(post=>{try{
         let card;
-        if(post.type==='clip'){
-          card=renderHomeClipCard(post);
-        } else {
-          card=renderHomePostCard(post);
-        }
+        if(post.type==='clip') card=renderHomeClipCard(post);
+        else if(post.type==='vault') card=renderHomeVaultCard(post);
+        else if(post.type==='lobby') card=renderHomeLobbyCard(post);
+        else if(post.type==='leak') card=renderHomeLeakCard(post);
+        else card=renderHomePostCard(post);
         const uid=esc(post.uid||data.uid||'');
         const avatarPattern=new RegExp('<div data-uid="[^"]*" class="w-11 h-11[^"]*">[^]*?</div>');
         if(avatarPattern.test(card)){
@@ -29381,11 +29381,24 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       if(!await canView(user,uid)){if(token===loadToken&&r.isConnected)renderPage(r,{uid,user,posts:[],counts:null,restricted:true});return}
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
       try{if(typeof __c54LoadLikes==='function')await __c54LoadLikes()}catch(_){}
-      const [postSnapshot, clipSnapshots] = await Promise.all([
+      const [postSnapshot, clipSnapshots, vaultSnapshots, lobbySnapshots, leakSnapshots] = await Promise.all([
         getDocs(query(collection(db,'posts'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
         Promise.all([
           getDocs(query(collection(db,'clips'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
           getDocs(query(collection(db,'clips'),where('submittedByUid','==',uid),limit(100))).catch(()=>({docs:[]}))
+        ]),
+        Promise.all([
+          getDocs(query(collection(db,'vaults'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'vaults'),where('userId','==',uid),limit(100))).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'vaults'),where('ownerUid','==',uid),limit(100))).catch(()=>({docs:[]}))
+        ]),
+        Promise.all([
+          getDocs(query(collection(db,'lobbies'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'lobbies'),where('userId','==',uid),limit(100))).catch(()=>({docs:[]}))
+        ]),
+        Promise.all([
+          getDocs(query(collection(db,'leaks'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'leaks'),where('submittedByUid','==',uid),limit(100))).catch(()=>({docs:[]}))
         ])
       ]);
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
@@ -29417,6 +29430,25 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
         }));
       }
       posts.push(...clipById.values());
+      const otherByKey=new Map();
+      for(const snapshot of vaultSnapshots) for(const d of snapshot.docs){
+        const raw=d.data()||{}, authorUid=String(raw.uid||raw.userId||raw.ownerUid||'');
+        if(authorUid!==uid)continue;
+        otherByKey.set('vault_'+d.id,Object.assign({},raw,{id:d.id,type:'vault',uid:authorUid,ign:user.ign||raw.ign||'Unknown',avatar:user.avatar||user.photoURL||raw.avatar||'',likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0}));
+      }
+      for(const snapshot of lobbySnapshots) for(const d of snapshot.docs){
+        const raw=d.data()||{}, authorUid=String(raw.uid||raw.userId||raw.ownerUid||'');
+        if(authorUid!==uid)continue;
+        const lobby=Object.assign({},raw,{id:d.id,type:'lobby',uid:authorUid,ign:user.ign||raw.ign||'Unknown',avatar:user.avatar||user.photoURL||raw.avatar||''});
+        if(typeof cpLobbyIsExpired==='function'&&cpLobbyIsExpired(lobby))continue;
+        otherByKey.set('lobby_'+d.id,lobby);
+      }
+      for(const snapshot of leakSnapshots) for(const d of snapshot.docs){
+        const raw=d.data()||{}, authorUid=String(raw.uid||raw.submittedByUid||raw.userId||raw.authorUid||'');
+        if(authorUid!==uid)continue;
+        otherByKey.set('leak_'+d.id,Object.assign({},raw,{id:d.id,type:'leak',uid:authorUid,submittedByUid:authorUid,submittedByIgn:user.ign||raw.submittedByIgn||raw.ign||'Unknown',ign:user.ign||raw.ign||'Unknown',likes:Number(raw.likes)||0,hypes:Number(raw.hypes)||0}));
+      }
+      posts.push(...otherByKey.values());
       posts.sort((a,b)=>millis(b.createdAt||b.timestamp||b.publishedAt)-millis(a.createdAt||a.timestamp||a.publishedAt));
       const clipIds=new Set([...clipById.keys()]);
       if(clipIds.size){
