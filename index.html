@@ -479,5 +479,49 @@ if ('serviceWorker' in navigator) {
   .cp-date-time { font-size: 0.9em !important; }
 </style>
 
+
+<script id="cp-comment-count-only-actions">
+(function () {
+  // Keep every feed's comment action compact: comment icon + numeric count only.
+  function normalizeCommentActions(root) {
+    const scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll('.home-card button, [data-feed-card] button').forEach(function (button) {
+      const icon = button.querySelector('[data-lucide="message-circle"], i[data-lucide="message-circle"], svg');
+      if (!icon) return;
+      const label = (button.textContent || '').trim();
+      if (!/comment/i.test(label) && !button.matches('.post-comments-btn,.cp-home-clip-comments-toggle')) return;
+      const countNode = button.querySelector('[data-cp-clip-count], .cp-home-clip-comment-count, [data-comment-count], .comment-count');
+      let count = countNode ? String(countNode.textContent || '').trim() : ((label.match(/\d+/) || ['0'])[0]);
+      if (!/^\d+$/.test(count)) count = '0';
+      Array.from(button.childNodes).forEach(function (node) {
+        if (node.nodeType === 3) node.remove();
+      });
+      if (countNode) {
+        // Keep icon and count in DOM order; remove any leftover descriptive label.
+        button.appendChild(countNode);
+      } else {
+        const number = document.createElement('span');
+        number.className = 'cp-comment-action-count';
+        number.textContent = count;
+        button.appendChild(number);
+      }
+      button.setAttribute('aria-label', count + ' comments');
+      button.setAttribute('title', count + ' comments');
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { normalizeCommentActions(document); });
+  else normalizeCommentActions(document);
+  const observer = new MutationObserver(function (records) {
+    records.forEach(function (record) {
+      record.addedNodes.forEach(function (node) {
+        if (node.nodeType === 1) normalizeCommentActions(node);
+      });
+      if (record.target && record.target.nodeType === 1) normalizeCommentActions(record.target.closest('.home-card') || record.target);
+    });
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+})();
+</script>
+
 </body>
 </html>
