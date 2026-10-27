@@ -193,11 +193,16 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
-  setInterval(() => {
-    // Rebind if Home feed is rebuilt during tab changes.
+  // Watch for Home being replaced during tab changes without polling every second.
+  const appObserver = new MutationObserver(records => {
     const feed = document.querySelector(feedSelector);
-    if (feed && !feed.__cpSmartFeedObserved) start();
-  }, 1500);
+    if (!feed || feed.__cpSmartFeedObserved) return;
+    const relevant = records.some(record => Array.from(record.addedNodes || []).some(node =>
+      node.nodeType === 1 && (node.id === 'home-feed' || node.querySelector?.(feedSelector))
+    ));
+    if (relevant) start();
+  });
+  if (document.documentElement) appObserver.observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener('storage', event => {
     if (event.key && event.key.startsWith('cp_smart_feed_v1_')) {
       loadSignals();
