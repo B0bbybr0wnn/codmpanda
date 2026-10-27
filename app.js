@@ -21234,8 +21234,7 @@ function wireHomeClipComments(feed,items){
     button.onclick=event=>{
       event.preventDefault();
       event.stopPropagation();
-      const clip=items.find(item=>String(item.id)===String(button.dataset.id)) || homeCache.feed.find(item=>String(item.id)===String(button.dataset.id));
-      if(typeof openCommentsSheet==='function') openCommentsSheet('clip',button.dataset.id,clip?.caption||'Clip comments');
+      if(typeof openPostComments==='function') openPostComments(button.dataset.id);
     };
   });
 }
@@ -21465,7 +21464,7 @@ async function openPostComments(postId) {
           </div>
           <span data-uid="${esc(post.uid || '')}" class="text-xs font-bold cursor-pointer">${esc(post.ign)}</span>
         </div>
-        <p class="text-xs text-gray-300 line-clamp-2">${esc(post.text)}</p>
+        <p class="text-xs text-gray-300 line-clamp-2">${esc(post.type === 'clip' ? (post.caption || '🎬 Clip') : post.text)}</p>
       </div>
 
       <div class="flex items-center justify-between">
@@ -21546,6 +21545,14 @@ async function loadPostComments(postId) {
     });
 
     if (countEl) countEl.textContent = `${comments.length} comment${comments.length === 1 ? '' : 's'}`;
+    const feedItem = homeCache.feed.find(item => String(item.id) === String(postId));
+    if (feedItem?.type === 'clip') {
+      document.querySelectorAll('.home-card[data-type="clip"]').forEach(card => {
+        if (String(card.dataset.id) !== String(postId)) return;
+        const count = card.querySelector('[data-cp-clip-count]');
+        if (count) count.textContent = String(comments.length);
+      });
+    }
 
     if (topLevel.length === 0) {
       listEl.innerHTML = `
@@ -21749,9 +21756,11 @@ async function sendPostComment(postId) {
   input.disabled = true;
 
   try {
+    const feedItem = homeCache.feed.find(item => String(item.id) === String(postId));
+    const commentContentType = feedItem?.type === 'clip' ? 'clip' : 'post';
     const commentData = {
       contentId: postId,
-      contentType: 'post',
+      contentType: commentContentType,
       uid: State.user.uid,
       ign: State.profile.ign,
       avatar: State.profile.avatar || '',
@@ -21770,7 +21779,7 @@ async function sendPostComment(postId) {
 
     // Increment post comment count
     try {
-      const postRef = doc(db, 'posts', postId);
+      const postRef = doc(db, feedItem?.type === 'clip' ? 'clips' : 'posts', postId);
       const postSnap = await getDoc(postRef);
       if (postSnap.exists()) {
         await updateDoc(postRef, { commentCount: increment(1) });
