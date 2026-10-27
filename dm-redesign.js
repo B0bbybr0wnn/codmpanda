@@ -113,18 +113,15 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
     // results arrive. Re-create the toolbar whenever that happens.
     if(body.querySelector('#cp-dm-inbox-toolbar'))return;
 
+    // Keep only the compact New Chat text link above the conversation list.
+    body.querySelector('#cp-dm-unread-badge')?.remove();
+    body.querySelector('#cp-dm-inbox-search')?.remove();
     const top=document.createElement('div');
     top.id='cp-dm-inbox-toolbar';
-    top.style.cssText='display:flex;gap:8px;align-items:center;padding:12px 12px 8px;position:sticky;top:0;z-index:3;background:#050505';
-    top.innerHTML='<input class="cp-dm-search" id="cp-dm-inbox-search" placeholder="Search conversations…" aria-label="Search conversations" style="flex:1;min-width:0"/><button type="button" class="cp-dm-action primary" id="cp-dm-new-chat-btn">＋ New chat</button>';
+    top.style.cssText='display:flex;justify-content:flex-end;align-items:center;padding:8px 12px 10px;background:#050505';
+    top.innerHTML='<button type="button" id="cp-dm-new-chat-btn" style="border:0;background:transparent;color:#ff8a3d;font-size:12px;font-weight:800;padding:6px 0;cursor:pointer">＋ New Chat</button>';
     body.prepend(top);
-    installUnreadBadge(top);
     top.querySelector('#cp-dm-new-chat-btn').addEventListener('click',openNewChat);
-    top.querySelector('#cp-dm-inbox-search').addEventListener('input',e=>{
-      const q=e.target.value.trim().toLocaleLowerCase();
-      body.querySelectorAll('.conversation-item-full').forEach(row=>{row.style.display=(!q||row.innerText.toLocaleLowerCase().includes(q))?'':'none'});
-      const coach=body.querySelector('#cp-coach-pinned-row');if(coach)coach.style.display=(!q||coach.innerText.toLocaleLowerCase().includes(q))?'':'none';
-    });
   }
 
   async function toggleBlockCurrentUser(button){
