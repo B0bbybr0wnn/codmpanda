@@ -490,7 +490,7 @@ if ('serviceWorker' in navigator) {
       if (!icon) return;
       const label = (button.textContent || '').trim();
       if (!/comment/i.test(label) && !button.matches('.post-comments-btn,.cp-home-clip-comments-toggle')) return;
-      const countNode = button.querySelector('[data-cp-clip-count], .cp-home-clip-comment-count, [data-comment-count], .comment-count');
+      const countNode = button.querySelector('[data-cp-clip-count], .cp-home-clip-comment-count, [data-comment-count], .comment-count, .cp-comment-action-count');
       let count = countNode ? String(countNode.textContent || '').trim() : ((label.match(/\d+/) || ['0'])[0]);
       if (!/^\d+$/.test(count)) count = '0';
       Array.from(button.childNodes).forEach(function (node) {
