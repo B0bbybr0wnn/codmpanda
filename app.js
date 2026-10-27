@@ -19430,7 +19430,7 @@ function renderHomeClipCard(c) {
           <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i> ${c.likes || 0}
         </button>
         <button class="post-comments-btn btn-press flex items-center gap-1.5 text-xs text-gray-400" data-id="${c.id}" data-content-type="clip" type="button">
-          <i data-lucide="message-circle" class="w-4 h-4"></i> <span data-cp-clip-count>${Number(c.commentCount) || 0}</span> Comments
+          <i data-lucide="message-circle" class="w-4 h-4"></i> <span data-comment-count-for="${c.id}" data-cp-clip-count>${Number(State.commentCounts?.[c.id] ?? c.commentCount) || 0}</span> Comments
         </button>
         <button class="home-share-btn btn-press text-primary" data-type="clip" data-id="${c.id}">
           <i data-lucide="share-2" class="w-4 h-4"></i>
