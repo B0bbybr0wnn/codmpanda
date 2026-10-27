@@ -19365,6 +19365,37 @@ function renderHomeVaultCard(v) {
   `;
 }
 
+// Open clips through the shared fullscreen PostDetail sheet, with the clip still linked to its source.
+window.openClipPostDetail = async function(id) {
+  if (!id || typeof window.openPostDetail !== 'function') return;
+  try {
+    let clip = (homeCache && Array.isArray(homeCache.feed) ? homeCache.feed : [])
+      .find(item => String(item.id) === String(id) && item.type === 'clip');
+    if (!clip) {
+      const snap = await getDoc(doc(db, 'clips', id));
+      if (!snap.exists()) {
+        if (typeof toast === 'function') toast('This clip is no longer available.', 'warning');
+        return;
+      }
+      clip = { id: snap.id, ...snap.data(), type: 'clip' };
+      if (homeCache && Array.isArray(homeCache.feed)) {
+        homeCache.feed = [clip, ...homeCache.feed.filter(item => !(String(item.id) === String(id) && item.type === 'clip'))];
+      }
+    }
+    window.openPostDetail({
+      ...clip,
+      type: 'clip',
+      uid: clip.submittedByUid || clip.uid || clip.userId || clip.authorUid || '',
+      ign: clip.submittedByIgn || clip.ign || 'CODMPanda',
+      avatar: clip.submittedByAvatar || clip.avatar || clip.photoURL || '',
+      text: clip.caption || clip.text || clip.description || ''
+    });
+  } catch (error) {
+    console.error('[CODMPanda] could not open clip detail', error);
+    if (typeof toast === 'function') toast('Could not open this clip. Try again.', 'error');
+  }
+};
+
 function renderHomeClipCard(c) {
   const youtubeEmbed = getYouTubeEmbed(c.youtubeUrl);
   const tiktokMatch = String(c.youtubeUrl || '').match(/tiktok\.com\/(?:@[^/]+\/video\/|embed\/v2\/)(\d+)/i);
@@ -19532,7 +19563,7 @@ function wireHomeCards(items) {
       const type = card.dataset.type;
       const id = card.dataset.id;
       if (type === 'vault') openVaultDetail(id);
-      else if (type === 'clip') { if (typeof openPostComments === 'function') openPostComments(id); }
+      else if (type === 'clip') { if (typeof window.openClipPostDetail === 'function') window.openClipPostDetail(id); }
       else if (type === 'leak') { intelSubTab = 'leaks'; switchTab('intel'); }
       else if (type === 'lobby') { /* lobbies are self-contained */ }
     };
@@ -21580,7 +21611,7 @@ function renderCommentRow(c, replies) {
           </div>
           <div class="flex items-center gap-3 mt-1.5 ml-1">
             <button class="comment-like-btn text-[10px] ${isLiked ? 'text-primary' : 'text-gray-500'} font-bold flex items-center gap-1" data-id="${c.id}">
-              ❤️ <span class="like-num">${c.likes || 0}</span>
+              <span data-cp-reaction-default="1">❤️</span> <span class="like-num">${c.likes || 0}</span>
             </button>
             <button class="comment-reply-btn text-[10px] text-gray-500 font-bold" data-id="${c.id}" data-ign="${esc(c.ign)}">Reply</button>
             ${isMine ? `
@@ -25812,6 +25843,9 @@ window.performGlobalSearch = performGlobalSearch;
 
   // Post detail view (fullscreen-ish sheet)
   window.openPostDetail = function(post) {
+    const isClip = post?.type === 'clip' || post?.contentType === 'clip';
+    const clipUrl = String(post?.youtubeUrl || post?.videoUrl || post?.url || '');
+    const clipEmbed = isClip ? (getYouTubeEmbed(clipUrl) || (() => { const m=clipUrl.match(/tiktok\.com\/(?:@[^/]+\/video\/|embed\/v2\/)(\d+)/i); return m ? 'https://www.tiktok.com/embed/v2/' + m[1] : clipUrl; })()) : '';
     const feedScroller = document.querySelector('#content [data-feed-scroll], #content .overflow-y-auto') || document.getElementById('content');
     if (feedScroller) window.__cpPostFeedScroll = {
       el: feedScroller,
@@ -25819,8 +25853,9 @@ window.performGlobalSearch = performGlobalSearch;
       x: feedScroller.scrollLeft || 0,
       windowY: window.scrollY || document.documentElement.scrollTop || 0
     };
-    const isLiked = State.likedItems?.post?.[post.id] || false;
-    const isMine = !!State.user && post.uid === State.user.uid;
+    const reactionType = isClip ? 'clip' : 'post';
+    const isLiked = State.likedItems?.[reactionType]?.[post.id] || false;
+    const isMine = !!State.user && (post.uid || post.submittedByUid || post.userId) === State.user.uid;
 
     openSheet(`
       <div class="space-y-4">
@@ -25841,10 +25876,16 @@ window.performGlobalSearch = performGlobalSearch;
         </div>
 
         <!-- Post text and tappable hashtags -->
-        <p class="text-base leading-relaxed text-gray-100 whitespace-pre-wrap break-words" style="font-size:18px;line-height:1.65;">${esc(cpPostTextWithoutHashtags(post.text || ''))}</p>
+        <p class="text-base leading-relaxed text-gray-100 whitespace-pre-wrap break-words" style="font-size:18px;line-height:1.65;">${esc(cpPostTextWithoutHashtags(post.text || post.caption || post.description || ''))}</p>
         ${(() => { const tags = cpExtractHashtags(post.text, post.hashtags); return tags.length ? `<div class="flex flex-wrap gap-1.5">${tags.map(tag => `<button type="button" class="post-hashtag text-[10px] font-bold text-primary bg-primary/10 rounded-full px-2 py-1" data-tag="${esc(tag)}">#${esc(tag)}</button>`).join('')}</div>` : ''; })()}
 
         <!-- Post image — full width, zoomable -->
+        ${isClip && clipEmbed ? `
+          <div class="cp-post-detail-clip" style="width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;">
+            <iframe src="${esc(clipEmbed)}" title="Clip video" class="w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          </div>
+          <a href="${esc(clipUrl)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-xs font-bold text-primary">▶ Open original clip ↗</a>
+        ` : ''}
         ${post.imageUrl ? `
           <div class="post-image-wrap" style="width:100%;cursor:zoom-in;">
             <img src="${esc(post.imageUrl)}" class="cp-post-detail-image w-full rounded-xl" style="display:block;width:100%;height:auto;max-height:none;object-fit:contain;cursor:zoom-in;background:#000;border-radius:12px;" data-zoomable />
@@ -25853,7 +25894,7 @@ window.performGlobalSearch = performGlobalSearch;
 
         <!-- Actions -->
         <div class="flex items-center gap-4 pt-3 border-t border-border">
-          <button class="post-detail-like flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'} font-bold" data-id="${post.id}">
+          <button class="post-detail-like flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'} font-bold" data-id="${post.id}" data-item-type="${reactionType}">
             <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i>
             <span data-reaction-count="1">${post.likes || 0}</span>
           </button>
@@ -25999,7 +26040,7 @@ window.performGlobalSearch = performGlobalSearch;
           const submitDetailComment = async () => {
             const text = input.value.trim();
             if (!text) return;
-            if (typeof window.notifyMentions === 'function') window.notifyMentions(text, 'post', post.id).catch(() => {});
+            if (typeof window.notifyMentions === 'function') window.notifyMentions(text, reactionType, post.id).catch(() => {});
             await sendPostComment(post.id);
           };
           sendBtn.onclick = submitDetailComment;
@@ -26017,7 +26058,7 @@ window.performGlobalSearch = performGlobalSearch;
       if (likeBtn) likeBtn.onclick = async () => {
         if (!State.user) { showAuthGate(); return; }
         if (typeof window.__codmpandaApplyReaction === 'function') {
-          await window.__codmpandaApplyReaction(likeBtn, 'post', post.id, 'heart');
+          await window.__codmpandaApplyReaction(likeBtn, reactionType, post.id, 'heart');
         } else {
           toast('Reactions are still loading. Try again in a moment.', 'warning');
         }
@@ -26026,8 +26067,8 @@ window.performGlobalSearch = performGlobalSearch;
       const shareBtn = document.querySelector('.post-detail-share');
       if (shareBtn) shareBtn.onclick = () => {
         openShareSheet({
-          title: 'CODMPanda Post',
-          text: post.text || 'Check this out',
+          title: isClip ? 'CODMPanda Clip' : 'CODMPanda Post',
+          text: post.text || post.caption || 'Check this out',
           url: `${location.origin}/?post=${post.id}`
         });
       };
@@ -26780,13 +26821,16 @@ window.performGlobalSearch = performGlobalSearch;
     // Keep the selected reaction as the visible control glyph, not a filled heart.
     // Hide every heart SVG/icon variant (Lucide can replace <i> with <svg> after render).
     let emojiEl=btn.querySelector('[data-cp-reaction-emoji]');
+    const defaultEmojiEl=btn.querySelector('[data-cp-reaction-default]');
     const iconEls=Array.from(btn.querySelectorAll('i[data-lucide="heart"],svg.lucide-heart,svg[data-lucide="heart"],i[data-lucide="thumbs-up"],svg.lucide-thumbs-up'));
     if(active){
+      if(defaultEmojiEl)defaultEmojiEl.style.display='none';
       iconEls.forEach(el=>{el.style.display='none';});
       if(!emojiEl){emojiEl=document.createElement('span');emojiEl.dataset.cpReactionEmoji='1';emojiEl.className='cp-reaction-emoji';emojiEl.style.cssText='display:inline-flex!important;align-items:center;justify-content:center;line-height:1;font-size:19px;min-width:20px;margin-right:3px;';btn.insertBefore(emojiEl,btn.firstChild);}
       emojiEl.textContent=emojiFor(reaction); emojiEl.style.display='inline-flex';
     }else{
       if(emojiEl)emojiEl.remove();
+      if(defaultEmojiEl)defaultEmojiEl.style.display='';
       iconEls.forEach(el=>{el.style.display='';el.classList.remove('fill-current');});
     }
     btn.dataset.cpReaction=reaction||''; btn.dataset.cpLiked=active?'1':'0';
@@ -26857,13 +26901,13 @@ window.performGlobalSearch = performGlobalSearch;
     let all=sameItemButtons(type,id);all.forEach(b=>{b.dataset.cpBusy='1';});
     try{
       const likeRef=doc(db,'likes',`${type}_${id}_${uid}`), itemRef=doc(db,COLLECTIONS[type],id);
-      let previous=null,next=null,totalDelta=0,newTotal=0;
+      let previous=null,next=null,totalDelta=0,newTotal=0,reactionCounts={};
       await runTransaction(db,async tx=>{
         const [likeSnap,itemSnap]=await Promise.all([tx.get(likeRef),tx.get(itemRef)]);
         if(!itemSnap.exists())throw new Error('This item is no longer available.');
         const old=itemSnap.data()||{};previous=likeSnap.exists()?(REACTION_META[likeSnap.data().reaction]?likeSnap.data().reaction:'heart'):null;
         next=previous===key?null:key;
-        const reactionCounts={...(old.reactions||{})};
+        reactionCounts={...(old.reactions||{})};
         if(previous&&next!==previous)reactionCounts[previous]=Math.max(0,(Number(reactionCounts[previous])||0)-1);
         if(next&&next!==previous)reactionCounts[next]=(Number(reactionCounts[next])||0)+1;
         const totalField=TOTAL_FIELDS[type];
