@@ -26831,7 +26831,15 @@ window.performGlobalSearch = performGlobalSearch;
     }else{
       if(emojiEl)emojiEl.remove();
       if(defaultEmojiEl)defaultEmojiEl.style.display='';
-      iconEls.forEach(el=>{el.style.display='';el.classList.remove('fill-current');});
+      iconEls.forEach(el=>{
+        el.style.display='';
+        el.classList.remove('fill-current');
+        if(el.tagName.toLowerCase()==='svg'){
+          el.style.fill='none';
+          el.style.stroke='currentColor';
+          el.setAttribute('fill','none');
+        }
+      });
     }
     btn.dataset.cpReaction=reaction||''; btn.dataset.cpLiked=active?'1':'0';
     btn.classList.toggle('text-primary',!!active);
@@ -26972,7 +26980,7 @@ window.performGlobalSearch = performGlobalSearch;
       const key=`${type}_${id}_${State.user.uid}`;
       try{
         let reaction=cache.get(key);
-        if(reaction===undefined || reaction==='__refresh__'){let snap=await getDoc(doc(db,'likes',`${type}_${id}_${State.user.uid}`));let saved=snap.exists()?snap.data():null;if(!saved){try{const matches=await getDocs(query(collection(db,'likes'),where('userId','==',State.user.uid),where('itemId','==',id),where('itemType','==',type),limit(1)));if(!matches.empty)saved=matches.docs[0].data();}catch(queryErr){console.warn('[CODMPanda] reaction fallback lookup failed',type,id,queryErr?.code||queryErr?.message||queryErr);}}reaction=saved?(REACTION_META[saved.reaction]?saved.reaction:'heart'):null;cache.set(key,reaction);}
+        if(reaction===undefined || reaction==='__refresh__'){let snap=await getDoc(doc(db,'likes',`${type}_${id}_${State.user.uid}`));let saved=snap.exists()?snap.data():null;if(!saved){try{const matches=await getDocs(query(collection(db,'likes'),where('userId','==',State.user.uid),where('itemId','==',id),where('itemType','==',type),limit(1)));if(!matches.empty)saved=matches.docs[0].data();}catch(queryErr){console.warn('[CODMPanda] reaction fallback lookup failed',type,id,queryErr?.code||queryErr?.message||queryErr);}}reaction=saved&&REACTION_META[saved.reaction]?saved.reaction:null;cache.set(key,reaction);}
         if(pendingReactionWrites.has(key))return;
         const all=sameItemButtons(type,id);all.forEach(b=>{if(!b.dataset.cpBusy)paintButton(b,reaction||'heart',getCount(b),!!reaction);});
         if(type==='post') await refreshPostReactionSummary(type,id);
