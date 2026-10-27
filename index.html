@@ -515,6 +515,32 @@ if ('serviceWorker' in navigator) {
     font-weight: 600 !important;
     line-height: 1.4 !important;
   }
+  .cp-unified-feed-footer {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    width: 100% !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 8px 0 !important;
+  }
+  .cp-unified-feed-footer button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    min-height: 28px !important;
+    padding: 4px 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: #999 !important;
+    font-size: 12px !important;
+  }
 </style>
 <script id="cp-home-feed-targeted-fixes">
 (function () {
@@ -560,7 +586,7 @@ if ('serviceWorker' in navigator) {
         el.style.setProperty('min-height', '0', 'important');
         el.style.setProperty('width', 'auto', 'important');
         el.style.setProperty('display', 'inline-flex', 'important');
-        links.appendChild(el);
+        if (el.parentElement !== links) links.appendChild(el);
       });
     }
   }
@@ -599,6 +625,27 @@ if ('serviceWorker' in navigator) {
     });
   }
 
+  // Align clip action rows with the standard feed action row.
+  function normalizeClipFooters(root) {
+    const scope = root && root.querySelectorAll ? root : document;
+    const toggles = [];
+    if (scope.matches && scope.matches('.cp-home-clip-comments-toggle')) toggles.push(scope);
+    scope.querySelectorAll('.cp-home-clip-comments-toggle').forEach(el => toggles.push(el));
+    toggles.forEach(toggle => {
+      const card = toggle.closest('.home-card,[data-feed-card],#home-feed') || toggle.parentElement;
+      let node = toggle.parentElement;
+      while (node && node !== card && node !== document.body) {
+        const buttons = node.querySelectorAll('button');
+        const label = (node.innerText || node.textContent || '').toLowerCase();
+        if (buttons.length >= 3 && (/share/.test(label) || /reaction|like/.test(label) || buttons.length >= 4)) {
+          node.classList.add('cp-unified-feed-footer');
+          break;
+        }
+        node = node.parentElement;
+      }
+    });
+  }
+
   // A tap on the clip card itself opens the shared full post-detail view.
   // Controls inside the card retain their own actions.
   function installClipCardNavigation() {
@@ -632,6 +679,7 @@ if ('serviceWorker' in navigator) {
   function run() {
     flattenDailyBrief();
     normalizeCommentActions(document);
+    normalizeClipFooters(document);
     installClipCardNavigation();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
@@ -643,6 +691,7 @@ if ('serviceWorker' in navigator) {
         if (node.nodeType === 1) {
           flattenDailyBrief();
           normalizeCommentActions(node);
+          normalizeClipFooters(node);
         }
       });
       if (record.type === 'characterData') {
