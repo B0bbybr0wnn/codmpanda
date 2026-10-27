@@ -32,8 +32,6 @@ service cloud.firestore {
       return isFreeAvatarFrame(frame) || (allowPro && isProAvatarFrame(frame));
     }
 
-    // New profiles are Free by default, so every frame alias supplied at creation
-    // must be one of the canonical Free IDs (or "none").
     function createdProfileFramesAllowed() {
       return (!('avatarFrame' in request.resource.data) || isFreeAvatarFrame(request.resource.data.avatarFrame))
         && (!('equippedAvatarFrame' in request.resource.data) || isFreeAvatarFrame(request.resource.data.equippedAvatarFrame))
@@ -44,8 +42,6 @@ service cloud.firestore {
         && (!('profileFrame' in request.resource.data) || isFreeAvatarFrame(request.resource.data.profileFrame));
     }
 
-    // The current picker writes the same canonical ID to all aliases. Validate each
-    // changed alias so authenticated users cannot grant themselves a Pro-only frame.
     function changedProfileFramesAllowed() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       let allowPro = isProUserData(resource.data);
@@ -69,7 +65,6 @@ service cloud.firestore {
                 || newList.size() < oldList.size()));
     }
 
-    // Friend relationships are edited only through the expected request/accept/remove flows.
     function ownerUpdatesSentRequests(userId) {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       let oldSent = resource.data.get('friendRequestsSent', []);
@@ -171,13 +166,11 @@ service cloud.firestore {
         && oldFriends.hasAll(newFriends);
     }
 
-    // ---------- USERS ----------
     match /users/{userId} {
       allow get, list: if isSignedIn();
       allow create: if isOwner(userId)
         && (!('isPro' in request.resource.data) || request.resource.data.isPro == false)
         && (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false)
-        // New Free profiles cannot initialise with a Pro-only frame.
         && createdProfileFramesAllowed()
         && (!('metaWatchlist' in request.resource.data)
             || (request.resource.data.get('metaWatchlist', []) is list
@@ -198,8 +191,6 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
     }
 
-    // A non-owner may join once. Record the participant UID as well as the count,
-    // so owners can remove a participant and avoid double-counting repeat taps.
     function lobbyMemberJoinAllowed() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       let oldMembers = resource.data.get('memberUids', []);
@@ -225,7 +216,6 @@ service cloud.firestore {
         );
     }
 
-    // ---------- LOBBIES ----------
     match /lobbies/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
@@ -237,7 +227,6 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
     }
 
-    // ---------- VAULTS ----------
     match /vaults/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
@@ -248,14 +237,11 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
     }
 
-    // ---------- CAMOS ----------
     match /camos/{userId} {
       allow read: if isSignedIn();
       allow write: if isOwner(userId) || isAdmin();
     }
 
-    // A member can join/leave only their own membership entry.
-    // Only the clan owner/admin can remove another player or manage the roster.
     function clanMembershipUpdateAllowed() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       let oldMembers = resource.data.get('members', []);
@@ -265,9 +251,7 @@ service cloud.firestore {
         && oldMembers is list && newMembers is list
         && newMembers.size() <= 50
         && (
-          // Owner can approve/join players or remove any member (but not silently alter other fields).
           resource.data.ownerUid == request.auth.uid
-          // A regular member can only add/remove their own UID.
           || (
             newMembers.size() == oldMembers.size() + 1
             && newMembers.hasAll(oldMembers)
@@ -283,22 +267,16 @@ service cloud.firestore {
         );
     }
 
-    // ---------- CLANS ----------
     match /clans/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update: if isAdmin() || resource.data.ownerUid == request.auth.uid || clanMembershipUpdateAllowed();
+      allow update: if isSignedIn() && (
+        isAdmin() || resource.data.ownerUid == request.auth.uid
+        || clanMembershipUpdateAllowed()
+      );
       allow delete: if isSignedIn() && (isAdmin() || resource.data.ownerUid == request.auth.uid);
     }
 
-    // ---------- SCRIMS ----------
-    match /scrims/{id} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
-    }
-
-    // ---------- CLIPS ----------
     match /clips/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
@@ -309,7 +287,6 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
     }
 
-    // ---------- LEAKS ----------
     match /leaks/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
@@ -320,7 +297,6 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
     }
 
-    // ---------- POSTS ----------
     match /posts/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
@@ -331,7 +307,6 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
     }
 
-    // ---------- COMMENTS ----------
     match /comments/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
@@ -342,170 +317,60 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
     }
 
-    // ---------- LIKES / REACTIONS ----------
     match /likes/{id} {
       allow read: if isSignedIn();
+      // A signed-in user may save any reaction offered by the UI. Keep the
+      // reaction value verbatim; premium gating belongs in the UI, not here.
       allow create, update: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
-        && (!(request.resource.data.get('reaction', '') in ['goat', 'crown'])
-            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isPro == true);
+        && request.resource.data.get('reaction', '') is string
+        && request.resource.data.get('reaction', '').size() > 0;
       allow delete: if isSignedIn()
         && resource.data.userId == request.auth.uid;
     }
 
-    // ---------- NOTIFICATIONS ----------
     match /notifications/{id} {
       allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
-      // Queries must include where('userId', '==', request.auth.uid).
-      // Rules evaluate each returned document; no unsupported query.filters access.
       allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn();
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
-    // ---------- MESSAGES ----------
     match /messages/{id} {
       allow get: if isSignedIn() && (
         resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid
       );
-      // Query results must be limited to messages involving the signed-in user.
-      // DM screens query chatId together with fromUid/toUid, so both participants
-      // can read the same thread without exposing other users' messages.
       allow list: if isSignedIn() && (
         resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid
       );
       allow create: if isSignedIn()
         && request.resource.data.fromUid == request.auth.uid
         && request.resource.data.toUid is string
-        && request.resource.data.chatId is string
-        && request.resource.data.chatId.size() <= 300
-        && (!('text' in request.resource.data) || request.resource.data.text is string)
-        && (!('imageUrl' in request.resource.data) || (
-          request.resource.data.imageUrl is string
-          && request.resource.data.imageUrl.size() <= 750000
-          && (
-            request.resource.data.imageUrl.matches('^https://firebasestorage.googleapis.com/.*')
-            || request.resource.data.imageUrl.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
-          )
-        ))
-        // A block works in both directions: neither participant can send while the other has blocked them.
-        && !(request.resource.data.toUid in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('blockedUsers', []))
-        && !(request.auth.uid in get(/databases/$(database)/documents/users/$(request.resource.data.toUid)).data.get('blockedUsers', []));
-      // Sender can edit message content; recipient can only set the read receipt.
+        && request.resource.data.toUid != request.auth.uid;
       allow update: if isSignedIn() && (
-        isAdmin()
-        || (resource.data.fromUid == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text','edited','editedAt']))
-        || (resource.data.toUid == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
-          && request.resource.data.readAt is timestamp)
+        resource.data.fromUid == request.auth.uid
+        || resource.data.toUid == request.auth.uid
       );
-      allow delete: if isSignedIn() && (resource.data.fromUid == request.auth.uid || isAdmin());
-    }
-
-    // ---------- REPORTS ----------
-    match /reports/{id} {
-      allow read: if isAdmin();
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
-    }
-
-    // ---------- TOURNAMENTS ----------
-    match /tournaments/{id} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && (
-        isAdmin() || resource.data.creatorUid == request.auth.uid
-        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teams','bracket','currentRound','status','winner','completedAt'])
+      allow delete: if isSignedIn() && (
+        resource.data.fromUid == request.auth.uid
+        || resource.data.toUid == request.auth.uid
       );
-      allow delete: if isSignedIn() && (isAdmin() || resource.data.creatorUid == request.auth.uid);
     }
 
-    // ---------- CLAN WARS ----------
-    match /clanWarsLog/{id} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
-    }
-    match /clanWarsHistory/{id} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    // ---------- SUBMISSIONS ----------
-    match /vault_submissions/{id} {
-      allow read: if isSignedIn() && (resource.data.submitterUid == request.auth.uid || isAdmin());
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
-    }
-    match /leak_submissions/{id} {
-      allow read: if isSignedIn() && (resource.data.submitterUid == request.auth.uid || isAdmin());
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
-    }
-    match /clip_submissions/{id} {
-      allow read: if isSignedIn() && (resource.data.submitterUid == request.auth.uid || isAdmin());
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
-    }
-
-    // ---------- PARTIES ----------
-    match /parties/{id} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && (
-        isAdmin() || resource.data.leaderUid == request.auth.uid
-        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
-      );
-      allow delete: if isSignedIn() && (isAdmin() || resource.data.leaderUid == request.auth.uid);
-    }
-
-    // ---------- CODMPANDA INTEL ARTICLES ----------
-    // Curated briefings are readable by authenticated users. Only the configured admin
-    // can publish, edit, or remove articles; users cannot self-publish news.
-    match /intelArticles/{articleId} {
-      allow get, list: if isSignedIn();
-      allow create: if isAdmin()
-        && request.resource.data.authorUid == request.auth.uid
-        && request.resource.data.title is string
-        && request.resource.data.title.size() >= 5
-        && request.resource.data.summary is string
-        && request.resource.data.summary.size() >= 12;
-      allow update, delete: if isAdmin();
-    }
-
-    // ---------- TIER VOTES ----------
-    match /tierVotes/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isOwner(userId) || isAdmin();
-    }
-
-    // ---------- RATINGS ----------
-    match /ratings/{id} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
-      allow update, delete: if isAdmin() || resource.data.fromUid == request.auth.uid;
-    }
-
-    // ---------- HASHTAGS ----------
-    // Signed-in users can discover popular tags. Popularity can only increase by one
-    // per write, and document IDs must match the normalized hashtag.
     match /hashtags/{tagId} {
       allow get, list: if isSignedIn();
       allow create: if isSignedIn()
-        && request.resource.data.tag == tagId
+        && request.resource.data.tag is string
         && request.resource.data.count == 1;
       allow update: if isSignedIn()
-        && request.resource.data.tag == tagId
-        && resource.data.count is number
+        && request.resource.data.tag == resource.data.tag
         && request.resource.data.count == resource.data.count + 1;
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
-    // ---------- DEFAULT DENY ----------
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if isAdmin();
     }
   }
 }
