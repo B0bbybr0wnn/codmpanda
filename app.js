@@ -12417,6 +12417,9 @@ async function openTeamRegisterSheet(tournamentId, tournament) {
 // ============================================
 
 async function openDMThread(friendUid, friendIgn) {
+  // Set the target here as well as in the redesign wrapper so every entry point
+  // (friends list, inbox row, or New Chat) gets correct DM presence/block state.
+  window.__cpCurrentDMTarget = { uid: String(friendUid || ''), ign: String(friendIgn || 'Player') };
   // Create or get chat ID (sorted so both users share same ID)
   const chatId = [State.user.uid, friendUid].sort().join('_');
 
