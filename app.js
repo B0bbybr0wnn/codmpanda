@@ -26967,7 +26967,10 @@ window.performGlobalSearch = performGlobalSearch;
     const type=itemType(btn),id=itemId(btn);if(!type||!id)return;
     e.preventDefault();e.stopImmediatePropagation();e.stopPropagation();
     if(longPressed){longPressed=false;return;}
-    commitReaction(btn,type,id,'heart');
+    // A plain tap toggles the reaction currently shown. It must never silently
+    // replace a selected 🔥/💀/🐐/👑 with a heart; long-press opens the picker.
+    const selected=btn.dataset.cpLiked==='1'?(btn.dataset.cpReaction||'heart'):'heart';
+    commitReaction(btn,type,id,selected);
   },true);
 
   // Load the current user's persisted reactions after login and paint all rendered surfaces consistently.
