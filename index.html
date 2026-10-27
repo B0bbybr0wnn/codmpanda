@@ -497,8 +497,8 @@ if ('serviceWorker' in navigator) {
         if (node.nodeType === 3) node.remove();
       });
       if (countNode) {
-        // Keep icon and count in DOM order; remove any leftover descriptive label.
-        button.appendChild(countNode);
+        // Move the count only when needed; avoid triggering the observer repeatedly.
+        if (countNode.parentElement !== button || countNode !== button.lastElementChild) button.appendChild(countNode);
       } else {
         const number = document.createElement('span');
         number.className = 'cp-comment-action-count';
