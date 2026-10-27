@@ -130,29 +130,10 @@
     return ordered;
   }
   function rank() {
+    // Keep the feed's server-defined chronological order stable. Never move cards
+    // after a user opens/interacts with a post; that can invalidate scroll position.
     scheduled = false;
-    if (ranking) return;
-    const feed = document.querySelector(feedSelector);
-    if (!feed || !feed.isConnected) return;
-    const cards = postCards(feed);
-    if (cards.length < 2) return;
-    const ordered = smartOrder(cards);
-    if (ordered.every((card, i) => card === cards[i])) return;
-    ranking = true;
-    try {
-      // Replace only the positions occupied by posts; lobbies/builds/clips keep their slots.
-      const placeholders = cards.map(card => {
-        const marker = document.createComment('codmpanda-smart-feed-slot');
-        card.parentNode.insertBefore(marker, card);
-        card.remove();
-        return marker;
-      });
-      ordered.forEach((card, i) => placeholders[i].replaceWith(card));
-    } catch (error) {
-      console.warn('[CODMPanda Smart Feed] Could not reorder posts safely:', error);
-    } finally {
-      ranking = false;
-    }
+    return;
   }
   function scheduleRank() {
     if (scheduled || ranking) return;
