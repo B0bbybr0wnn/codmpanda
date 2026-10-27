@@ -27838,7 +27838,7 @@ window.performGlobalSearch = performGlobalSearch;
     const response = await fetch(NOTIFY_WORKER_URL + '/coach', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: question, history: history.slice(-10), playerName: String(playerName || '').slice(0, 40) })
+      body: JSON.stringify({ message: question, history: history.slice(-16), playerName: String(playerName || '').slice(0, 40) })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || 'AI Coach request failed');
