@@ -13328,7 +13328,7 @@ function cpNotificationHash(value) {
 async function logInAppNotification(userId, type, title, body, data) {
   try {
     const eventData=data||{};
-    const explicitEvent=eventData.eventId||eventData.requestId||eventData.messageId||eventData.contentId||eventData.submissionId||eventData.leakId||eventData.badge||eventData.fromUid||eventData.fromUserId||'';
+    const explicitEvent=eventData.eventId||eventData.requestId||eventData.messageId||eventData.submissionId||eventData.leakId||eventData.badge||eventData.fromUid||eventData.fromUserId||'';
     const dedupeWindow=explicitEvent?'':String(Math.floor(Date.now()/60000));
     const identity=JSON.stringify([String(userId||''),String(type||'default'),String(title||''),String(body||''),eventData,explicitEvent?'':dedupeWindow]);
     const notificationId='evt_'+cpNotificationHash(identity);
