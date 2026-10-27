@@ -29132,7 +29132,7 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       '.cp-pp-page .cp-pp-fact{padding:12px;border:1px solid #242424;border-radius:13px;background:#101010;min-width:0}.cp-pp-page .cp-pp-fact small{display:block;font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#737373;margin-bottom:5px}.cp-pp-page .cp-pp-fact strong{display:block;font-size:12px;line-height:1.45;overflow-wrap:anywhere}',
       '.cp-pp-page .cp-pp-name{overflow-wrap:anywhere;cursor:pointer}.cp-pp-page .cp-pp-avatar{display:flex;align-items:center;justify-content:center;flex:0 0 auto;overflow:visible}',
       '.cp-pp-page #cp-pp-tab-content > .home-card,.cp-pp-page #cp-pp-tab-content > article{background:transparent!important;border:0!important;border-bottom:1px solid #242424!important;border-radius:0!important;box-shadow:none!important;margin:0!important;padding:16px 0!important;min-width:0!important;width:100%!important}',
-      '.cp-pp-page #cp-pp-tab-content > .home-card img{display:block;max-width:100%;height:auto}',
+      '.cp-pp-page #cp-pp-tab-content > .home-card img{display:block;max-width:100%;max-height:min(62vh,560px);height:auto;object-fit:contain;margin-left:auto;margin-right:auto}',
       '.cp-pp-page .cp-pp-empty{padding:30px 18px;text-align:center;border:1px solid #262626;border-radius:18px;background:#0d0d0d}',
       '.cp-pp-page .cp-pp-spinner{width:26px;height:26px;border:3px solid #282828;border-top-color:#ff6b00;border-radius:50%;margin:0 auto;animation:cpPPSpin .8s linear infinite}@keyframes cpPPSpin{to{transform:rotate(360deg)}}'
     ].join('');
@@ -29227,7 +29227,12 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
     if(tab==='posts'){
       if(!data.posts.length){host.innerHTML='<div class="cp-pp-empty mt-2"><div style="font-size:34px;margin-bottom:8px">📝</div><div class="text-sm font-black">No posts yet</div><p class="text-xs text-gray-500 mt-2">When this player shares something with the community, it will appear here.</p></div>';return}
       host.innerHTML=data.posts.map(post=>{try{
-        let card=renderHomePostCard(post);
+        let card;
+        if(post.type==='clip'){
+          card=renderHomeClipCard(post);
+        } else {
+          card=renderHomePostCard(post);
+        }
         const uid=esc(post.uid||data.uid||'');
         const avatarPattern=new RegExp('<div data-uid="[^"]*" class="w-11 h-11[^"]*">[^]*?</div>');
         if(avatarPattern.test(card)){
@@ -29376,11 +29381,17 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       if(!await canView(user,uid)){if(token===loadToken&&r.isConnected)renderPage(r,{uid,user,posts:[],counts:null,restricted:true});return}
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
       try{if(typeof __c54LoadLikes==='function')await __c54LoadLikes()}catch(_){}
-      const snapshot=await getDocs(query(collection(db,'posts'),where('uid','==',uid),limit(100)));
+      const [postSnapshot, clipSnapshots] = await Promise.all([
+        getDocs(query(collection(db,'posts'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
+        Promise.all([
+          getDocs(query(collection(db,'clips'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'clips'),where('submittedByUid','==',uid),limit(100))).catch(()=>({docs:[]}))
+        ])
+      ]);
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
-      const posts=snapshot.docs.map(d=>{
+      const posts=postSnapshot.docs.map(d=>{
         const raw=d.data()||{}, post=Object.assign({},raw,{
-          id:d.id,uid:raw.uid||uid,ign:user.ign||user.displayName||raw.ign||'Unknown',
+          id:d.id,type:'post',uid:raw.uid||uid,ign:user.ign||user.displayName||raw.ign||'Unknown',
           avatar:user.avatar||user.photoURL||user.photoUrl||raw.avatar||'',
           avatarFrame:user.avatarFrame||user.equippedAvatarFrame||user.equippedFrame||raw.avatarFrame||'none',
           equippedAvatarFrame:user.equippedAvatarFrame||user.avatarFrame||raw.equippedAvatarFrame||'none',
@@ -29388,7 +29399,38 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
           verified:user.verified===true,badges:Array.isArray(user.badges)?user.badges:(Array.isArray(raw.badges)?raw.badges:[]),profileBadge:user.profileBadge||user.badge||raw.profileBadge||raw.badge||'',likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0
         });
         postMap.set(String(post.id),post);return post;
-      }).sort((a,b)=>millis(b.createdAt)-millis(a.createdAt));
+      });
+      const clipById=new Map();
+      for(const snapshot of clipSnapshots) for(const d of snapshot.docs){
+        const raw=d.data()||{};
+        const authorUid=String(raw.uid||raw.submittedByUid||raw.userId||raw.authorUid||'');
+        if(authorUid!==uid)continue;
+        clipById.set(d.id,Object.assign({},raw,{
+          id:d.id,type:'clip',uid:authorUid,submittedByUid:authorUid,
+          ign:user.ign||user.displayName||raw.submittedByIgn||raw.ign||'Unknown',
+          submittedByIgn:user.ign||user.displayName||raw.submittedByIgn||raw.ign||'Unknown',
+          avatar:user.avatar||user.photoURL||user.photoUrl||raw.avatar||raw.submittedByAvatar||'',
+          submittedByAvatar:user.avatar||user.photoURL||user.photoUrl||raw.submittedByAvatar||raw.avatar||'',
+          avatarFrame:user.avatarFrame||user.equippedAvatarFrame||user.equippedFrame||raw.avatarFrame||'none',
+          equippedAvatarFrame:user.equippedAvatarFrame||user.avatarFrame||raw.equippedAvatarFrame||'none',
+          likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0
+        }));
+      }
+      posts.push(...clipById.values());
+      posts.sort((a,b)=>millis(b.createdAt||b.timestamp||b.publishedAt)-millis(a.createdAt||a.timestamp||a.publishedAt));
+      const clipIds=new Set([...clipById.keys()]);
+      if(clipIds.size){
+        try{
+          const commentsSnap=await getDocs(query(collection(db,'comments'),limit(500)));
+          const counts={};
+          commentsSnap.forEach(commentDoc=>{
+            const comment=commentDoc.data()||{};
+            if(comment.contentType==='clip'&&clipIds.has(String(comment.contentId))&&!comment.parentId)
+              counts[String(comment.contentId)]=(counts[String(comment.contentId)]||0)+1;
+          });
+          posts.forEach(post=>{if(post.type==='clip'&&counts[post.id]!==undefined)post.commentCount=counts[post.id];});
+        }catch(error){console.warn('[CODMPanda] Could not refresh profile clip comment counts',error);}
+      }
       renderPage(r,{uid,user,posts,counts:null,restricted:false});
     }catch(err){
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
