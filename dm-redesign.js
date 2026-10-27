@@ -171,7 +171,7 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
     const fb=appDb(),target=window.__cpCurrentDMTarget;
     if(!fb?.auth.currentUser||!target?.uid||!input)return;
     const selfUid=fb.auth.currentUser.uid;
-    const statusWrap=header.children[1];
+    const statusWrap=header.querySelector('#cp-dm-title-column')||header.children[1]||header;
     if(statusWrap&&!statusWrap.querySelector('#cp-dm-presence')){
       const status=document.createElement('div');
       status.id='cp-dm-presence';
@@ -214,6 +214,23 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
     if(!messages||!input)return;
     const header=sheet.querySelector('.sheet')?.firstElementChild;
     if(!header)return;
+
+    // Keep the DM title, presence, and actions aligned in one compact header row.
+    let titleRow=header.querySelector('#cp-dm-header-row');
+    if(!titleRow){
+      const title=header.querySelector('h3');
+      if(title){
+        titleRow=document.createElement('div');
+        titleRow.id='cp-dm-header-row';
+        titleRow.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-width:0';
+        const titleColumn=document.createElement('div');
+        titleColumn.id='cp-dm-title-column';
+        titleColumn.style.cssText='flex:1;min-width:0';
+        titleColumn.appendChild(title);
+        titleRow.appendChild(titleColumn);
+        header.appendChild(titleRow);
+      }
+    }
     installTypingPresence(input,header);
     const fb=appDb(),target=window.__cpCurrentDMTarget;
     if(fb?.auth.currentUser&&target?.uid){
@@ -233,9 +250,9 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
       }
     }
     if(!header.querySelector('#cp-dm-thread-search-toggle')){
-      const actions=document.createElement('div');actions.style.cssText='display:flex;gap:6px;align-items:center;margin-left:auto';
+      const actions=document.createElement('div');actions.style.cssText='display:flex;gap:6px;align-items:center;flex:0 0 auto';
       actions.innerHTML='<button type="button" id="cp-dm-thread-search-toggle" class="cp-dm-action" aria-label="Search messages" title="Search messages">⌕</button><button type="button" id="cp-dm-block-user" class="cp-dm-action" title="Block or unblock this player">Block</button>';
-      header.appendChild(actions);
+      (header.querySelector('#cp-dm-header-row')||header).appendChild(actions);
       actions.querySelector('#cp-dm-block-user').addEventListener('click',e=>toggleBlockCurrentUser(e.currentTarget));
       syncBlockState(actions.querySelector('#cp-dm-block-user'),input);
       actions.querySelector('#cp-dm-thread-search-toggle').addEventListener('click',()=>{
