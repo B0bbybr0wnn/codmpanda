@@ -19528,7 +19528,7 @@ function wireHomeCards(items) {
   // Card tap → detail
   feedEl.querySelectorAll('.home-card').forEach(card => {
     card.onclick = (e) => {
-      if (e.target.closest('button')) return;
+      if (e.target.closest('button') || e.target.closest('[data-uid]')) return;
       const type = card.dataset.type;
       const id = card.dataset.id;
       if (type === 'vault') openVaultDetail(id);
@@ -20013,7 +20013,7 @@ wireHomeCards = function(items) {
   // Card tap
   feedEl.querySelectorAll('.home-card').forEach(card => {
     card.onclick = (e) => {
-      if (e.target.closest('button')) return;
+      if (e.target.closest('button') || e.target.closest('[data-uid]')) return;
       const type = card.dataset.type;
       const id = card.dataset.id;
       if (type === 'vault') openVaultDetail(id);
