@@ -488,6 +488,21 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || resource.data.fromUid == request.auth.uid;
     }
 
+    // ---------- HASHTAGS ----------
+    // Signed-in users can discover popular tags. Popularity can only increase by one
+    // per write, and document IDs must match the normalized hashtag.
+    match /hashtags/{tagId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.tag == tagId
+        && request.resource.data.count == 1;
+      allow update: if isSignedIn()
+        && request.resource.data.tag == tagId
+        && resource.data.count is number
+        && request.resource.data.count == resource.data.count + 1;
+      allow delete: if false;
+    }
+
     // ---------- DEFAULT DENY ----------
     match /{document=**} {
       allow read, write: if false;
