@@ -254,14 +254,40 @@ service cloud.firestore {
       allow write: if isOwner(userId) || isAdmin();
     }
 
+    // A member can join/leave only their own membership entry.
+    // Only the clan owner/admin can remove another player or manage the roster.
+    function clanMembershipUpdateAllowed() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldMembers = resource.data.get('members', []);
+      let newMembers = request.resource.data.get('members', []);
+      return isSignedIn()
+        && changed.hasOnly(['members'])
+        && oldMembers is list && newMembers is list
+        && newMembers.size() <= 50
+        && (
+          // Owner can approve/join players or remove any member (but not silently alter other fields).
+          resource.data.ownerUid == request.auth.uid
+          // A regular member can only add/remove their own UID.
+          || (
+            newMembers.size() == oldMembers.size() + 1
+            && newMembers.hasAll(oldMembers)
+            && newMembers.hasAny([request.auth.uid])
+            && !oldMembers.hasAny([request.auth.uid])
+          )
+          || (
+            oldMembers.size() == newMembers.size() + 1
+            && oldMembers.hasAll(newMembers)
+            && oldMembers.hasAny([request.auth.uid])
+            && !newMembers.hasAny([request.auth.uid])
+          )
+        );
+    }
+
     // ---------- CLANS ----------
     match /clans/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update: if isSignedIn() && (
-        isAdmin() || resource.data.ownerUid == request.auth.uid
-        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
-      );
+      allow update: if isAdmin() || clanMembershipUpdateAllowed();
       allow delete: if isSignedIn() && (isAdmin() || resource.data.ownerUid == request.auth.uid);
     }
 
