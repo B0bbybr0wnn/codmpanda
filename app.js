@@ -19390,18 +19390,9 @@ function renderHomeClipCard(c) {
         ${c.caption ? `<p class="text-xs text-gray-300 mt-2 break-words">${esc(c.caption)}</p>` : ''}
       </div>
 
-      ${embedUrl ? `
-        <div class="relative w-full aspect-video bg-black">
-          <iframe src="${embedUrl}" class="w-full h-full" frameborder="0" allowfullscreen loading="lazy"></iframe>
-        </div>
-      ` : `
-        <a href="${esc(c.youtubeUrl)}" target="_blank" class="block w-full aspect-video bg-gradient-to-br from-primary/20 to-gold/10 flex items-center justify-center">
-          <div class="text-center">
-            <i data-lucide="external-link" class="w-8 h-8 mx-auto text-primary mb-2"></i>
-            <div class="text-xs text-gray-400">Open link</div>
-          </div>
-        </a>
-      `}
+      <div class="relative w-full aspect-video bg-black">
+        <iframe src="${embedUrl}" title="${authorName} clip" class="w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      </div>
 
       <div class="p-3 flex items-center justify-between">
         <button class="home-like-btn btn-press flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'}" data-type="clip" data-id="${c.id}">
