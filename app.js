@@ -19422,7 +19422,7 @@ function renderHomeClipCard(c) {
       </div>
 
       <div class="relative w-full aspect-video bg-black">
-        <iframe src="${embedUrl}" title="${authorName} clip" class="w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+        <iframe src="${embedUrl}" title="${authorName} clip" class="w-full h-full" style="pointer-events:none" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
       </div>
 
       <div class="p-3 flex items-center justify-between">
