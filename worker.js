@@ -1,6 +1,6 @@
 // CODMPanda Notify — clean Cloudflare Worker
 // Required secrets: GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON
-const BUILD = 'codmpanda-worker-v7';
+const BUILD = 'codmpanda-worker-v8';
 const APP_URL = 'https://codmpanda.pages.dev';
 // Google-maintained alias that follows the latest stable Flash model.
 const MODEL = 'gemini-flash-latest';
@@ -46,7 +46,7 @@ async function coachRoute(request, env) {
   try { body = await request.json(); } catch { return json({ success: false, error: 'Request body must be valid JSON.' }, 400); }
   const message = String(body.message || body.question || body.prompt || body.text || '').trim().slice(0, 1500);
   if (!message) return json({ success: false, error: 'Please enter a CODM question.' }, 400);
-  const rawHistory = (Array.isArray(body.history) ? body.history : []).slice(-8);
+  const rawHistory = (Array.isArray(body.history) ? body.history : []).slice(-16);
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const history = rawHistory.filter(x => {
     const stamp = Number(x?.timestamp || x?.createdAt || x?.time || 0);
