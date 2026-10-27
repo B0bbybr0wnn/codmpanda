@@ -13319,18 +13319,32 @@ function renderNotificationsList(notifs) {
   if (window.lucide) window.lucide.createIcons();
 }
 
-// Create a helper to log in-app notifications
+// Create notifications idempotently so repeated wrappers/retries cannot create duplicate documents.
+function cpNotificationHash(value) {
+  let hash=2166136261;
+  for(let i=0;i<value.length;i++){hash^=value.charCodeAt(i);hash=Math.imul(hash,16777619);}
+  return (hash>>>0).toString(36);
+}
 async function logInAppNotification(userId, type, title, body, data) {
   try {
-    await addDoc(collection(db, 'notifications'), {
+    const eventData=data||{};
+    const explicitEvent=eventData.eventId||eventData.requestId||eventData.messageId||eventData.contentId||eventData.submissionId||eventData.leakId||eventData.badge||eventData.fromUid||eventData.fromUserId||'';
+    const dedupeWindow=explicitEvent?'':String(Math.floor(Date.now()/60000));
+    const identity=JSON.stringify([String(userId||''),String(type||'default'),String(title||''),String(body||''),eventData,explicitEvent?'':dedupeWindow]);
+    const notificationId='evt_'+cpNotificationHash(identity);
+    const notificationRef=doc(db,'notifications',notificationId);
+    const existing=await getDoc(notificationRef);
+    if(existing.exists())return notificationId;
+    await setDoc(notificationRef,{
       userId,
-      type: type || 'default',
-      title: title || '',
-      body: body || '',
-      data: data || {},
-      read: false,
-      createdAt: serverTimestamp()
+      type:type||'default',
+      title:title||'',
+      body:body||'',
+      data:eventData,
+      read:false,
+      createdAt:serverTimestamp()
     });
+    return notificationId;
   } catch (e) {
     console.error('Log notif error:', e);
   }
@@ -19359,8 +19373,8 @@ function renderHomeClipCard(c) {
           <span class="text-[10px] text-gray-500 ml-auto">${cpDateTimeHTML(c.createdAt)}</span>
         </div>
         <div class="flex items-center gap-2">
-          <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0">
-            ${c.submittedByAvatar ? `<img src="${esc(c.submittedByAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName)}
+          <div data-uid="${esc(c.submittedByUid || c.uid || c.userId || c.authorUid || '')}" class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-visible flex-shrink-0">
+            ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...c, avatar: c.submittedByAvatar || c.avatar || '', ign: authorName, avatarFrame: c.avatarFrame || c.equippedAvatarFrame || c.equippedFrame || 'none'}, 32) : (c.submittedByAvatar ? `<img src="${esc(c.submittedByAvatar)}" class="w-full h-full object-cover" />` : getInitials(authorName))}
           </div>
           <div class="text-xs text-gray-400">by <span data-uid="${esc(c.submittedByUid || c.uid || c.userId || c.authorUid || '')}" class="text-white font-bold">${esc(authorName)}</span> · ${esc(c.gunTag || 'CODM')}</div>
         </div>
@@ -19384,9 +19398,19 @@ function renderHomeClipCard(c) {
         <button class="home-like-btn btn-press flex items-center gap-1.5 text-xs ${isLiked ? 'text-primary' : 'text-gray-400'}" data-type="clip" data-id="${c.id}">
           <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i> ${c.likes || 0}
         </button>
+        <button class="cp-home-clip-comments-toggle btn-press flex items-center gap-1.5 text-xs text-gray-400" data-id="${c.id}" type="button">
+          <i data-lucide="message-circle" class="w-4 h-4"></i> <span class="cp-home-clip-comment-count">${Number(c.commentCount) || 0}</span> Comments
+        </button>
         <button class="home-share-btn btn-press text-primary" data-type="clip" data-id="${c.id}">
           <i data-lucide="share-2" class="w-4 h-4"></i>
         </button>
+      </div>
+      <div class="border-t border-border px-3 py-3" data-cp-clip-comments="${esc(c.id)}">
+        <div class="cp-home-clip-comments-list space-y-3 mb-3" aria-live="polite"><div class="text-[10px] text-gray-500">Loading comments…</div></div>
+        <div class="flex gap-2">
+          <input class="cp-home-clip-comment-input flex-1 min-w-0" data-id="${esc(c.id)}" maxlength="300" placeholder="Write a comment…" aria-label="Write a clip comment" />
+          <button class="cp-home-clip-comment-send btn-press px-3 rounded-xl bg-primary text-white text-xs font-bold" data-id="${esc(c.id)}" type="button">Send</button>
+        </div>
       </div>
     </div>
   `;
@@ -20669,8 +20693,8 @@ function openWritePostSheet() {
   openSheet(`
     <div class="space-y-4">
       <div class="flex items-center gap-3 mb-2">
-        <div class="w-11 h-11 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-hidden flex-shrink-0">
-          ${State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" class="w-full h-full object-cover" />` : getInitials(State.profile?.ign || '?')}
+        <div class="w-11 h-11 rounded-full bg-primary/20 flex items-center justify-center font-bold overflow-visible flex-shrink-0">
+          ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...State.profile, avatar: State.profile?.avatar || '', ign: State.profile?.ign || 'You', avatarFrame: State.profile?.avatarFrame || State.profile?.equippedAvatarFrame || State.profile?.equippedFrame || State.profile?.frame || State.profile?.profileFrame || 'none'}, 44) : (State.profile?.avatar ? `<img src="${esc(State.profile.avatar)}" class="w-full h-full object-cover" />` : getInitials(State.profile?.ign || '?'))}
         </div>
         <div>
           <div data-uid="${esc(State.profile?.uid || State.user?.uid || '')}" class="text-sm font-bold">${esc(State.profile?.ign || 'You')}</div>
@@ -20680,6 +20704,8 @@ function openWritePostSheet() {
 
       <div>
         <textarea id="post-text" rows="6" maxlength="${limit}" placeholder="What's on your mind, Panda?" style="font-size: 15px; line-height: 1.5;"></textarea>
+        <div class="text-[10px] text-gray-500 mt-1">Tip: type <span class="text-primary font-bold">#</span> to discover popular hashtags.</div>
+        <div id="post-hashtag-suggestions" class="hidden rounded-xl border border-white/10 bg-[#111] mt-2 overflow-hidden" role="listbox" aria-label="Hashtag suggestions"></div>
         <div class="flex items-center justify-between mt-2">
           <span id="post-counter" class="text-[10px] text-gray-500">0 / ${limit}</span>
           ${!isPro ? `<span id="pro-hint" class="text-[10px] text-gold font-bold hidden"> Upgrade for unlimited</span>` : ''}
@@ -20738,6 +20764,8 @@ function openWritePostSheet() {
         uid: State.user.uid,
         ign: State.profile.ign,
         avatar: State.profile.avatar || '',
+        avatarFrame: State.profile.avatarFrame || State.profile.equippedAvatarFrame || State.profile.equippedFrame || 'none',
+        equippedAvatarFrame: State.profile.equippedAvatarFrame || State.profile.avatarFrame || 'none',
         text,
         hashtags,
         imageUrl,
@@ -20746,6 +20774,7 @@ function openWritePostSheet() {
         createdAt: serverTimestamp(),
         expiresAt
       });
+      await cpRecordPostHashtags(hashtags);
 
       toast('✅ Posted!', 'success');
       closeSheet();
@@ -20918,7 +20947,7 @@ function renderHomePostCard(post) {
     <div class="home-card bg-card border border-border rounded-2xl p-4 mb-3 fade-in" data-type="post" data-id="${post.id}">
       <div class="flex items-start gap-3 mb-3">
         <div data-uid="${esc(post.uid || '')}" class="w-11 h-11 rounded-full bg-gradient-to-br from-primary/30 to-gold/30 flex items-center justify-center font-black text-base overflow-visible flex-shrink-0 cursor-pointer">
-          ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
+          ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...post, avatarFrame: post.avatarFrame || post.equippedAvatarFrame || post.equippedFrame || post.frame || post.profileFrame || 'none'}, 44) : (post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign))}
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
@@ -21123,6 +21152,7 @@ renderHomeFeed = function() {
 
   feedEl.innerHTML = items.map(item => renderHomeCard(item)).join('');
   wireHomeCards(items);
+  wireHomeClipComments(feedEl, items);
   if (window.lucide) window.lucide.createIcons();
 };
 
@@ -21177,6 +21207,53 @@ wireHomeEmpty = function() {
   if (window.lucide) window.lucide.createIcons();
 };
 
+
+/* Home feed clip comments + database-backed hashtag suggestions. */
+function cpRenderInlineClipComment(c) {
+  const user={...c,avatarFrame:c.avatarFrame||c.equippedAvatarFrame||c.equippedFrame||'none'};
+  const avatar=window.CODMRenderFramedAvatar?window.CODMRenderFramedAvatar(user,30):(c.avatar?`<img src="${esc(c.avatar)}" class="w-full h-full object-cover rounded-full" />`:getInitials(c.ign));
+  return `<div class="flex items-start gap-2.5"><div data-uid="${esc(c.uid||'')}" class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-visible flex-shrink-0">${avatar}</div><div class="min-w-0 flex-1 rounded-xl bg-cardAlt border border-border px-3 py-2"><div class="text-[10px] font-bold text-primary mb-1">${esc(c.ign||'Player')}</div><div class="text-xs text-gray-200 break-words whitespace-pre-wrap">${esc(c.text||'')}</div><div class="text-[9px] text-gray-600 mt-1">${cpDateTimeHTML(c.createdAt)}</div></div></div>`;
+}
+async function cpLoadHomeClipComments(feed,clipId){
+  const section=[...feed.querySelectorAll('[data-cp-clip-comments]')].find(el=>el.dataset.cpClipComments===String(clipId));
+  const list=section?.querySelector('.cp-home-clip-comments-list');if(!list)return;
+  try{
+    const snap=await getDocs(query(collection(db,'comments'),where('contentId','==',String(clipId)),limit(100)));
+    if(!list.isConnected)return;
+    const comments=snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>!c.contentType||c.contentType==='clip').sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+    const count=section.closest('.home-card')?.querySelector('.cp-home-clip-comment-count');if(count)count.textContent=String(comments.length);
+    list.innerHTML=comments.length?comments.slice(-12).map(cpRenderInlineClipComment).join(''):'<div class="text-[10px] text-gray-500">No comments yet. Be the first to reply.</div>';
+  }catch(error){console.warn('[Home clip comments] Load failed',error);list.innerHTML='<div class="text-[10px] text-gray-500">Comments could not load. Try again shortly.</div>';}
+}
+function wireHomeClipComments(feed,items){
+  feed.querySelectorAll('[data-cp-clip-comments]').forEach(section=>{
+    const clipId=String(section.dataset.cpClipComments||'');if(!clipId)return;
+    cpLoadHomeClipComments(feed,clipId);
+    const input=section.querySelector('.cp-home-clip-comment-input'),send=section.querySelector('.cp-home-clip-comment-send');
+    const submit=async()=>{
+      if(!State.user||!State.profile){if(typeof showAuthGate==='function')showAuthGate();return;}
+      const text=String(input?.value||'').trim();if(!text)return;if(text.length>300){toast('Comment too long','error');return;}
+      if(!input||!send||send.disabled)return;input.disabled=true;send.disabled=true;
+      try{
+        await addDoc(collection(db,'comments'),{contentId:clipId,contentType:'clip',uid:State.user.uid,ign:State.profile.ign||State.profile.displayName||'Player',avatar:State.profile.avatar||State.profile.photoURL||'',avatarFrame:State.profile.avatarFrame||State.profile.equippedAvatarFrame||State.profile.equippedFrame||'none',equippedAvatarFrame:State.profile.equippedAvatarFrame||State.profile.avatarFrame||'none',text,likes:0,createdAt:serverTimestamp()});
+        input.value='';await cpLoadHomeClipComments(feed,clipId);
+        const clip=items.find(item=>String(item.id)===clipId),ownerUid=clip?.submittedByUid||clip?.uid||clip?.userId||clip?.authorUid;
+        if(ownerUid&&ownerUid!==State.user.uid&&typeof sendNotificationToUser==='function')sendNotificationToUser(ownerUid,`💬 ${State.profile.ign||'Player'}`,text.length>60?text.slice(0,60)+'…':text,{type:'comment',contentType:'clip',contentId:clipId,eventId:`clip-comment:${clipId}:${State.user.uid}:${Date.now()}`}).catch(()=>{});
+      }catch(error){console.error('[Home clip comments] Send failed',error);toast('Could not send comment','error');}
+      finally{input.disabled=false;send.disabled=false;input.focus();}
+    };
+    send.onclick=submit;input.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();submit();}};
+    section.closest('.home-card')?.querySelector('.cp-home-clip-comments-toggle')?.addEventListener('click',()=>input.focus());
+  });
+}
+function cpCleanHashtag(value){return String(value||'').replace(/^#+/,'').replace(/[^\p{L}\p{N}_]/gu,'').toLowerCase().slice(0,30);}
+async function cpGetHashtagSuggestions(prefix){
+  const normalized=cpCleanHashtag(prefix),tags=new Map();
+  try{const popular=await getDocs(query(collection(db,'hashtags'),orderBy('count','desc'),limit(8)));popular.forEach(d=>{const data=d.data()||{},tag=cpCleanHashtag(data.tag||d.id);if(tag&&(!normalized||tag.startsWith(normalized)))tags.set(tag,{tag,count:Number(data.count)||0});});}catch(error){console.warn('[Hashtags] Popular query unavailable',error);}
+  if(normalized)try{const matches=await getDocs(query(collection(db,'hashtags'),where('tag','>=',normalized),where('tag','<=',normalized+'\uf8ff'),orderBy('tag'),limit(8)));matches.forEach(d=>{const data=d.data()||{},tag=cpCleanHashtag(data.tag||d.id);if(tag)tags.set(tag,{tag,count:Number(data.count)||0});});}catch(error){console.warn('[Hashtags] Prefix query unavailable',error);}
+  return [...tags.values()].sort((a,b)=>b.count-a.count||a.tag.localeCompare(b.tag)).slice(0,8);
+}
+function cpRecordPostHashtags(tags){return Promise.all([...new Set((tags||[]).map(cpCleanHashtag).filter(Boolean))].slice(0,10).map(tag=>setDoc(doc(db,'hashtags',tag),{tag,count:increment(1),updatedAt:serverTimestamp()},{merge:true}).catch(error=>console.warn('[Hashtags] Popularity update failed',tag,error))));}
 // ============================================
 // PART 8: POST INTERACTIONS
 // ============================================
@@ -21390,8 +21467,8 @@ async function openPostComments(postId) {
     <div class="space-y-4">
       <div class="bg-cardAlt border border-border rounded-xl p-3">
         <div class="flex items-center gap-2 mb-2">
-          <div data-uid="${esc(post.uid || '')}" class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden cursor-pointer">
-            ${post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign)}
+          <div data-uid="${esc(post.uid || '')}" class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-visible cursor-pointer">
+            ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...post, avatarFrame: post.avatarFrame || post.equippedAvatarFrame || post.equippedFrame || 'none'}, 28) : (post.avatar ? `<img src="${esc(post.avatar)}" class="w-full h-full object-cover" />` : getInitials(post.ign))}
           </div>
           <span data-uid="${esc(post.uid || '')}" class="text-xs font-bold cursor-pointer">${esc(post.ign)}</span>
         </div>
@@ -21506,8 +21583,8 @@ function renderCommentRow(c, replies) {
   return `
     <div class="comment-thread" data-comment-id="${c.id}">
       <div class="flex items-start gap-2.5">
-        <div data-uid="${esc(c.uid || '')}" class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-hidden flex-shrink-0 cursor-pointer">
-          ${c.avatar ? `<img src="${esc(c.avatar)}" class="w-full h-full object-cover" />` : getInitials(c.ign)}
+        <div data-uid="${esc(c.uid || '')}" class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold overflow-visible flex-shrink-0 cursor-pointer">
+          ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...c, avatarFrame: c.avatarFrame || c.equippedAvatarFrame || c.equippedFrame || 'none'}, 32) : (c.avatar ? `<img src="${esc(c.avatar)}" class="w-full h-full object-cover" />` : getInitials(c.ign))}
         </div>
         <div class="flex-1 min-w-0">
           <div class="bg-cardAlt border border-border rounded-2xl px-3 py-2">
@@ -21548,8 +21625,8 @@ function renderReplyRow(r) {
 
   return `
     <div class="flex items-start gap-2">
-      <div data-uid="${esc(r.uid || '')}" class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-hidden flex-shrink-0 cursor-pointer">
-        ${r.avatar ? `<img src="${esc(r.avatar)}" class="w-full h-full object-cover" />` : getInitials(r.ign)}
+      <div data-uid="${esc(r.uid || '')}" class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold overflow-visible flex-shrink-0 cursor-pointer">
+        ${window.CODMRenderFramedAvatar ? window.CODMRenderFramedAvatar({...r, avatarFrame: r.avatarFrame || r.equippedAvatarFrame || r.equippedFrame || 'none'}, 24) : (r.avatar ? `<img src="${esc(r.avatar)}" class="w-full h-full object-cover" />` : getInitials(r.ign))}
       </div>
       <div class="flex-1 min-w-0">
         <div class="bg-card border border-border rounded-2xl px-3 py-2">
@@ -21685,6 +21762,8 @@ async function sendPostComment(postId) {
       uid: State.user.uid,
       ign: State.profile.ign,
       avatar: State.profile.avatar || '',
+      avatarFrame: State.profile.avatarFrame || State.profile.equippedAvatarFrame || State.profile.equippedFrame || 'none',
+      equippedAvatarFrame: State.profile.equippedAvatarFrame || State.profile.avatarFrame || 'none',
       text,
       likes: 0,
       createdAt: serverTimestamp()
@@ -29832,3 +29911,29 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
   };
   window.switchTab=switchTab;
 })();
+
+
+
+const _cpOriginalOpenWritePostSheetHashtags = openWritePostSheet;
+openWritePostSheet = function() {
+  _cpOriginalOpenWritePostSheetHashtags();
+  const textarea=document.getElementById('post-text'), menu=document.getElementById('post-hashtag-suggestions');
+  if(!textarea||!menu)return;
+  let request=0, tokenStart=-1;
+  const hide=()=>{menu.classList.add('hidden');menu.innerHTML='';tokenStart=-1;};
+  const show=async(prefix,start)=>{
+    const id=++request;tokenStart=start;menu.classList.remove('hidden');menu.innerHTML='<div class="px-3 py-3 text-[10px] text-gray-500">Finding hashtags…</div>';
+    const results=await cpGetHashtagSuggestions(prefix);if(id!==request||!menu.isConnected)return;
+    const items=results.length?results:(prefix?[{tag:cpCleanHashtag(prefix),count:0}].filter(x=>x.tag):[]);
+    if(!items.length){menu.innerHTML='<div class="px-3 py-3 text-[10px] text-gray-500">No popular hashtags yet.</div>';return;}
+    menu.innerHTML='<div class="px-3 pt-2 pb-1 text-[9px] uppercase tracking-wider text-gray-500 font-bold">Popular hashtags</div>'+items.map(x=>'<button type="button" role="option" class="cp-hashtag-option w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-white/5" data-tag="'+esc(x.tag)+'"><span class="text-xs font-bold text-primary">#'+esc(x.tag)+'</span><span class="text-[9px] text-gray-500">'+(x.count?x.count.toLocaleString()+' posts':'Add hashtag')+'</span></button>').join('');
+    menu.querySelectorAll('.cp-hashtag-option').forEach(button=>button.onclick=()=>{
+      const tag=cpCleanHashtag(button.dataset.tag),caret=textarea.selectionStart,before=textarea.value.slice(0,caret),match=before.match(/#([\p{L}\p{N}_]*)$/u),start=match?caret-match[0].length:tokenStart;
+      if(!tag)return;textarea.value=textarea.value.slice(0,Math.max(0,start))+'#'+tag+' '+textarea.value.slice(textarea.selectionEnd);
+      const next=Math.max(0,start)+tag.length+2;textarea.setSelectionRange(next,next);textarea.dispatchEvent(new Event('input',{bubbles:true}));textarea.focus();
+    });
+  };
+  const update=()=>{const caret=textarea.selectionStart,match=textarea.value.slice(0,caret).match(/#([\p{L}\p{N}_]*)$/u);if(match)show(match[1],caret-match[0].length);else hide();};
+  textarea.addEventListener('input',update);textarea.addEventListener('click',update);
+  document.addEventListener('click',event=>{if(!event.target.closest('#post-hashtag-suggestions')&&event.target!==textarea)hide();});
+};
