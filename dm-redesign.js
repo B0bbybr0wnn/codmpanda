@@ -102,28 +102,24 @@ import { getFirestore, collection, getDocs, limit, query, where, doc, updateDoc,
     const body=document.getElementById('inbox-full-body');
     if(!body)return;
 
-    // DM-only controls belong on the Messages tab, not the Notifications tab.
-    const messagesTab=document.querySelector('.inbox-tab-btn[data-tab="messages"]');
-    const messagesActive=!!messagesTab&&/#ff6b00/i.test(messagesTab.getAttribute('style')||'');
-    if(!messagesActive){
-      body.querySelector('#cp-dm-inbox-toolbar')?.remove();
-      return;
-    }
-    // The legacy inbox renderer replaces body.innerHTML during loading and after
-    // results arrive. Re-create the toolbar whenever that happens.
-    if(body.querySelector('#cp-dm-inbox-toolbar'))return;
-
-    // Keep only the compact New Chat text link above the conversation list.
+    // Keep the inbox renderer's single New Chat link beside the conversation count.
+    // Remove the injected top-right toolbar to avoid a duplicate control.
+    body.querySelector('#cp-dm-inbox-toolbar')?.remove();
     body.querySelector('#cp-dm-unread-badge')?.remove();
     body.querySelector('#cp-dm-inbox-search')?.remove();
-    const top=document.createElement('div');
-    top.id='cp-dm-inbox-toolbar';
-    top.style.cssText='display:flex;justify-content:flex-end;align-items:center;padding:8px 12px 10px;background:#050505';
-    top.innerHTML='<button type="button" id="cp-dm-new-chat-btn" style="border:0;background:transparent;color:#ff8a3d;font-size:12px;font-weight:800;padding:6px 0;cursor:pointer">＋ New Chat</button>';
-    body.prepend(top);
-    top.querySelector('#cp-dm-new-chat-btn').addEventListener('click',openNewChat);
-  }
 
+    const messagesTab=document.querySelector('.inbox-tab-btn[data-tab="messages"]');
+    const messagesActive=!!messagesTab&&/#ff6b00/i.test(messagesTab.getAttribute('style')||'');
+    if(!messagesActive)return;
+
+    body.querySelectorAll('#inbox-new-chat-btn, #inbox-new-chat').forEach(button=>{
+      button.onclick=event=>{
+        event.preventDefault();
+        event.stopPropagation();
+        openNewChat();
+      };
+    });
+  }
   async function toggleBlockCurrentUser(button){
     const target=window.__cpCurrentDMTarget;
     const fb=appDb();
