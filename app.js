@@ -26648,8 +26648,10 @@ window.performGlobalSearch = performGlobalSearch;
         if(nameUser?.ign){const marks=Array.from(el.querySelectorAll('.verified-badge,.cp-pro-spike-badge,[data-pro-badge="true"]'));el.textContent=nameUser.ign;marks.forEach(mark=>el.appendChild(mark));}
       }
       if(el.closest('#sheet-container')?.dataset.cpSkipFrame==='1')continue;
-      if(!el.querySelector('img') && !/^w-(?:[0-9]+|\d+\.\d+)$/.test(el.className||'') && !/rounded-(?:full|2xl)/.test(el.className||''))continue;
-      const rect=el.getBoundingClientRect();if(rect.width<24||rect.width>100||rect.height<24||rect.height>100)continue;
+      // Only decorate known avatar hosts. Image-bearing post cards and media wrappers
+      // also carry data-uid, but must never be replaced by an avatar frame.
+      if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.classList.contains('cp-avatar-profile-frame-host') && !el.classList.contains('cp-v4-clip-avatar'))continue;
+      const rect=el.getBoundingClientRect();if(rect.width<24||rect.width>180||rect.height<24||rect.height>180)continue;
       const uid=el.dataset.uid;if(!uid)continue;
       const user=await getPublicProfile(uid);if(!user)continue;
       const frameKey=([user.avatarFrame,user.equippedAvatarFrame,user.equippedFrame,user.selectedFrame,user.frameId,user.frame,user.profileFrame].map(normalizeCODMFrameKey).find(key=>key!=='none'&&WAR_ARTIFACT_FRAMES[key])||'none');
@@ -28880,8 +28882,15 @@ function __cpProfilePostHasContentV3(post, owner) {
   const media = String(post.imageUrl || post.mediaUrl || post.videoUrl || post.media || '').trim();
   const avatar = String(owner?.avatar || owner?.photoURL || owner?.photoUrl || '').trim();
   if (!text && !media) return false;
-  // Frame artwork is profile cosmetics, never standalone community-post content.
-  if (!text && media && /(?:^|\/)frames?\//i.test(media.split(/[?#]/)[0])) return false;
+  // Avatar-frame artwork is a profile cosmetic, never standalone community-post content.
+  // Handle direct /frames paths, URL-encoded Firebase paths, and known frame asset names.
+  const frameMedia = media.split(/[?#]/)[0];
+  let decodedFrameMedia = frameMedia;
+  try { decodedFrameMedia = decodeURIComponent(frameMedia); } catch (_) {}
+  const frameFiles = Object.values(window.CODM_WAR_ARTIFACT_FRAMES || {}).map(frame => String(frame.file || '').toLowerCase()).filter(Boolean);
+  const isFrameArtwork = /(?:^|\\/)frames?\\//i.test(decodedFrameMedia) ||
+    frameFiles.some(file => decodedFrameMedia.toLowerCase().endsWith('/' + file) || decodedFrameMedia.toLowerCase().includes(encodeURIComponent(file).toLowerCase()));
+  if (!text && media && isFrameArtwork) return false;
   if (!text && media && avatar && media === avatar) return false;
   return true;
 }
