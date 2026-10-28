@@ -29415,7 +29415,10 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
       const posts=postSnapshot.docs.map(d=>{
         const raw=d.data()||{};
-        if(!String(raw.text||'').trim()&&!String(raw.imageUrl||'').trim())return null;
+        const postText=String(raw.text||'').trim(), imageUrl=String(raw.imageUrl||'').trim();
+        const profileAvatar=String(user.avatar||user.photoURL||user.photoUrl||'').trim();
+        if(!postText&&!imageUrl)return null;
+        if(!postText&&imageUrl&&profileAvatar&&imageUrl===profileAvatar)return null;
         const post=Object.assign({},raw,{
           id:d.id,type:'post',uid:raw.uid||uid,ign:user.ign||user.displayName||raw.ign||'Unknown',
           avatar:user.avatar||user.photoURL||user.photoUrl||raw.avatar||'',
