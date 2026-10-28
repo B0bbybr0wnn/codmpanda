@@ -28875,30 +28875,61 @@ function __cpYouProfileCardV2(p, uid, detail) {
   '</section>';
 }
 
+function __cpProfilePostHasContentV3(post, owner) {
+  const text = String(post.text || post.caption || post.content || '').trim();
+  const media = String(post.imageUrl || post.mediaUrl || post.videoUrl || post.media || '').trim();
+  const avatar = String(owner?.avatar || owner?.photoURL || owner?.photoUrl || '').trim();
+  if (!text && !media) return false;
+  if (!text && media && avatar && media === avatar) return false;
+  return true;
+}
+
+function __cpRenderProfilePostsV3(host, posts, owner, emptyMessage) {
+  if (!host) return;
+  const uid = String(owner?.uid || owner?.id || '');
+  const visiblePosts = (Array.isArray(posts) ? posts : [])
+    .filter(post => post && String(post.uid || '') === uid && __cpProfilePostHasContentV3(post, owner))
+    .sort((a, b) => __cpYouMillisV2(b.createdAt || b.timestamp || b.publishedAt) - __cpYouMillisV2(a.createdAt || a.timestamp || a.publishedAt));
+  if (!visiblePosts.length) {
+    host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-6 text-center"><div class="text-3xl mb-2">📝</div><div class="text-sm font-bold">No posts yet</div><p class="text-xs text-gray-500 mt-1">' + esc(emptyMessage || 'Published community posts will appear here.') + '</p></div>';
+    return;
+  }
+  host.innerHTML = visiblePosts.map(post => {
+    try { return renderHomePostCard(post); }
+    catch (err) {
+      console.warn('[CODMPanda] Could not render profile post', err);
+      const text = String(post.text || post.caption || post.content || '').trim();
+      const media = String(post.imageUrl || post.mediaUrl || post.videoUrl || '').trim();
+      return '<article class="bg-card border border-border rounded-2xl p-4 mb-3">' +
+        (text ? '<p class="text-sm whitespace-pre-wrap break-words">' + esc(text) + '</p>' : '') +
+        (media ? '<img src="' + esc(media) + '" alt="Post media" loading="lazy" class="mt-3 rounded-xl max-w-full h-auto" />' : '') +
+        '<p class="text-[10px] text-gray-500 mt-2">' + cpDateTimeHTML(post.createdAt || post.timestamp || post.publishedAt) + '</p></article>';
+    }
+  }).join('');
+  if (window.lucide) window.lucide.createIcons();
+  if (typeof window.__codmpandaRefreshNamesAndAvatars === 'function') setTimeout(window.__codmpandaRefreshNamesAndAvatars, 80);
+}
+
 async function __cpYouLoadPostsV2(host) {
-  if (!host || !State.user || !State.user.uid) return;
+  const owner = State.user ? Object.assign({}, State.profile || {}, { uid: State.user.uid, id: State.user.uid }) : null;
+  if (!host || !owner?.uid) return;
   host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="spinner mx-auto"></div><p class="text-xs text-gray-500 mt-2">Loading your posts…</p></div>';
   try {
-    const snap = await getDocs(query(collection(db, 'posts'), where('uid', '==', State.user.uid), limit(100)));
-    const posts = snap.docs.map(item => Object.assign({}, item.data(), { id: item.id }))
-      .sort((a, b) => __cpYouMillisV2(b.createdAt) - __cpYouMillisV2(a.createdAt));
-    if (!posts.length) {
-      host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-6 text-center"><div class="text-3xl mb-2">📝</div><div class="text-sm font-bold">No posts yet</div><p class="text-xs text-gray-500 mt-1">Your community posts will appear here after you publish them.</p></div>';
-      return;
-    }
-    host.innerHTML = posts.map(post => {
-      try {
-        return renderHomePostCard(post);
-      } catch (err) {
-        console.warn('[CODMPanda] Could not render profile post', err);
-        return '<article class="bg-card border border-border rounded-2xl p-4 mb-3"><p class="text-sm whitespace-pre-wrap break-words">' + esc(post.text || post.caption || 'Community post') + '</p><p class="text-[10px] text-gray-500 mt-2">' + cpDateTimeHTML(post.createdAt) + '</p></article>';
-      }
-    }).join('');
-    if (window.lucide) window.lucide.createIcons();
-    if (typeof window.__codmpandaRefreshNamesAndAvatars === 'function') setTimeout(window.__codmpandaRefreshNamesAndAvatars, 80);
+    const snap = await getDocs(query(collection(db, 'posts'), where('uid', '==', owner.uid), limit(100)));
+    const posts = snap.docs.map(item => {
+      const raw = item.data() || {};
+      return Object.assign({}, raw, {
+        id: item.id, uid: String(raw.uid || ''),
+        ign: owner.ign || owner.displayName || raw.ign || 'Unknown',
+        avatar: owner.avatar || owner.photoURL || owner.photoUrl || raw.avatar || '',
+        avatarFrame: owner.avatarFrame || owner.equippedAvatarFrame || owner.equippedFrame || raw.avatarFrame || 'none'
+      });
+    }).filter(post => String(post.uid) === String(owner.uid));
+    __cpRenderProfilePostsV3(host, posts, owner, 'Your published community posts will appear here after you publish them.');
   } catch (error) {
     console.warn('[CODMPanda] Could not load profile posts', error);
-    host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="text-sm font-bold">Posts are temporarily unavailable</div><p class="text-xs text-gray-500 mt-1">Please check your connection and try again.</p></div>';
+    host.innerHTML = '<div class="bg-card border border-border rounded-2xl p-5 text-center"><div class="text-sm font-bold">Posts are temporarily unavailable</div><p class="text-xs text-gray-500 mt-1">Your posts could not be loaded. Check your connection and try again.</p><button type="button" class="btn-press mt-3 px-4 py-2 rounded-xl bg-cardAlt border border-border text-xs font-bold" data-cp-reload-profile-posts>Try again</button></div>';
+    host.querySelector('[data-cp-reload-profile-posts]')?.addEventListener('click', () => __cpYouLoadPostsV2(host));
   }
 }
 
@@ -29267,29 +29298,7 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
     r.__cpPPActiveTab=tab; tabButtons(r,tab);
     const host=r.querySelector('#cp-pp-tab-content'); if(!host)return;
     if(tab==='posts'){
-      if(!data.posts.length){host.innerHTML='<div class="cp-pp-empty mt-2"><div style="font-size:34px;margin-bottom:8px">📝</div><div class="text-sm font-black">No posts yet</div><p class="text-xs text-gray-500 mt-2">When this player shares something with the community, it will appear here.</p></div>';return}
-      host.innerHTML=data.posts.map(post=>{try{
-        let card;
-        if(post.type==='clip') card=renderHomeClipCard(post);
-        else if(post.type==='vault') card=renderHomeVaultCard(post);
-        else if(post.type==='lobby') card=renderHomeLobbyCard(post);
-        else if(post.type==='leak') card=renderHomeLeakCard(post);
-        else card=renderHomePostCard(post);
-        const uid=esc(post.uid||data.uid||'');
-        const avatarPattern=new RegExp('<div data-uid="[^"]*" class="w-11 h-11[^"]*">[^]*?</div>');
-        if(avatarPattern.test(card)){
-          card=card.replace(avatarPattern,'<div data-uid="'+uid+'" data-profile-link="true" class="w-11 h-11 rounded-full flex items-center justify-center overflow-visible flex-shrink-0 cursor-pointer">'+avatarHTML(post,44)+'</div>');
-        }
-        const namePattern=new RegExp('(<span data-uid="[^"]*" class="font-bold text-sm cursor-pointer">[^]*?</span>)');
-        if(namePattern.test(card)){
-          const earned=Array.isArray(post.badges)?post.badges.slice(0,3).map(value=>{const badge=badgeLabel(value);return '<span class="text-[11px] leading-none" title="'+esc(badge[1])+'" aria-label="'+esc(badge[1])+'" role="img">'+badge[0]+'</span>'}).join(''):'';
-          const profileBadge=post.profileBadge?'<span class="text-[9px] font-black rounded px-1.5 py-0.5 bg-primary/15 text-primary">'+esc(String(post.profileBadge))+'</span>':'';
-          card=card.replace(namePattern,'$1'+(typeof renderVerifiedBadge==='function'?renderVerifiedBadge(post):'')+earned+profileBadge);
-        }
-        return card;
-      }catch(err){console.warn('[CODMPanda] Profile post render failed',err);return '<article class="bg-card border border-border rounded-2xl p-4 mb-3"><p class="text-sm whitespace-pre-wrap break-words">'+esc(post.text||post.caption||'Community post')+'</p><p class="text-[10px] text-gray-500 mt-2">'+cpDateTimeHTML(post.createdAt)+'</p></article>'}}).join('');
-      if(window.lucide)window.lucide.createIcons();
-      if(typeof window.__codmpandaRefreshNamesAndAvatars==='function')setTimeout(window.__codmpandaRefreshNamesAndAvatars,100);
+      __cpRenderProfilePostsV3(host, data.posts, Object.assign({}, data.user, {uid: data.uid, id: data.uid}), 'When this player publishes a community post, it will appear here.');
       return;
     }
     if(tab==='achievements'){
@@ -29423,87 +29432,29 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       if(!await canView(user,uid)){if(token===loadToken&&r.isConnected)renderPage(r,{uid,user,posts:[],counts:null,restricted:true});return}
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
       try{if(typeof __c54LoadLikes==='function')await __c54LoadLikes()}catch(_){}
-      // Profile Posts contains actual feed posts, shared clips, and still-active lobbies.
-      // Vaults and leaks are separate features, not feed posts, so do not mix them into this tab.
-      const [postSnapshot, clipSnapshots, lobbySnapshots] = await Promise.all([
-        getDocs(query(collection(db,'posts'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
-        Promise.all([
-          getDocs(query(collection(db,'clips'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
-          getDocs(query(collection(db,'clips'),where('submittedByUid','==',uid),limit(100))).catch(()=>({docs:[]}))
-        ]),
-        Promise.all([
-          getDocs(query(collection(db,'lobbies'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
-          getDocs(query(collection(db,'lobbies'),where('userId','==',uid),limit(100))).catch(()=>({docs:[]}))
-        ])
-      ]);
+      // Use the same authored-post collection for every account.
+      const postSnapshot = await getDocs(query(collection(db,'posts'),where('uid','==',uid),limit(100)));
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
-      const posts=postSnapshot.docs.map(d=>{
-        const raw=d.data()||{};
-        const postText=String(raw.text||'').trim();
-        const imageUrl=String(raw.imageUrl||raw.mediaUrl||'').trim();
-        const profileAvatar=String(user.avatar||user.photoURL||user.photoUrl||'').trim();
-        if(!postText&&!imageUrl)return null;
-        if(!postText&&imageUrl&&profileAvatar&&imageUrl===profileAvatar)return null;
-        const post=Object.assign({},raw,{
-          id:d.id,type:'post',uid:raw.uid||uid,
-          ign:user.ign||user.displayName||raw.ign||'Unknown',
-          avatar:user.avatar||user.photoURL||user.photoUrl||raw.avatar||'',
-          avatarFrame:user.avatarFrame||user.equippedAvatarFrame||user.equippedFrame||raw.avatarFrame||'none',
-          equippedAvatarFrame:user.equippedAvatarFrame||user.avatarFrame||raw.equippedAvatarFrame||'none',
-          isPro:user.isPro===true||user.pro===true||user.subscription==='pro'||user.proStatus==='active',
-          verified:user.verified===true,
-          badges:Array.isArray(user.badges)?user.badges:(Array.isArray(raw.badges)?raw.badges:[]),
-          profileBadge:user.profileBadge||user.badge||raw.profileBadge||raw.badge||'',
-          likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0
+      const posts = postSnapshot.docs.map(d => {
+        const raw = d.data() || {};
+        const authorUid = String(raw.uid || '');
+        if (authorUid !== String(uid)) return null;
+        const post = Object.assign({}, raw, {
+          id: d.id, type: 'post', uid: authorUid,
+          ign: user.ign || user.displayName || raw.ign || 'Unknown',
+          avatar: user.avatar || user.photoURL || user.photoUrl || raw.avatar || '',
+          avatarFrame: user.avatarFrame || user.equippedAvatarFrame || user.equippedFrame || raw.avatarFrame || 'none',
+          equippedAvatarFrame: user.equippedAvatarFrame || user.avatarFrame || raw.equippedAvatarFrame || 'none',
+          isPro: user.isPro === true || user.pro === true || user.subscription === 'pro' || user.proStatus === 'active',
+          verified: user.verified === true,
+          badges: Array.isArray(user.badges) ? user.badges : (Array.isArray(raw.badges) ? raw.badges : []),
+          profileBadge: user.profileBadge || user.badge || raw.profileBadge || raw.badge || '',
+          likes: Number(raw.likes) || 0, commentCount: Number(raw.commentCount) || 0
         });
-        postMap.set(String(post.id),post);
+        if (!__cpProfilePostHasContentV3(post, user)) return null;
+        postMap.set(String(post.id), post);
         return post;
       }).filter(Boolean);
-      const clipById=new Map();
-      for(const snapshot of clipSnapshots) for(const d of snapshot.docs){
-        const raw=d.data()||{};
-        const authorUid=String(raw.uid||raw.submittedByUid||raw.userId||'');
-        if(authorUid!==uid)continue;
-        clipById.set(d.id,Object.assign({},raw,{
-          id:d.id,type:'clip',uid:authorUid,submittedByUid:authorUid,
-          ign:user.ign||user.displayName||raw.submittedByIgn||raw.ign||'Unknown',
-          submittedByIgn:user.ign||user.displayName||raw.submittedByIgn||raw.ign||'Unknown',
-          avatar:user.avatar||user.photoURL||user.photoUrl||raw.avatar||raw.submittedByAvatar||'',
-          submittedByAvatar:user.avatar||user.photoURL||user.photoUrl||raw.submittedByAvatar||raw.avatar||'',
-          avatarFrame:user.avatarFrame||user.equippedAvatarFrame||user.equippedFrame||raw.avatarFrame||'none',
-          equippedAvatarFrame:user.equippedAvatarFrame||user.avatarFrame||raw.equippedAvatarFrame||'none',
-          likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0
-        }));
-      }
-      posts.push(...clipById.values());
-      const lobbyById=new Map();
-      for(const snapshot of lobbySnapshots) for(const d of snapshot.docs){
-        const raw=d.data()||{};
-        const authorUid=String(raw.uid||raw.userId||'');
-        if(authorUid!==uid)continue;
-        const lobby=Object.assign({},raw,{
-          id:d.id,type:'lobby',uid:authorUid,
-          ign:user.ign||raw.ign||'Unknown',
-          avatar:user.avatar||user.photoURL||user.photoUrl||raw.avatar||''
-        });
-        if(typeof cpLobbyIsExpired==='function'&&cpLobbyIsExpired(lobby))continue;
-        lobbyById.set(d.id,lobby);
-      }
-      posts.push(...lobbyById.values());
-      posts.sort((a,b)=>millis(b.createdAt||b.timestamp||b.publishedAt)-millis(a.createdAt||a.timestamp||a.publishedAt));
-      const clipIds=new Set([...clipById.keys()]);
-      if(clipIds.size){
-        try{
-          const commentsSnap=await getDocs(query(collection(db,'comments'),limit(500)));
-          const counts={};
-          commentsSnap.forEach(commentDoc=>{
-            const comment=commentDoc.data()||{};
-            if(comment.contentType==='clip'&&clipIds.has(String(comment.contentId))&&!comment.parentId)
-              counts[String(comment.contentId)]=(counts[String(comment.contentId)]||0)+1;
-          });
-          posts.forEach(post=>{if(post.type==='clip'&&counts[post.id]!==undefined)post.commentCount=counts[post.id];});
-        }catch(error){console.warn('[CODMPanda] Could not refresh profile clip comment counts',error);}
-      }
       renderPage(r,{uid,user,posts,counts:null,restricted:false});
     }catch(err){
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
