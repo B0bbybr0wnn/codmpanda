@@ -21653,7 +21653,7 @@ function renderReplyRow(r) {
         </div>
         <div class="flex items-center gap-3 mt-1.5 ml-1">
           <button class="comment-like-btn text-[10px] ${isLiked ? 'text-primary' : 'text-gray-500'} font-bold flex items-center gap-1" data-id="${r.id}">
-            ❤️ <span class="like-num">${r.likes || 0}</span>
+            <span data-cp-reaction-default="1">❤️</span> <span class="like-num">${r.likes || 0}</span>
           </button>
           ${isMine ? `
             <button class="comment-edit-btn text-[10px] text-primary font-bold" data-id="${r.id}">Edit</button>
@@ -29392,37 +29392,44 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       if(!await canView(user,uid)){if(token===loadToken&&r.isConnected)renderPage(r,{uid,user,posts:[],counts:null,restricted:true});return}
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
       try{if(typeof __c54LoadLikes==='function')await __c54LoadLikes()}catch(_){}
-      // Collect every supported content type across author-field names used by
-      // current and legacy records. One denied alias query must not hide other results.
-      const readByAuthorFields = (collectionName, fields) => Promise.all(fields.map(field =>
-        getDocs(query(collection(db,collectionName),where(field,'==',uid),limit(100))).catch(()=>({docs:[]}))));
-      const [postSnapshots, clipSnapshots, vaultSnapshots, lobbySnapshots, leakSnapshots] = await Promise.all([
-        readByAuthorFields('posts',['uid','userId','authorUid','submittedByUid','ownerUid','createdBy']),
-        readByAuthorFields('clips',['uid','submittedByUid','userId','authorUid','ownerUid','createdBy']),
-        readByAuthorFields('vaults',['uid','userId','ownerUid','authorUid','createdBy','submittedByUid']),
-        readByAuthorFields('lobbies',['uid','userId','ownerUid','authorUid','createdBy','hostUid']),
-        readByAuthorFields('leaks',['uid','submittedByUid','authorUid','userId','ownerUid','createdBy'])
+      const [postSnapshot, clipSnapshots, vaultSnapshots, lobbySnapshots, leakSnapshots] = await Promise.all([
+        getDocs(query(collection(db,'posts'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
+        Promise.all([
+          getDocs(query(collection(db,'clips'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'clips'),where('submittedByUid','==',uid),limit(100))).catch(()=>({docs:[]}))
+        ]),
+        Promise.all([
+          getDocs(query(collection(db,'vaults'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'vaults'),where('userId','==',uid),limit(100))).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'vaults'),where('ownerUid','==',uid),limit(100))).catch(()=>({docs:[]}))
+        ]),
+        Promise.all([
+          getDocs(query(collection(db,'lobbies'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'lobbies'),where('userId','==',uid),limit(100))).catch(()=>({docs:[]}))
+        ]),
+        Promise.all([
+          getDocs(query(collection(db,'leaks'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
+          getDocs(query(collection(db,'leaks'),where('submittedByUid','==',uid),limit(100))).catch(()=>({docs:[]}))
+        ])
       ]);
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
-      const postById=new Map();
-      for(const snapshot of postSnapshots) for(const d of snapshot.docs){
-        const raw=d.data()||{}, authorUid=String(raw.uid||raw.userId||raw.authorUid||raw.submittedByUid||raw.ownerUid||raw.createdBy||uid);
-        if(authorUid!==uid)continue;
+      const posts=postSnapshot.docs.map(d=>{
+        const raw=d.data()||{};
+        if(!String(raw.text||'').trim()&&!String(raw.imageUrl||'').trim())return null;
         const post=Object.assign({},raw,{
-          id:d.id,type:'post',uid:authorUid,ign:user.ign||user.displayName||raw.ign||'Unknown',
+          id:d.id,type:'post',uid:raw.uid||uid,ign:user.ign||user.displayName||raw.ign||'Unknown',
           avatar:user.avatar||user.photoURL||user.photoUrl||raw.avatar||'',
           avatarFrame:user.avatarFrame||user.equippedAvatarFrame||user.equippedFrame||raw.avatarFrame||'none',
           equippedAvatarFrame:user.equippedAvatarFrame||user.avatarFrame||raw.equippedAvatarFrame||'none',
           isPro:user.isPro===true||user.pro===true||user.subscription==='pro'||user.proStatus==='active',
           verified:user.verified===true,badges:Array.isArray(user.badges)?user.badges:(Array.isArray(raw.badges)?raw.badges:[]),profileBadge:user.profileBadge||user.badge||raw.profileBadge||raw.badge||'',likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0
         });
-        postMap.set(String(post.id),post);postById.set(d.id,post);
-      }
-      const posts=Array.from(postById.values());
+        postMap.set(String(post.id),post);return post;
+      }).filter(Boolean);
       const clipById=new Map();
       for(const snapshot of clipSnapshots) for(const d of snapshot.docs){
         const raw=d.data()||{};
-        const authorUid=String(raw.uid||raw.submittedByUid||raw.userId||raw.authorUid||raw.ownerUid||raw.createdBy||'');
+        const authorUid=String(raw.uid||raw.submittedByUid||raw.userId||raw.authorUid||'');
         if(authorUid!==uid)continue;
         clipById.set(d.id,Object.assign({},raw,{
           id:d.id,type:'clip',uid:authorUid,submittedByUid:authorUid,
@@ -29438,19 +29445,19 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       posts.push(...clipById.values());
       const otherByKey=new Map();
       for(const snapshot of vaultSnapshots) for(const d of snapshot.docs){
-        const raw=d.data()||{}, authorUid=String(raw.uid||raw.userId||raw.ownerUid||raw.authorUid||raw.createdBy||raw.submittedByUid||'');
+        const raw=d.data()||{}, authorUid=String(raw.uid||raw.userId||raw.ownerUid||'');
         if(authorUid!==uid)continue;
         otherByKey.set('vault_'+d.id,Object.assign({},raw,{id:d.id,type:'vault',uid:authorUid,ign:user.ign||raw.ign||'Unknown',avatar:user.avatar||user.photoURL||raw.avatar||'',likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0}));
       }
       for(const snapshot of lobbySnapshots) for(const d of snapshot.docs){
-        const raw=d.data()||{}, authorUid=String(raw.uid||raw.userId||raw.ownerUid||raw.authorUid||raw.createdBy||raw.hostUid||'');
+        const raw=d.data()||{}, authorUid=String(raw.uid||raw.userId||raw.ownerUid||'');
         if(authorUid!==uid)continue;
         const lobby=Object.assign({},raw,{id:d.id,type:'lobby',uid:authorUid,ign:user.ign||raw.ign||'Unknown',avatar:user.avatar||user.photoURL||raw.avatar||''});
         if(typeof cpLobbyIsExpired==='function'&&cpLobbyIsExpired(lobby))continue;
         otherByKey.set('lobby_'+d.id,lobby);
       }
       for(const snapshot of leakSnapshots) for(const d of snapshot.docs){
-        const raw=d.data()||{}, authorUid=String(raw.uid||raw.submittedByUid||raw.userId||raw.authorUid||raw.ownerUid||raw.createdBy||'');
+        const raw=d.data()||{}, authorUid=String(raw.uid||raw.submittedByUid||raw.userId||raw.authorUid||'');
         if(authorUid!==uid)continue;
         otherByKey.set('leak_'+d.id,Object.assign({},raw,{id:d.id,type:'leak',uid:authorUid,submittedByUid:authorUid,submittedByIgn:user.ign||raw.submittedByIgn||raw.ign||'Unknown',ign:user.ign||raw.ign||'Unknown',likes:Number(raw.likes)||0,hypes:Number(raw.hypes)||0}));
       }
