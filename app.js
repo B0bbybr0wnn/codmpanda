@@ -26900,7 +26900,22 @@ window.performGlobalSearch = performGlobalSearch;
   async function commitReaction(btn,type,id,key){
     if(!State.user){if(typeof showAuthGate==='function')showAuthGate();else if(typeof toast==='function')toast('Sign in to react.','warning');return;}
     if(!COLLECTIONS[type]||!id||!REACTION_META[key])return;
-    if((key==='goat'||key==='crown')&&!State.profile?.isPro){if(typeof showProPaywall==='function')showProPaywall('Unlock all reactions with Pro.');else if(typeof toast==='function')toast('That reaction is available with Pro.','warning');return;}
+    if(key==='goat'||key==='crown'){
+      try{
+        const entitlementSnap=await getDoc(doc(db,'users',State.user.uid));
+        const liveIsPro=entitlementSnap.exists()&&entitlementSnap.data()?.isPro===true;
+        if(State.profile)State.profile.isPro=liveIsPro;
+        if(!liveIsPro){
+          if(typeof showProPaywall==='function')showProPaywall('Unlock all reactions with Pro.');
+          else if(typeof toast==='function')toast('That reaction is available with Pro.','warning');
+          return;
+        }
+      }catch(entitlementError){
+        console.warn('[CODMPanda] Could not verify Pro reaction entitlement',entitlementError);
+        if(typeof toast==='function')toast('Could not verify Pro status. Try again.','error');
+        return;
+      }
+    }
     if(btn.dataset.cpBusy==='1')return;
     const uid=State.user.uid, cacheKey=`${type}_${id}_${uid}`;
     if(pendingReactionWrites.has(cacheKey))return;
@@ -26935,8 +26950,13 @@ window.performGlobalSearch = performGlobalSearch;
       if(typeof toast==='function')toast(next?`${emojiFor(next)} Reacted`:'Reaction removed','success',1000);
     }catch(err){
       console.error('[CODMPanda] reaction save failed',type,id,err);
-      if(typeof toast==='function')toast('Reaction could not be saved. Check your connection and try again.','error',2000);
-    }finally{pendingReactionWrites.delete(cacheKey);btn.dataset.cpBusy='';sameItemButtons(type,id).forEach(b=>{b.dataset.cpBusy='';});}
+      cache.set(cacheKey,'__refresh__');
+      if(typeof toast==='function')toast('Reaction could not be saved: '+(err?.code||err?.message||'check connection and Pro status'),'error',2600);
+    }finally{
+      pendingReactionWrites.delete(cacheKey);btn.dataset.cpBusy='';
+      sameItemButtons(type,id).forEach(b=>{b.dataset.cpBusy='';});
+      setTimeout(()=>hydrateVisibleReactions(),80);
+    }
   }
   function totalFieldCount(type,id,fallback,btn){
     // Prefer the transaction's canonical total when available; a duplicate card may have stale markup.
@@ -26982,8 +27002,19 @@ window.performGlobalSearch = performGlobalSearch;
     await Promise.all(Array.from(unique.values()).map(async({type,id})=>{
       const key=`${type}_${id}_${State.user.uid}`;
       try{
-        let reaction=cache.get(key);
-        if(reaction===undefined || reaction==='__refresh__'){let snap=await getDoc(doc(db,'likes',`${type}_${id}_${State.user.uid}`));let saved=snap.exists()?snap.data():null;if(!saved){try{const matches=await getDocs(query(collection(db,'likes'),where('userId','==',State.user.uid),where('itemId','==',id),where('itemType','==',type),limit(1)));if(!matches.empty)saved=matches.docs[0].data();}catch(queryErr){console.warn('[CODMPanda] reaction fallback lookup failed',type,id,queryErr?.code||queryErr?.message||queryErr);}}reaction=saved?(REACTION_META[saved.reaction]?saved.reaction:'heart'):null;cache.set(key,reaction);}
+        // Firestore is the source of truth on every render; don't let an old in-memory emoji hide a failed write.
+        let snap=await getDoc(doc(db,'likes',`${type}_${id}_${State.user.uid}`));
+        let saved=snap.exists()?snap.data():null;
+        if(!saved){
+          try{
+            const matches=await getDocs(query(collection(db,'likes'),where('userId','==',State.user.uid),where('itemId','==',id),where('itemType','==',type),limit(1)));
+            if(!matches.empty)saved=matches.docs[0].data();
+          }catch(queryErr){console.warn('[CODMPanda] reaction fallback lookup failed',type,id,queryErr?.code||queryErr?.message||queryErr);}
+        }
+        const storedReaction=saved?.reaction;
+        const emojiMatch=Object.entries(REACTION_META).find(([,meta])=>meta.emoji===storedReaction)?.[0];
+        const reaction=saved?(REACTION_META[storedReaction]?storedReaction:(emojiMatch||'heart')):null;
+        cache.set(key,reaction);
         if(pendingReactionWrites.has(key))return;
         const all=sameItemButtons(type,id);all.forEach(b=>{if(!b.dataset.cpBusy)paintButton(b,reaction||'heart',getCount(b),!!reaction);});
         if(type==='post') await refreshPostReactionSummary(type,id);
@@ -29392,47 +29423,46 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
       if(!await canView(user,uid)){if(token===loadToken&&r.isConnected)renderPage(r,{uid,user,posts:[],counts:null,restricted:true});return}
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
       try{if(typeof __c54LoadLikes==='function')await __c54LoadLikes()}catch(_){}
-      const [postSnapshot, clipSnapshots, vaultSnapshots, lobbySnapshots, leakSnapshots] = await Promise.all([
+      // Profile Posts contains actual feed posts, shared clips, and still-active lobbies.
+      // Vaults and leaks are separate features, not feed posts, so do not mix them into this tab.
+      const [postSnapshot, clipSnapshots, lobbySnapshots] = await Promise.all([
         getDocs(query(collection(db,'posts'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
         Promise.all([
           getDocs(query(collection(db,'clips'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
           getDocs(query(collection(db,'clips'),where('submittedByUid','==',uid),limit(100))).catch(()=>({docs:[]}))
         ]),
         Promise.all([
-          getDocs(query(collection(db,'vaults'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
-          getDocs(query(collection(db,'vaults'),where('userId','==',uid),limit(100))).catch(()=>({docs:[]})),
-          getDocs(query(collection(db,'vaults'),where('ownerUid','==',uid),limit(100))).catch(()=>({docs:[]}))
-        ]),
-        Promise.all([
           getDocs(query(collection(db,'lobbies'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
           getDocs(query(collection(db,'lobbies'),where('userId','==',uid),limit(100))).catch(()=>({docs:[]}))
-        ]),
-        Promise.all([
-          getDocs(query(collection(db,'leaks'),where('uid','==',uid),limit(100))).catch(()=>({docs:[]})),
-          getDocs(query(collection(db,'leaks'),where('submittedByUid','==',uid),limit(100))).catch(()=>({docs:[]}))
         ])
       ]);
       if(token!==loadToken||!r.isConnected||r.dataset.uid!==uid)return;
       const posts=postSnapshot.docs.map(d=>{
         const raw=d.data()||{};
-        const postText=String(raw.text||'').trim(), imageUrl=String(raw.imageUrl||'').trim();
+        const postText=String(raw.text||'').trim();
+        const imageUrl=String(raw.imageUrl||raw.mediaUrl||'').trim();
         const profileAvatar=String(user.avatar||user.photoURL||user.photoUrl||'').trim();
         if(!postText&&!imageUrl)return null;
         if(!postText&&imageUrl&&profileAvatar&&imageUrl===profileAvatar)return null;
         const post=Object.assign({},raw,{
-          id:d.id,type:'post',uid:raw.uid||uid,ign:user.ign||user.displayName||raw.ign||'Unknown',
+          id:d.id,type:'post',uid:raw.uid||uid,
+          ign:user.ign||user.displayName||raw.ign||'Unknown',
           avatar:user.avatar||user.photoURL||user.photoUrl||raw.avatar||'',
           avatarFrame:user.avatarFrame||user.equippedAvatarFrame||user.equippedFrame||raw.avatarFrame||'none',
           equippedAvatarFrame:user.equippedAvatarFrame||user.avatarFrame||raw.equippedAvatarFrame||'none',
           isPro:user.isPro===true||user.pro===true||user.subscription==='pro'||user.proStatus==='active',
-          verified:user.verified===true,badges:Array.isArray(user.badges)?user.badges:(Array.isArray(raw.badges)?raw.badges:[]),profileBadge:user.profileBadge||user.badge||raw.profileBadge||raw.badge||'',likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0
+          verified:user.verified===true,
+          badges:Array.isArray(user.badges)?user.badges:(Array.isArray(raw.badges)?raw.badges:[]),
+          profileBadge:user.profileBadge||user.badge||raw.profileBadge||raw.badge||'',
+          likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0
         });
-        postMap.set(String(post.id),post);return post;
+        postMap.set(String(post.id),post);
+        return post;
       }).filter(Boolean);
       const clipById=new Map();
       for(const snapshot of clipSnapshots) for(const d of snapshot.docs){
         const raw=d.data()||{};
-        const authorUid=String(raw.uid||raw.submittedByUid||raw.userId||raw.authorUid||'');
+        const authorUid=String(raw.uid||raw.submittedByUid||raw.userId||'');
         if(authorUid!==uid)continue;
         clipById.set(d.id,Object.assign({},raw,{
           id:d.id,type:'clip',uid:authorUid,submittedByUid:authorUid,
@@ -29446,25 +29476,20 @@ window.renderYouTab = cpRenderYouTabLayoutV2;
         }));
       }
       posts.push(...clipById.values());
-      const otherByKey=new Map();
-      for(const snapshot of vaultSnapshots) for(const d of snapshot.docs){
-        const raw=d.data()||{}, authorUid=String(raw.uid||raw.userId||raw.ownerUid||'');
-        if(authorUid!==uid)continue;
-        otherByKey.set('vault_'+d.id,Object.assign({},raw,{id:d.id,type:'vault',uid:authorUid,ign:user.ign||raw.ign||'Unknown',avatar:user.avatar||user.photoURL||raw.avatar||'',likes:Number(raw.likes)||0,commentCount:Number(raw.commentCount)||0}));
-      }
+      const lobbyById=new Map();
       for(const snapshot of lobbySnapshots) for(const d of snapshot.docs){
-        const raw=d.data()||{}, authorUid=String(raw.uid||raw.userId||raw.ownerUid||'');
+        const raw=d.data()||{};
+        const authorUid=String(raw.uid||raw.userId||'');
         if(authorUid!==uid)continue;
-        const lobby=Object.assign({},raw,{id:d.id,type:'lobby',uid:authorUid,ign:user.ign||raw.ign||'Unknown',avatar:user.avatar||user.photoURL||raw.avatar||''});
+        const lobby=Object.assign({},raw,{
+          id:d.id,type:'lobby',uid:authorUid,
+          ign:user.ign||raw.ign||'Unknown',
+          avatar:user.avatar||user.photoURL||user.photoUrl||raw.avatar||''
+        });
         if(typeof cpLobbyIsExpired==='function'&&cpLobbyIsExpired(lobby))continue;
-        otherByKey.set('lobby_'+d.id,lobby);
+        lobbyById.set(d.id,lobby);
       }
-      for(const snapshot of leakSnapshots) for(const d of snapshot.docs){
-        const raw=d.data()||{}, authorUid=String(raw.uid||raw.submittedByUid||raw.userId||raw.authorUid||'');
-        if(authorUid!==uid)continue;
-        otherByKey.set('leak_'+d.id,Object.assign({},raw,{id:d.id,type:'leak',uid:authorUid,submittedByUid:authorUid,submittedByIgn:user.ign||raw.submittedByIgn||raw.ign||'Unknown',ign:user.ign||raw.ign||'Unknown',likes:Number(raw.likes)||0,hypes:Number(raw.hypes)||0}));
-      }
-      posts.push(...otherByKey.values());
+      posts.push(...lobbyById.values());
       posts.sort((a,b)=>millis(b.createdAt||b.timestamp||b.publishedAt)-millis(a.createdAt||a.timestamp||a.publishedAt));
       const clipIds=new Set([...clipById.keys()]);
       if(clipIds.size){
