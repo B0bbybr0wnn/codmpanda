@@ -27074,7 +27074,7 @@ window.performGlobalSearch = performGlobalSearch;
       // data-uid is also used by report/action buttons; only decorate compact avatar hosts.
       if(el.matches('button, a, input, textarea, select') || isName)continue;
       if(!rect||rect.width<24||rect.width>180||rect.height<24||rect.height>180)continue;
-      if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.querySelector('img'))continue;
+      if(!el.classList.contains('rounded-full') && !el.classList.contains('cp-avatar-framed-host') && !el.classList.contains('cp-avatar-profile-frame-host') && !el.classList.contains('cp-v4-clip-avatar'))continue;
       const u=await publicProfile(uid);if(!u)continue;
       const frameCatalog=window.CODM_WAR_ARTIFACT_FRAMES||{};const frame=([u.avatarFrame,u.equippedAvatarFrame,u.equippedFrame,u.selectedFrame,u.frameId,u.frame,u.profileFrame].map(v=>window.CODMNormalizeFrameKey?window.CODMNormalizeFrameKey(v):String(v||'none')).find(key=>key!=='none'&&frameCatalog[key])||'none');if(!window.CODMRenderFramedAvatar)continue;
       const img=el.querySelector('img');const avatar=u.avatar||u.photoURL||u.photoUrl||img?.getAttribute('src')||'';
@@ -28359,7 +28359,7 @@ window.performGlobalSearch = performGlobalSearch;
         if(String(el.dataset.uid||'')!==uid||el.matches('button,a,input,textarea,select')||el.classList.contains('user-name-link'))return false;
         const rect=el.getBoundingClientRect?.();
         if(!rect||rect.width<24||rect.width>180||rect.height<24||rect.height>180)return false;
-        return el.classList.contains('rounded-full')||el.classList.contains('cp-avatar-framed-host')||!!el.querySelector('img');
+        return el.classList.contains('rounded-full')||el.classList.contains('cp-avatar-framed-host')||el.classList.contains('cp-avatar-profile-frame-host')||el.classList.contains('cp-v4-clip-avatar');
       });
       for(const el of hosts){
         const rect=el.getBoundingClientRect();
@@ -28880,6 +28880,8 @@ function __cpProfilePostHasContentV3(post, owner) {
   const media = String(post.imageUrl || post.mediaUrl || post.videoUrl || post.media || '').trim();
   const avatar = String(owner?.avatar || owner?.photoURL || owner?.photoUrl || '').trim();
   if (!text && !media) return false;
+  // Frame artwork is profile cosmetics, never standalone community-post content.
+  if (!text && media && /(?:^|\/)frames?\//i.test(media.split(/[?#]/)[0])) return false;
   if (!text && media && avatar && media === avatar) return false;
   return true;
 }
