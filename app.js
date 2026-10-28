@@ -28888,7 +28888,7 @@ function __cpProfilePostHasContentV3(post, owner) {
   let decodedFrameMedia = frameMedia;
   try { decodedFrameMedia = decodeURIComponent(frameMedia); } catch (_) {}
   const frameFiles = Object.values(window.CODM_WAR_ARTIFACT_FRAMES || {}).map(frame => String(frame.file || '').toLowerCase()).filter(Boolean);
-  const isFrameArtwork = /(?:^|\\/)frames?\\//i.test(decodedFrameMedia) ||
+  const isFrameArtwork = /(?:^|\/)frames?\//i.test(decodedFrameMedia) ||
     frameFiles.some(file => decodedFrameMedia.toLowerCase().endsWith('/' + file) || decodedFrameMedia.toLowerCase().includes(encodeURIComponent(file).toLowerCase()));
   if (!text && media && isFrameArtwork) return false;
   if (!text && media && avatar && media === avatar) return false;
