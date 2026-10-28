@@ -28879,18 +28879,22 @@ function __cpYouProfileCardV2(p, uid, detail) {
 
 function __cpProfilePostHasContentV3(post, owner) {
   const text = String(post.text || post.caption || post.content || '').trim();
-  const media = String(post.imageUrl || post.mediaUrl || post.videoUrl || post.media || '').trim();
+  const mediaCandidates = [post.imageUrl, post.mediaUrl, post.videoUrl, post.media].map(value => String(value || '').trim()).filter(Boolean);
+  const media = mediaCandidates[0] || '';
   const avatar = String(owner?.avatar || owner?.photoURL || owner?.photoUrl || '').trim();
-  if (!text && !media) return false;
-  // Avatar-frame artwork is a profile cosmetic, never standalone community-post content.
+  if (!text && !mediaCandidates.length) return false;
+  // Avatar-frame artwork is a profile cosmetic, never community-post content.
   // Handle direct /frames paths, URL-encoded Firebase paths, and known frame asset names.
-  const frameMedia = media.split(/[?#]/)[0];
-  let decodedFrameMedia = frameMedia;
-  try { decodedFrameMedia = decodeURIComponent(frameMedia); } catch (_) {}
   const frameFiles = Object.values(window.CODM_WAR_ARTIFACT_FRAMES || {}).map(frame => String(frame.file || '').toLowerCase()).filter(Boolean);
-  const isFrameArtwork = /(?:^|\/)frames?\//i.test(decodedFrameMedia) ||
-    frameFiles.some(file => decodedFrameMedia.toLowerCase().endsWith('/' + file) || decodedFrameMedia.toLowerCase().includes(encodeURIComponent(file).toLowerCase()));
-  if (!text && media && isFrameArtwork) return false;
+  const isFrameArtwork = mediaCandidates.some(value => {
+    const path = value.split(/[?#]/)[0];
+    let decoded = path;
+    try { decoded = decodeURIComponent(path); } catch (_) {}
+    const lower = decoded.toLowerCase();
+    return /(?:^|\/)frames?\//i.test(decoded) ||
+      frameFiles.some(file => lower.endsWith('/' + file) || lower.includes(encodeURIComponent(file).toLowerCase()));
+  });
+  if (isFrameArtwork) return false;
   if (!text && media && avatar && media === avatar) return false;
   return true;
 }
