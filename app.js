@@ -28891,8 +28891,11 @@ function __cpProfilePostHasContentV3(post, owner) {
     let decoded = path;
     try { decoded = decodeURIComponent(path); } catch (_) {}
     const lower = decoded.toLowerCase();
+    const leaf = lower.split('/').pop() || '';
+    // Storage providers often encode the original filename or use a generic frame directory.
     return /(?:^|\/)frames?\//i.test(decoded) ||
-      frameFiles.some(file => lower.endsWith('/' + file) || lower.includes(encodeURIComponent(file).toLowerCase()));
+      /(?:avatar|profile)[_-]?frames?|frames?[_-]?(?:avatar|profile|art|png)/i.test(decoded) ||
+      frameFiles.some(file => leaf === file || lower.includes(file) || lower.includes(encodeURIComponent(file).toLowerCase()));
   });
   if (isFrameArtwork) return false;
   if (!text && media && avatar && media === avatar) return false;
