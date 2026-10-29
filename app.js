@@ -26776,9 +26776,15 @@ window.performGlobalSearch = performGlobalSearch;
   window.__cpIntegrationRepairV2 = true;
 
   const REACTION_META = {
-    heart:{emoji:'❤️',label:'Like'}, fire:{emoji:'🔥',label:'Fire'},
-    skull:{emoji:'💀',label:'Dead'}, goat:{emoji:'🐐',label:'GOAT'},
-    crown:{emoji:'👑',label:'Crown'}
+    heart:{emoji:'❤️',label:'Like',icon:'/reaction-icons/heart.png'},
+    fire:{emoji:'🔥',label:'Fire',icon:'/reaction-icons/fire.png'},
+    skull:{emoji:'💀',label:'Dead',icon:'/reaction-icons/skull.png'},
+    goat:{emoji:'🐐',label:'GOAT',icon:'/reaction-icons/goat_head.png'},
+    crown:{emoji:'👑',label:'Crown',icon:'/reaction-icons/crown.png'}
+  };
+  const reactionIconHtml = (key, size=25) => {
+    const r=REACTION_META[key];
+    return r ? '<img src="'+r.icon+'" alt="'+r.label+'" width="'+size+'" height="'+size+'" style="width:'+size+'px;height:'+size+'px;object-fit:contain;display:inline-block;vertical-align:middle" />' : '❤️';
   };
   const CLASS_TYPES = {
     'post-like-btn':'post','post-detail-like':'post','detail-like':'vault','detail-like-btn':'vault',
@@ -26829,7 +26835,7 @@ window.performGlobalSearch = performGlobalSearch;
       if(defaultEmojiEl)defaultEmojiEl.style.display='none';
       iconEls.forEach(el=>{el.style.display='none';});
       if(!emojiEl){emojiEl=document.createElement('span');emojiEl.dataset.cpReactionEmoji='1';emojiEl.className='cp-reaction-emoji';emojiEl.style.cssText='display:inline-flex!important;align-items:center;justify-content:center;line-height:1;font-size:19px;min-width:20px;margin-right:3px;';btn.insertBefore(emojiEl,btn.firstChild);}
-      emojiEl.textContent=emojiFor(reaction); emojiEl.style.display='inline-flex';
+      emojiEl.innerHTML=reactionIconHtml(reaction,22); emojiEl.style.display='inline-flex';
     }else{
       if(emojiEl)emojiEl.remove();
       if(defaultEmojiEl)defaultEmojiEl.style.display='';
@@ -26852,7 +26858,7 @@ window.performGlobalSearch = performGlobalSearch;
     const selectors=Object.keys(CLASS_TYPES).map(c=>'.'+c).concat('.home-like-btn');
     return Array.from(document.querySelectorAll(selectors.join(','))).filter(b=>itemType(b)===type&&itemId(b)===id);
   }
-  const reactionSummaryLabels={heart:'❤️',fire:'🔥',skull:'💀',goat:'🐐',crown:'👑'};
+  const reactionSummaryLabels={heart:'heart',fire:'fire',skull:'skull',goat:'goat',crown:'crown'};
   function paintPostReactionSummary(type,id,reactions){
     if(type!=='post')return;
     const entries=Object.entries(reactions||{}).filter(([key,n])=>reactionSummaryLabels[key] && Number(n)>0)
@@ -26864,7 +26870,7 @@ window.performGlobalSearch = performGlobalSearch;
         const count=countNode(btn); if(count && count.parentNode===btn)count.insertAdjacentElement('afterend',summary); else btn.appendChild(summary);
       }
       // Show every reaction type that has been used; compact icons avoid crowding the post actions.
-      summary.innerHTML=entries.map(([key])=>`<span title="${key}" style="font-size:12px;line-height:1;display:inline-block">${reactionSummaryLabels[key]}</span>`).join('');
+      summary.innerHTML=entries.map(([key])=>`<span title="${key}" style="font-size:12px;line-height:1;display:inline-block">${reactionIconHtml(key,14)}</span>`).join('');
     });
   }
   async function refreshPostReactionSummary(type,id){
@@ -26878,7 +26884,7 @@ window.performGlobalSearch = performGlobalSearch;
     const pro=!!State.profile?.isPro;
     const choices=Object.entries(REACTION_META).map(([key,r])=>{
       const locked=(key==='goat'||key==='crown')&&!pro;
-      return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" style="border:1px solid ${btn.dataset.cpReaction===key?'#ff6b00':'#34343a'};border-radius:14px;background:${btn.dataset.cpReaction===key?'#2a180f':'#17171b'};padding:11px 4px;color:#eee;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0"><span style="font-size:25px">${r.emoji}</span><span style="font-size:10px;font-weight:800">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">PRO 🔒</small>':''}</button>`;
+      return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" style="border:1px solid ${btn.dataset.cpReaction===key?'#ff6b00':'#34343a'};border-radius:14px;background:${btn.dataset.cpReaction===key?'#2a180f':'#17171b'};padding:11px 4px;color:#eee;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0"><span style="font-size:25px">${reactionIconHtml(key,30)}</span><span style="font-size:10px;font-weight:800">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">PRO 🔒</small>':''}</button>`;
     }).join('');
     const html=`<div class="cp-reaction-sheet" style="padding:12px 0 4px"><div style="font-size:11px;color:#aaa;text-align:center;margin-bottom:13px">${pro?'PRO OPERATOR · ALL REACTIONS':'Choose your reaction · GOAT is a Pro reaction'}</div><div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px">${choices}</div><button type="button" id="cp-reaction-cancel" style="width:100%;margin-top:12px;padding:10px;color:#999;font-size:12px">Cancel</button></div>`;
     try{
