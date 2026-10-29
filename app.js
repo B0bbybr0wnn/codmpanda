@@ -26836,8 +26836,8 @@ window.performGlobalSearch = performGlobalSearch;
     if(active){
       if(defaultEmojiEl)defaultEmojiEl.style.display='none';
       iconEls.forEach(el=>{el.style.display='none';});
-      if(!emojiEl){emojiEl=document.createElement('span');emojiEl.dataset.cpReactionEmoji='1';emojiEl.className='cp-reaction-emoji';emojiEl.style.cssText='display:inline-flex!important;align-items:center;justify-content:center;line-height:1;font-size:28px;min-width:28px;margin-right:4px;';btn.insertBefore(emojiEl,btn.firstChild);}
-      emojiEl.innerHTML=reactionIconHtml(reaction,30); emojiEl.style.display='inline-flex';
+      if(!emojiEl){emojiEl=document.createElement('span');emojiEl.dataset.cpReactionEmoji='1';emojiEl.className='cp-reaction-emoji';emojiEl.style.cssText='display:inline-flex!important;align-items:center;justify-content:center;line-height:1;font-size:34px;min-width:34px;margin-right:4px;';btn.insertBefore(emojiEl,btn.firstChild);}
+      emojiEl.innerHTML=reactionIconHtml(reaction,36); emojiEl.style.display='inline-flex';
     }else{
       if(emojiEl)emojiEl.remove();
       if(defaultEmojiEl)defaultEmojiEl.style.display='';
@@ -26868,11 +26868,11 @@ window.performGlobalSearch = performGlobalSearch;
     sameItemButtons('post',id).forEach(btn=>{
       let summary=btn.querySelector('[data-cp-reaction-summary]');
       if(!entries.length){summary?.remove();return;}
-      if(!summary){summary=document.createElement('span');summary.dataset.cpReactionSummary='1';summary.setAttribute('aria-label','Reactions on this post');summary.style.cssText='display:inline-flex;align-items:center;gap:2px;white-space:nowrap;vertical-align:middle;margin-left:4px;';
+      if(!summary){summary=document.createElement('span');summary.dataset.cpReactionSummary='1';summary.setAttribute('aria-label','Reactions on this post');summary.style.cssText='display:inline-flex;align-items:center;gap:3px;white-space:nowrap;vertical-align:middle;margin-left:4px;';
         const count=countNode(btn); if(count && count.parentNode===btn)count.insertAdjacentElement('afterend',summary); else btn.appendChild(summary);
       }
       // Show every reaction type that has been used; compact icons avoid crowding the post actions.
-      summary.innerHTML=entries.map(([key])=>`<span title="${key}" style="font-size:14px;line-height:1;display:inline-block">${reactionIconHtml(key,18)}</span>`).join('');
+      summary.innerHTML=entries.map(([key])=>`<span title="${key}" style="font-size:16px;line-height:1;display:inline-block">${reactionIconHtml(key,22)}</span>`).join('');
     });
   }
   async function refreshPostReactionSummary(type,id){
