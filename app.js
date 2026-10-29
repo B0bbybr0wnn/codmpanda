@@ -26886,15 +26886,15 @@ window.performGlobalSearch = performGlobalSearch;
     const pro=!!State.profile?.isPro;
     const choices=Object.entries(REACTION_META).map(([key,r])=>{
       const locked=(key==='goat'||key==='crown')&&!pro;
-      return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" aria-label="${r.label}${locked?' (Pro)':''}" title="${r.label}${locked?' · Pro':''}" style="appearance:none;border:0;border-radius:50%;background:transparent;padding:5px;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;cursor:pointer;transition:transform .15s ease"><span style="font-size:32px;line-height:1">${reactionIconHtml(key,42)}</span><span style="font-size:10px;font-weight:800;color:#eee">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">🔒</small>':''}</button>`;
+      return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" aria-label="${r.label}${locked?' (Pro)':''}" title="${r.label}${locked?' · Pro':''}" style="appearance:none;border:0;border-radius:50%;background:transparent;padding:5px;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;cursor:pointer;transition:transform .15s ease;min-width:76px;min-height:76px"><span style="font-size:40px;line-height:1">${reactionIconHtml(key,56)}</span><span style="font-size:10px;font-weight:800;color:#eee">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">🔒</small>':''}</button>`;
     }).join('');
     try{
       // Keep the picker above every screen/sheet, centered in the viewport, without a panel.
       document.getElementById('cp-reaction-overlay')?.remove();
       const overlay=document.createElement('div');
       overlay.id='cp-reaction-overlay';
-      overlay.style.cssText='position:fixed;inset:0;z-index:2147483600;background:transparent;display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;';
-      overlay.innerHTML='<div class="cp-reaction-sheet" style="width:min(520px,100%);display:flex;align-items:center;justify-content:center;gap:clamp(8px,3vw,20px);flex-wrap:nowrap;background:transparent;border:0;border-radius:0;padding:0;box-shadow:none;color:#fff">'+choices+'</div>';
+      overlay.style.cssText='position:fixed;inset:0;z-index:2147483600;background:rgba(0,0,0,.34);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;';
+      overlay.innerHTML='<div class="cp-reaction-sheet" style="width:min(680px,100%);display:flex;align-items:center;justify-content:center;gap:clamp(12px,3.5vw,26px);flex-wrap:nowrap;background:transparent;border:0;border-radius:0;padding:0;box-shadow:none;color:#fff">'+choices+'</div>';
       overlay.addEventListener('click',ev=>{if(ev.target===overlay){overlay.remove();pickerOpen=false;}});
       document.body.appendChild(overlay);
       const root=overlay;
