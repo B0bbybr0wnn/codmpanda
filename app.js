@@ -26782,7 +26782,7 @@ window.performGlobalSearch = performGlobalSearch;
     goat:{emoji:'🐐',label:'GOAT',icon:'/reaction-icons/goat_head.png'},
     crown:{emoji:'👑',label:'Crown',icon:'/reaction-icons/crown.png'}
   };
-  const reactionIconHtml = (key, size=25) => {
+  const reactionIconHtml = (key, size=30) => {
     const r=REACTION_META[key];
     if(!r)return '❤️';
     const fallback=String(r.emoji).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
@@ -26886,26 +26886,28 @@ window.performGlobalSearch = performGlobalSearch;
     const pro=!!State.profile?.isPro;
     const choices=Object.entries(REACTION_META).map(([key,r])=>{
       const locked=(key==='goat'||key==='crown')&&!pro;
-      return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" style="border:1px solid ${btn.dataset.cpReaction===key?'#ff6b00':'#34343a'};border-radius:14px;background:${btn.dataset.cpReaction===key?'#2a180f':'#17171b'};padding:11px 4px;color:#eee;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0"><span style="font-size:25px">${reactionIconHtml(key,30)}</span><span style="font-size:10px;font-weight:800">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">PRO 🔒</small>':''}</button>`;
+      return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" aria-label="${r.label}${locked?' (Pro)':''}" title="${r.label}${locked?' · Pro':''}" style="appearance:none;border:0;border-radius:50%;background:transparent;padding:5px;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;cursor:pointer;transition:transform .15s ease"><span style="font-size:32px;line-height:1">${reactionIconHtml(key,42)}</span><span style="font-size:10px;font-weight:800;color:#eee">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">🔒</small>':''}</button>`;
     }).join('');
-    const html=`<div class="cp-reaction-sheet" style="padding:12px 0 4px"><div style="font-size:11px;color:#aaa;text-align:center;margin-bottom:13px">${pro?'PRO OPERATOR · ALL REACTIONS':'Choose your reaction · GOAT is a Pro reaction'}</div><div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px">${choices}</div><button type="button" id="cp-reaction-cancel" style="width:100%;margin-top:12px;padding:10px;color:#999;font-size:12px">Cancel</button></div>`;
     try{
-      // Comment picker must be a separate overlay: opening a nested sheet destroys the comments sheet.
-      if(type==='comment'){
-        document.getElementById('cp-reaction-overlay')?.remove();
-        const overlay=document.createElement('div');overlay.id='cp-reaction-overlay';overlay.style.cssText='position:fixed;inset:0;z-index:100500;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:20px;';
-        overlay.innerHTML=`<div style="width:min(420px,100%);background:#101014;border:1px solid #333;border-radius:20px;padding:16px;color:#fff;box-shadow:0 20px 80px #000"><h3 style="font-weight:900;margin:0 0 10px">React to comment</h3>${html}</div>`;
-        overlay.addEventListener('click',ev=>{if(ev.target===overlay){overlay.remove();pickerOpen=false;}});document.body.appendChild(overlay);
-      } else if(typeof openSheet==='function')openSheet(html,'React');
-      else {const overlay=document.createElement('div');overlay.id='cp-reaction-overlay';overlay.style.cssText='position:fixed;inset:0;z-index:99999;background:#0009;display:grid;place-items:center;padding:20px';overlay.innerHTML=`<div style="width:min(420px,100%);background:#101014;border:1px solid #333;border-radius:20px;padding:16px;color:#fff"><h3 style="font-weight:900;margin-bottom:10px">React</h3>${html}</div>`;document.body.appendChild(overlay);}
-      const root=type==='comment'?(document.getElementById('cp-reaction-overlay')||document):(document.querySelector('#sheet-container')||document.getElementById('cp-reaction-overlay')||document);
+      // Keep the picker above every screen/sheet, centered in the viewport, without a panel.
+      document.getElementById('cp-reaction-overlay')?.remove();
+      const overlay=document.createElement('div');
+      overlay.id='cp-reaction-overlay';
+      overlay.style.cssText='position:fixed;inset:0;z-index:2147483600;background:transparent;display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;';
+      overlay.innerHTML='<div class="cp-reaction-sheet" style="width:min(520px,100%);display:flex;align-items:center;justify-content:center;gap:clamp(8px,3vw,20px);flex-wrap:nowrap;background:transparent;border:0;border-radius:0;padding:0;box-shadow:none;color:#fff">'+choices+'</div>';
+      overlay.addEventListener('click',ev=>{if(ev.target===overlay){overlay.remove();pickerOpen=false;}});
+      document.body.appendChild(overlay);
+      const root=overlay;
       root.querySelectorAll('.cp-reaction-choice').forEach(b=>b.addEventListener('click',async()=>{
         const key=b.dataset.reaction;
-        if(b.dataset.locked==='1'){if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();if(typeof showProPaywall==='function')setTimeout(()=>showProPaywall('Unlock the '+(key==='crown'?'Crown':'GOAT')+' reaction with Pro.'),180);pickerOpen=false;return;}
-        if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;await commitReaction(btn,type,id,key);
+        if(b.dataset.locked==='1'){
+          overlay.remove();
+          if(typeof showProPaywall==='function')setTimeout(()=>showProPaywall('Unlock the '+(key==='crown'?'Crown':'GOAT')+' reaction with Pro.'),180);
+          pickerOpen=false;return;
+        }
+        overlay.remove();pickerOpen=false;await commitReaction(btn,type,id,key);
       }));
-      const cancel=root.querySelector('#cp-reaction-cancel');if(cancel)cancel.addEventListener('click',()=>{if(type!=='comment'&&typeof closeSheet==='function')closeSheet();document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;});
-    }catch(e){pickerOpen=false;console.warn('[CODMPanda] reaction picker failed',e);}
+    }catch(e){document.getElementById('cp-reaction-overlay')?.remove();pickerOpen=false;console.warn('[CODMPanda] reaction picker failed',e);}
   }
   async function commitReaction(btn,type,id,key){
     if(!State.user){if(typeof showAuthGate==='function')showAuthGate();else if(typeof toast==='function')toast('Sign in to react.','warning');return;}
