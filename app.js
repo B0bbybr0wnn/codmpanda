@@ -26836,8 +26836,8 @@ window.performGlobalSearch = performGlobalSearch;
     if(active){
       if(defaultEmojiEl)defaultEmojiEl.style.display='none';
       iconEls.forEach(el=>{el.style.display='none';});
-      if(!emojiEl){emojiEl=document.createElement('span');emojiEl.dataset.cpReactionEmoji='1';emojiEl.className='cp-reaction-emoji';emojiEl.style.cssText='display:inline-flex!important;align-items:center;justify-content:center;line-height:1;font-size:19px;min-width:20px;margin-right:3px;';btn.insertBefore(emojiEl,btn.firstChild);}
-      emojiEl.innerHTML=reactionIconHtml(reaction,22); emojiEl.style.display='inline-flex';
+      if(!emojiEl){emojiEl=document.createElement('span');emojiEl.dataset.cpReactionEmoji='1';emojiEl.className='cp-reaction-emoji';emojiEl.style.cssText='display:inline-flex!important;align-items:center;justify-content:center;line-height:1;font-size:28px;min-width:28px;margin-right:4px;';btn.insertBefore(emojiEl,btn.firstChild);}
+      emojiEl.innerHTML=reactionIconHtml(reaction,30); emojiEl.style.display='inline-flex';
     }else{
       if(emojiEl)emojiEl.remove();
       if(defaultEmojiEl)defaultEmojiEl.style.display='';
@@ -26868,11 +26868,11 @@ window.performGlobalSearch = performGlobalSearch;
     sameItemButtons('post',id).forEach(btn=>{
       let summary=btn.querySelector('[data-cp-reaction-summary]');
       if(!entries.length){summary?.remove();return;}
-      if(!summary){summary=document.createElement('span');summary.dataset.cpReactionSummary='1';summary.setAttribute('aria-label','Reactions on this post');summary.style.cssText='display:inline-flex;align-items:center;gap:1px;white-space:nowrap;vertical-align:middle;margin-left:3px;';
+      if(!summary){summary=document.createElement('span');summary.dataset.cpReactionSummary='1';summary.setAttribute('aria-label','Reactions on this post');summary.style.cssText='display:inline-flex;align-items:center;gap:2px;white-space:nowrap;vertical-align:middle;margin-left:4px;';
         const count=countNode(btn); if(count && count.parentNode===btn)count.insertAdjacentElement('afterend',summary); else btn.appendChild(summary);
       }
       // Show every reaction type that has been used; compact icons avoid crowding the post actions.
-      summary.innerHTML=entries.map(([key])=>`<span title="${key}" style="font-size:12px;line-height:1;display:inline-block">${reactionIconHtml(key,14)}</span>`).join('');
+      summary.innerHTML=entries.map(([key])=>`<span title="${key}" style="font-size:14px;line-height:1;display:inline-block">${reactionIconHtml(key,18)}</span>`).join('');
     });
   }
   async function refreshPostReactionSummary(type,id){
@@ -26886,7 +26886,7 @@ window.performGlobalSearch = performGlobalSearch;
     const pro=!!State.profile?.isPro;
     const choices=Object.entries(REACTION_META).map(([key,r])=>{
       const locked=(key==='goat'||key==='crown')&&!pro;
-      return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" aria-label="${r.label}${locked?' (Pro)':''}" title="${r.label}${locked?' · Pro':''}" style="appearance:none;border:0;border-radius:50%;background:transparent;padding:5px;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;cursor:pointer;transition:transform .15s ease;min-width:76px;min-height:76px"><span style="font-size:40px;line-height:1">${reactionIconHtml(key,56)}</span><span style="font-size:10px;font-weight:800;color:#eee">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">🔒</small>':''}</button>`;
+      return `<button type="button" class="cp-reaction-choice" data-reaction="${key}" data-locked="${locked?'1':'0'}" aria-label="${r.label}${locked?' (Pro)':''}" title="${r.label}${locked?' · Pro':''}" style="appearance:none;border:0;border-radius:50%;background:transparent;padding:2px;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;cursor:pointer;transition:transform .15s ease;min-width:0;min-height:70px"><span style="font-size:40px;line-height:1">${reactionIconHtml(key,56)}</span><span style="font-size:10px;font-weight:800;color:#eee">${r.label}</span>${locked?'<small style="font-size:9px;color:#e7bd52">🔒</small>':''}</button>`;
     }).join('');
     try{
       // Keep the picker above every screen/sheet, centered in the viewport, without a panel.
@@ -26894,7 +26894,7 @@ window.performGlobalSearch = performGlobalSearch;
       const overlay=document.createElement('div');
       overlay.id='cp-reaction-overlay';
       overlay.style.cssText='position:fixed;inset:0;z-index:2147483600;background:rgba(0,0,0,.34);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;';
-      overlay.innerHTML='<div class="cp-reaction-sheet" style="width:min(680px,100%);display:flex;align-items:center;justify-content:center;gap:clamp(12px,3.5vw,26px);flex-wrap:nowrap;background:transparent;border:0;border-radius:0;padding:0;box-shadow:none;color:#fff">'+choices+'</div>';
+      overlay.innerHTML='<div class="cp-reaction-sheet" style="width:100%;max-width:680px;display:flex;align-items:center;justify-content:center;gap:clamp(4px,1.5vw,12px);flex-wrap:nowrap;background:transparent;border:0;border-radius:0;padding:0;box-shadow:none;color:#fff">'+choices+'</div>';
       overlay.addEventListener('click',ev=>{if(ev.target===overlay){overlay.remove();pickerOpen=false;}});
       document.body.appendChild(overlay);
       const root=overlay;
