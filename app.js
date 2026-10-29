@@ -26784,7 +26784,9 @@ window.performGlobalSearch = performGlobalSearch;
   };
   const reactionIconHtml = (key, size=25) => {
     const r=REACTION_META[key];
-    return r ? '<img src="'+r.icon+'" alt="'+r.label+'" width="'+size+'" height="'+size+'" style="width:'+size+'px;height:'+size+'px;object-fit:contain;display:inline-block;vertical-align:middle" />' : '❤️';
+    if(!r)return '❤️';
+    const fallback=String(r.emoji).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+    return '<img src="'+r.icon+'" alt="'+r.label+'" width="'+size+'" height="'+size+'" onerror="this.outerHTML=\''+fallback+'\'" style="width:'+size+'px;height:'+size+'px;object-fit:contain;display:inline-block;vertical-align:middle" />';
   };
   const CLASS_TYPES = {
     'post-like-btn':'post','post-detail-like':'post','detail-like':'vault','detail-like-btn':'vault',
